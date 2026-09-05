@@ -33,7 +33,7 @@ export default function ProfilePage() {
         // 2. ከባክኤንድ የትኬት ታሪኩን ማምጣት
         const fetchHistory = async () => {
             try {
-                const res = await axios.get('http://localhost:5000/api/tickets/history', {
+                const res = await axios.get('${process.env.NEXT_PUBLIC_API_URL}/api/tickets/history', {
                     headers: { Authorization: `Bearer ${storedToken}` }
                 });
                 if (res.data.success) {
