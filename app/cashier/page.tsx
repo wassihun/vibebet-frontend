@@ -75,7 +75,7 @@ export default function CashierDashboard() {
     useEffect(() => {
         if (token) {
             fetchRecentTickets();
-            axios.get(`http://localhost:5000/api/matches/list`)
+            axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/matches/list`)
                 .then(res => {
                     if (res.data.success) {
                         setFixtures(res.data.data);
@@ -143,14 +143,14 @@ export default function CashierDashboard() {
 
     const fetchRecentTickets = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/tickets/history', { headers: { Authorization: `Bearer ${token}` } });
+            const res = await axios.get('${process.env.NEXT_PUBLIC_API_URL}/api/tickets/history', { headers: { Authorization: `Bearer ${token}` } });
             if (res.data.success) setRecentTickets(res.data.data);
         } catch (err) { console.error("History fetch error"); }
     };
 
     const fetchCashierReport = async () => {
         try {
-            const res = await axios.get(`http://localhost:5000/api/tickets/cashier/report?filter=${reportFilter}`, { headers: { Authorization: `Bearer ${token}` } });
+            const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/cashier/report?filter=${reportFilter}`, { headers: { Authorization: `Bearer ${token}` } });
             if (res.data.success) setCashierReport(res.data.data);
         } catch (err) { console.error("Report fetch error"); }
     };
@@ -160,7 +160,7 @@ export default function CashierDashboard() {
         setLoginError('');
         setIsLoggingIn(true);
         try {
-            const res = await axios.post('http://localhost:5000/api/auth/login', { username: username.trim(), password });
+            const res = await axios.post('${process.env.NEXT_PUBLIC_API_URL}/api/auth/login', { username: username.trim(), password });
             if (res.data.success && (res.data.user.role === 'cashier' || res.data.user.role === 'admin')) {
                 setToken(res.data.token);
                 setUsername(res.data.user.username);
@@ -189,7 +189,7 @@ export default function CashierDashboard() {
         if (!cleanCode) return;
         setIsLoading(true); setMessage(null); setTicketData(null); setCancelTimer(null);
         try {
-            const res = await axios.get(`http://localhost:5000/api/tickets/booking/${cleanCode}`, { headers: { Authorization: `Bearer ${token}` } });
+            const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/booking/${cleanCode}`, { headers: { Authorization: `Bearer ${token}` } });
             if (res.data.success) setTicketData(res.data.data);
         } catch (error: any) {
             setMessage({ type: 'error', text: error.response?.data?.message || "የተሳሳተ ኮድ ነው" });
@@ -199,7 +199,7 @@ export default function CashierDashboard() {
     const handleRebookTicket = async (ticket_number: string) => {
         setIsLoading(true); setMessage(null); setCancelTimer(null);
         try {
-            const res = await axios.get(`http://localhost:5000/api/tickets/check/${ticket_number.trim()}`, { headers: { Authorization: `Bearer ${token}` } });
+            const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/check/${ticket_number.trim()}`, { headers: { Authorization: `Bearer ${token}` } });
             if (res.data.success) {
                 const data = res.data.data;
                 if (data.status === 'void') {
@@ -409,18 +409,18 @@ export default function CashierDashboard() {
                     odd_name: s.odd_name
                 }));
                 const placePayload = { stake_amount: ticketData.stake_amount, is_guest: true, selections: cleanSelections };
-                const placeRes = await axios.post(`http://localhost:5000/api/tickets/place`, placePayload);
+                const placeRes = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/place`, placePayload);
                 const newBookingCode = placeRes.data.data.booking_code;
                 
                 const confirmPayload = { selections: cleanSelections, total_odds: ticketData.total_odds, potential_win: ticketData.potential_win, stake_amount: ticketData.stake_amount };
-                res = await axios.post(`http://localhost:5000/api/tickets/booking/${newBookingCode}/confirm`, confirmPayload, { headers: { Authorization: `Bearer ${token}` } });
+                res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/booking/${newBookingCode}/confirm`, confirmPayload, { headers: { Authorization: `Bearer ${token}` } });
                 
                 if(res.data.success) {
                     res.data.data.booking_code = newBookingCode;
                 }
             } else {
                 const payload = { selections: ticketData.selections, total_odds: ticketData.total_odds, potential_win: ticketData.potential_win, stake_amount: ticketData.stake_amount };
-                res = await axios.post(`http://localhost:5000/api/tickets/booking/${ticketData.booking_code}/confirm`, payload, { headers: { Authorization: `Bearer ${token}` } });
+                res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/booking/${ticketData.booking_code}/confirm`, payload, { headers: { Authorization: `Bearer ${token}` } });
             }
 
             if (res.data.success) {
@@ -444,7 +444,7 @@ export default function CashierDashboard() {
         const cleanCode = code.trim().toUpperCase(); 
         setIsPayingOut(true); setMessage(null);
         try {
-            const res = await axios.get(`http://localhost:5000/api/tickets/check/${cleanCode}`, { headers: { Authorization: `Bearer ${token}` } });
+            const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/check/${cleanCode}`, { headers: { Authorization: `Bearer ${token}` } });
             if (res.data.success) setPayoutDetails(res.data.data);
         } catch (err: any) {
             setMessage({ type: 'error', text: err.response?.data?.message || 'ትኬቱ አልተገኘም' });
@@ -462,7 +462,7 @@ export default function CashierDashboard() {
         setIsPayingOut(true);
         const tNum = payoutDetails.ticket_number || payoutDetails.booking_code;
         try {
-            const res = await axios.post('http://localhost:5000/api/tickets/payout', 
+            const res = await axios.post('${process.env.NEXT_PUBLIC_API_URL}/api/tickets/payout', 
                 { ticket_number: tNum }, { headers: { Authorization: `Bearer ${token}` } });
             setMessage({ type: 'success', text: `${res.data.message}! የተከፈለው: ${payoutDetails.potential_win} ብር` });
             setPayoutDetails(null); setPayoutTicket('');
@@ -474,7 +474,7 @@ export default function CashierDashboard() {
         if (!payoutDetails || !window.confirm("እርግጠኛ ነዎት ይህንን ትኬት መሰረዝ (Void ማድረግ) ይፈልጋሉ?")) return;
         const tNum = payoutDetails.ticket_number || payoutDetails.booking_code;
         try {
-            const res = await axios.post('http://localhost:5000/api/tickets/void', 
+            const res = await axios.post('${process.env.NEXT_PUBLIC_API_URL}/api/tickets/void', 
                 { ticket_number: tNum }, { headers: { Authorization: `Bearer ${token}` } });
             setMessage({ type: 'success', text: res.data.message });
             fetchTicketDetailsForCheck(tNum);
@@ -488,7 +488,7 @@ export default function CashierDashboard() {
         e.stopPropagation(); 
         if (!window.confirm(`እርግጠኛ ነዎት ትኬት ቁጥር ${ticketNum} መሰረዝ ይፈልጋሉ?`)) return;
         try {
-            const res = await axios.post('http://localhost:5000/api/tickets/void', 
+            const res = await axios.post('${process.env.NEXT_PUBLIC_API_URL}/api/tickets/void', 
                 { ticket_number: ticketNum }, { headers: { Authorization: `Bearer ${token}` } });
             setMessage({ type: 'success', text: res.data.message || "ትኬቱ ተሰርዟል!" });
             fetchRecentTickets(); 
