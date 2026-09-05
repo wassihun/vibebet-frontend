@@ -76,7 +76,7 @@ export default function Home() {
 
     useEffect(() => {
         setIsFetchingFixtures(true);
-        axios.get(`http://localhost:5000/api/matches/list`)
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/matches/list`)
             .then(res => {
                 if (res.data.success) {
                     const formatted = res.data.data.map((game: any) => {
@@ -171,7 +171,7 @@ export default function Home() {
                 selections: betSlip.map(item => ({ fixture_id: item.fixture_id, odd_id: item.odd_id, odd_value: item.odd_value, match_info: `${item.home_team} vs ${item.away_team}`, odd_name: item.odd_name }))
             };
             const headers = user ? { Authorization: `Bearer ${token}` } : {};
-            const response = await axios.post('http://localhost:5000/api/tickets/place', payload, { headers });
+            const response = await axios.post('${process.env.NEXT_PUBLIC_API_URL}/api/tickets/place', payload, { headers });
             
             if (response.data.success) {
                 if (!user) {
@@ -194,7 +194,7 @@ export default function Home() {
         if (!ticketCodeInput.trim()) return;
         setIsLoading(true);
         try {
-            const response = await axios.get(`http://localhost:5000/api/tickets/load/${ticketCodeInput}`);
+            const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/load/${ticketCodeInput}`);
             if (response.data.success && response.data.data.selections) {
                 const loadedSelections = response.data.data.selections.map((s: any) => ({
                     fixture_id: s.fixture_id,
@@ -229,7 +229,7 @@ export default function Home() {
         setCheckedTicketData(null);
         
         try {
-            const response = await axios.get(`http://localhost:5000/api/tickets/check/${cleanCode}`);
+            const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/check/${cleanCode}`);
             if (response.data.success) {
                 setCheckedTicketData(response.data.data);
             }
