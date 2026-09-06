@@ -240,6 +240,7 @@ export default function CashierDashboard() {
 
     const openPrintModal = () => { setIsPrintModalOpen(true); };
 
+    // 🌟 አዲሱ እና በምስሉ መሰረት የተስተካከለው የፕሪንት ማድረጊያ ገፅታ (ያለምንም Unicode Escape ስህተት) 🌟
     const handleCustomPrint = (ticketDetails: any) => {
         const printFrame = document.createElement('iframe');
         printFrame.style.position = 'fixed';
@@ -280,28 +281,7 @@ export default function CashierDashboard() {
                     .border-solid { border-top: 1.5px solid #000; margin: 4px 0; }
                     h1 { font-size: 20px; margin: 2px 0 1px 0; letter-spacing: 0.5px; }
                     .small-text { font-size: 9px; margin-bottom: 1px;}
-                    
-                    .league-time { 
-                        display: flex; 
-                        justify-content: space-between; 
-                        margin-bottom: 1px; 
-                        text-transform: uppercase; 
-                    }
-                    .league-time span { 
-                        font-size: 8px !important; 
-                        color: #333 !important; 
-                        font-weight: normal !important; 
-                    }
-                    
-                    .m-match { 
-                        font-size: 11px !important; 
-                        font-weight: 900 !important; 
-                        white-space: normal; 
-                        display: block; 
-                        margin-bottom: 1px; 
-                    }
-                    
-                    .odds-row { font-size: 11px; padding-left: 2px;}
+                    .odds-row { padding-left: 2px; }
                     .big-text { font-size: 13px !important; margin-top: 3px; border-top: 1px solid #000; padding-top: 2px;}
                     .huge-text { font-size: 16px !important; margin-top: 2px; border-top: 1.5px solid #000; padding-top: 2px;}
                 </style>
@@ -800,6 +780,7 @@ export default function CashierDashboard() {
                                             </div>
                                         </div>
 
+                                        {/* 🌟 ማስተካከያ፡ የውጤት ዝርዝር በምስሉ (Paper style) መሰረት 🌟 */}
                                         <div className="flex-1 overflow-y-auto custom-scrollbar mb-4">
                                             <div className="bg-white border border-gray-300 rounded overflow-hidden shadow-sm">
                                                 {payoutDetails.selections?.map((item: any, i: number) => {
@@ -915,6 +896,7 @@ export default function CashierDashboard() {
                                             </div>
                                         </div>
 
+                                        {/* 🌟 ማስተካከያ፡ ጠቅላላ ትርፍ (Gross Profit) ተጨምሯል 🌟 */}
                                         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 shrink-0 mt-auto">
                                             <div className="bg-gradient-to-br from-[#1a1f24] to-[#24292e] border border-[#3b4148] p-6 rounded-xl flex items-center justify-between shadow-md">
                                                 <div>
