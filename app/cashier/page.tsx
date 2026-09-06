@@ -240,6 +240,7 @@ export default function CashierDashboard() {
 
     const openPrintModal = () => { setIsPrintModalOpen(true); };
 
+    // 🌟 አዲሱ እና በምስሉ መሰረት የተስተካከለው የፕሪንት ማድረጊያ ገፅታ 🌟
     const handleCustomPrint = (ticketDetails: any) => {
         const printFrame = document.createElement('iframe');
         printFrame.style.position = 'fixed';
@@ -280,28 +281,7 @@ export default function CashierDashboard() {
                     .border-solid { border-top: 1.5px solid #000; margin: 4px 0; }
                     h1 { font-size: 20px; margin: 2px 0 1px 0; letter-spacing: 0.5px; }
                     .small-text { font-size: 9px; margin-bottom: 1px;}
-                    
-                    .league-time { 
-                        display: flex; 
-                        justify-content: space-between; 
-                        margin-bottom: 1px; 
-                        text-transform: uppercase; 
-                    }
-                    .league-time span { 
-                        font-size: 8px !important; 
-                        color: #333 !important; 
-                        font-weight: normal !important; 
-                    }
-                    
-                    .m-match { 
-                        font-size: 11px !important; 
-                        font-weight: 900 !important; 
-                        white-space: normal; 
-                        display: block; 
-                        margin-bottom: 1px; 
-                    }
-                    
-                    .odds-row { font-size: 11px; padding-left: 2px;}
+                    .odds-row { padding-left: 2px; }
                     .big-text { font-size: 13px !important; margin-top: 3px; border-top: 1px solid #000; padding-top: 2px;}
                     .huge-text { font-size: 16px !important; margin-top: 2px; border-top: 1.5px solid #000; padding-top: 2px;}
                 </style>
@@ -317,35 +297,60 @@ export default function CashierDashboard() {
                 <div class="flex-between"><span>TKT:</span><span>${ticketDetails.ticket_number || 'PENDING'}</span></div>
                 <div class="flex-between"><span>BOOK:</span><span>${ticketDetails.booking_code === 'REBOOK' ? 'REBOOK' : ticketDetails.booking_code}</span></div>
                 <div class="flex-between"><span>CASHIER:</span><span style="text-transform: uppercase;">${username}</span></div>
-                <div class="border-solid"></div>
+                
+                <div style="border-top: 1.5px solid #000; margin-top: 4px;"></div>
 
                 ${ticketDetails.selections.map((item: any) => {
                     const matchDetails = fixtures.find((f: any) => f.id === item.fixture_id);
                     let lName = "Soccer";
-                    let mTime = "";
+                    let mTimeRaw = new Date();
+                    
                     if (matchDetails) {
                         lName = getLeagueDetails(matchDetails.sport_key || matchDetails.league).name;
-                        mTime = new Date(matchDetails.commence_time || matchDetails.match_time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' });
+                        mTimeRaw = new Date(matchDetails.commence_time || matchDetails.match_time);
                     } else if (item.match_time || item.commence_time) {
-                        mTime = new Date(item.match_time || item.commence_time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' });
+                        mTimeRaw = new Date(item.match_time || item.commence_time);
                         lName = item.league_name || "Soccer";
                     }
+                    
+                    const pad = (n: number) => n < 10 ? '0' + n : n;
+                    const dStr = \`\${pad(mTimeRaw.getDate())}/\${pad(mTimeRaw.getMonth() + 1)}/\${String(mTimeRaw.getFullYear()).slice(-2)} \${pad(mTimeRaw.getHours())}:\${pad(mTimeRaw.getMinutes())}\`;
+                    
+                    let teamStr = item.match_info || (item.home_team + ' v ' + item.away_team);
+                    teamStr = teamStr.replace(' vs ', ' v ');
 
-                    return `
-                    <div style="margin-bottom: 6px; border-bottom: 1px dotted #888; padding-bottom: 3px;">
-                        <div class="league-time">
-                            <span style="max-width: 65%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${lName}</span>
-                            <span>${mTime}</span>
+                    let marketText = 'Match Result';
+                    let pickText = item.odd_name;
+
+                    if (['1', 'X', '2'].includes(item.odd_name)) {
+                        marketText = 'Match Result';
+                        pickText = item.odd_name === '1' ? 'W1' : item.odd_name === '2' ? 'W2' : item.odd_name === 'X' ? 'Draw' : item.odd_name;
+                    } else if (['1X', '12', 'X2'].includes(item.odd_name)) {
+                        marketText = 'Double Chance';
+                    } else if (['Yes', 'No'].includes(item.odd_name) || item.odd_name.includes('GG') || item.odd_name.includes('NG')) {
+                        marketText = 'Both Teams To Score';
+                    } else if (item.odd_name.toLowerCase().includes('over') || item.odd_name.toLowerCase().includes('under')) {
+                        marketText = 'Total Goals';
+                    } else {
+                        marketText = 'Market';
+                    }
+
+                    return \`
+                    <div style="border-bottom: 1.5px solid #000; padding: 3px 0;">
+                        <div style="font-size: 11px !important; font-weight: 900 !important; text-align: left; margin-bottom: 1px;">\${teamStr}</div>
+                        <div style="display: flex; justify-content: space-between; font-size: 9px !important; margin-bottom: 1px;">
+                            <span style="font-weight: normal !important; text-transform: capitalize;">Football / \${lName.replace('Soccer', 'World').replace('Soccer / ', '')}</span>
+                            <span style="font-weight: normal !important;">\${dStr}</span>
                         </div>
-                        <span class="m-match">${item.match_info || (item.home_team + ' vs ' + item.away_team)}</span>
-                        <div class="flex-between odds-row">
-                            <span>Pick: ${item.odd_name}</span>
-                            <span>@${item.odd_value}</span>
+                        <div style="display: flex; justify-content: space-between; font-size: 10.5px !important; font-weight: 900 !important;">
+                            <span style="flex: 1; text-align: left;">\${marketText}</span>
+                            <span style="padding-right: 15px; text-align: right;">\${pickText}</span>
+                            <span style="text-align: right; width: 45px;">Q: \${parseFloat(item.odd_value).toFixed(2)}</span>
                         </div>
                     </div>
-                `}).join('')}
+                \`}).join('')}
 
-                <div class="border-solid"></div>
+                <div class="border-solid" style="margin-top: 2px;"></div>
                 <div class="flex-between"><span>T.ODDS:</span><span style="font-size: 13px;">${ticketDetails.total_odds}</span></div>
                 <div class="flex-between"><span>STAKE:</span><span style="font-size: 13px;">${parseFloat(ticketDetails.stake_amount).toFixed(2)} Br</span></div>
                 <div class="flex-between"><span>FEE:</span><span style="font-size: 13px;">10.00 Br</span></div>
@@ -775,7 +780,6 @@ export default function CashierDashboard() {
                                             </div>
                                         </div>
 
-                                        {/* 🌟 ማስተካከያ፡ የውጤት ዝርዝር በምስሉ (Paper style) መሰረት 🌟 */}
                                         <div className="flex-1 overflow-y-auto custom-scrollbar mb-4">
                                             <div className="bg-white border border-gray-300 rounded overflow-hidden shadow-sm">
                                                 {payoutDetails.selections?.map((item: any, i: number) => {
@@ -891,7 +895,6 @@ export default function CashierDashboard() {
                                             </div>
                                         </div>
 
-                                        {/* 🌟 ማስተካከያ፡ ጠቅላላ ትርፍ (Gross Profit) ተጨምሯል 🌟 */}
                                         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 shrink-0 mt-auto">
                                             <div className="bg-gradient-to-br from-[#1a1f24] to-[#24292e] border border-[#3b4148] p-6 rounded-xl flex items-center justify-between shadow-md">
                                                 <div>
