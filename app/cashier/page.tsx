@@ -240,7 +240,6 @@ export default function CashierDashboard() {
 
     const openPrintModal = () => { setIsPrintModalOpen(true); };
 
-    // 🌟 አዲሱ እና በምስሉ መሰረት የተስተካከለው የፕሪንት ማድረጊያ ገፅታ 🌟
     const handleCustomPrint = (ticketDetails: any) => {
         const printFrame = document.createElement('iframe');
         printFrame.style.position = 'fixed';
@@ -281,7 +280,28 @@ export default function CashierDashboard() {
                     .border-solid { border-top: 1.5px solid #000; margin: 4px 0; }
                     h1 { font-size: 20px; margin: 2px 0 1px 0; letter-spacing: 0.5px; }
                     .small-text { font-size: 9px; margin-bottom: 1px;}
-                    .odds-row { padding-left: 2px; }
+                    
+                    .league-time { 
+                        display: flex; 
+                        justify-content: space-between; 
+                        margin-bottom: 1px; 
+                        text-transform: uppercase; 
+                    }
+                    .league-time span { 
+                        font-size: 8px !important; 
+                        color: #333 !important; 
+                        font-weight: normal !important; 
+                    }
+                    
+                    .m-match { 
+                        font-size: 11px !important; 
+                        font-weight: 900 !important; 
+                        white-space: normal; 
+                        display: block; 
+                        margin-bottom: 1px; 
+                    }
+                    
+                    .odds-row { font-size: 11px; padding-left: 2px;}
                     .big-text { font-size: 13px !important; margin-top: 3px; border-top: 1px solid #000; padding-top: 2px;}
                     .huge-text { font-size: 16px !important; margin-top: 2px; border-top: 1.5px solid #000; padding-top: 2px;}
                 </style>
@@ -314,7 +334,7 @@ export default function CashierDashboard() {
                     }
                     
                     const pad = (n: number) => n < 10 ? '0' + n : n;
-                    const dStr = \`\${pad(mTimeRaw.getDate())}/\${pad(mTimeRaw.getMonth() + 1)}/\${String(mTimeRaw.getFullYear()).slice(-2)} \${pad(mTimeRaw.getHours())}:\${pad(mTimeRaw.getMinutes())}\`;
+                    const dStr = `${pad(mTimeRaw.getDate())}/${pad(mTimeRaw.getMonth() + 1)}/${String(mTimeRaw.getFullYear()).slice(-2)} ${pad(mTimeRaw.getHours())}:${pad(mTimeRaw.getMinutes())}`;
                     
                     let teamStr = item.match_info || (item.home_team + ' v ' + item.away_team);
                     teamStr = teamStr.replace(' vs ', ' v ');
@@ -335,20 +355,20 @@ export default function CashierDashboard() {
                         marketText = 'Market';
                     }
 
-                    return \`
+                    return `
                     <div style="border-bottom: 1.5px solid #000; padding: 3px 0;">
-                        <div style="font-size: 11px !important; font-weight: 900 !important; text-align: left; margin-bottom: 1px;">\${teamStr}</div>
+                        <div style="font-size: 11px !important; font-weight: 900 !important; text-align: left; margin-bottom: 1px;">${teamStr}</div>
                         <div style="display: flex; justify-content: space-between; font-size: 9px !important; margin-bottom: 1px;">
-                            <span style="font-weight: normal !important; text-transform: capitalize;">Football / \${lName.replace('Soccer', 'World').replace('Soccer / ', '')}</span>
-                            <span style="font-weight: normal !important;">\${dStr}</span>
+                            <span style="font-weight: normal !important; text-transform: capitalize;">Football / ${lName.replace('Soccer', 'World').replace('Soccer / ', '')}</span>
+                            <span style="font-weight: normal !important;">${dStr}</span>
                         </div>
                         <div style="display: flex; justify-content: space-between; font-size: 10.5px !important; font-weight: 900 !important;">
-                            <span style="flex: 1; text-align: left;">\${marketText}</span>
-                            <span style="padding-right: 15px; text-align: right;">\${pickText}</span>
-                            <span style="text-align: right; width: 45px;">Q: \${parseFloat(item.odd_value).toFixed(2)}</span>
+                            <span style="flex: 1; text-align: left;">${marketText}</span>
+                            <span style="padding-right: 15px; text-align: right;">${pickText}</span>
+                            <span style="text-align: right; width: 45px;">Q: ${parseFloat(item.odd_value).toFixed(2)}</span>
                         </div>
                     </div>
-                \`}).join('')}
+                `}).join('')}
 
                 <div class="border-solid" style="margin-top: 2px;"></div>
                 <div class="flex-between"><span>T.ODDS:</span><span style="font-size: 13px;">${ticketDetails.total_odds}</span></div>
