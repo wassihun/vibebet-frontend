@@ -1317,7 +1317,7 @@ export default function Home() {
                                                 </div>
                                             </div>
 
-                                            {/* Events List */}
+                                            {/* Events List (Image 2 Redesign) */}
                                             <div className="space-y-2 mb-2">
                                                 {checkedTicketData.selections?.map((item: any, i: number) => {
                                                     const isWon = item.match_status === 'won'; 
@@ -1366,6 +1366,9 @@ export default function Home() {
                         <div className="w-full pt-6 pb-4 flex flex-col items-center relative">
                             <button onClick={() => setBookingCode(null)} className="absolute top-2 right-4 text-gray-500 hover:text-black text-2xl leading-none">✕</button>
                             
+                            {/* 🌟 የተጨመረው የቤቱ ስም 🌟 */}
+                            <h2 className="text-2xl font-black tracking-widest text-black mb-1 uppercase">VIBE BET</h2>
+                            
                             <p className="text-gray-700 italic text-[15px] mb-1">Your bet has been booked</p>
                             
                             <div className="flex items-center gap-2 mb-4">
@@ -1395,14 +1398,15 @@ export default function Home() {
                         <div className="w-full bg-[#f4f4f4] px-4 py-2 flex flex-col">
                             {betSlip.map((item, idx) => (
                                 <div key={idx} className="flex justify-between items-center py-3 border-b border-gray-200 border-dashed last:border-0">
-                                    <div className="flex flex-col text-[13px] text-gray-800">
+                                    <div className="flex flex-col text-[13px] text-gray-800 text-center items-center">
                                         <span className="leading-tight">{item.home_team}</span>
                                         <span className="leading-tight">{item.away_team}</span>
                                         <span className="text-[11px] text-gray-600 mt-1">{new Date(item.match_time).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} {new Date(item.match_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                                     </div>
                                     <div className="text-[13px] text-gray-800 flex items-center gap-2">
-                                        <span>{item.odd_name}</span>
-                                        <span>{item.odd_value.toFixed(2)}</span>
+                                        {/* 🌟 ተስተካክሏል: Match Result የሚል ጽሁፍ ተጨምሯል 🌟 */}
+                                        <span>Match Result {item.odd_name === '1' ? 'W1' : item.odd_name === '2' ? 'W2' : item.odd_name}</span>
+                                        <span className="font-medium">{item.odd_value.toFixed(2)}</span>
                                     </div>
                                 </div>
                             ))}
