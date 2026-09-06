@@ -11,7 +11,7 @@ const MIN_STAKE = 20;
 export default function Home() {
     const [fixtures, setFixtures] = useState<any[]>([]);
     const [betSlip, setBetSlip] = useState<any[]>([]);
-    const [stake, setStake] = useState<number>(20); // 🌟 ተስተካክሏል: Default 20 ብር 🌟
+    const [stake, setStake] = useState<number>(20);
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [isFetchingFixtures, setIsFetchingFixtures] = useState<boolean>(true);
     const [bookingCode, setBookingCode] = useState<string | null>(null);
@@ -171,7 +171,6 @@ export default function Home() {
                 selections: betSlip.map(item => ({ fixture_id: item.fixture_id, odd_id: item.odd_id, odd_value: item.odd_value, match_info: `${item.home_team} vs ${item.away_team}`, odd_name: item.odd_name }))
             };
             const headers = user ? { Authorization: `Bearer ${token}` } : {};
-            // 🌟 ተስተካክሏል: የኔጠላ ኮማ 스ህተት ወደ ባክቲክ ተቀይሯል 🌟
             const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/place`, payload, { headers });
             
             if (response.data.success) {
@@ -180,9 +179,10 @@ export default function Home() {
                 } else {
                     alert(`ትኬትዎ በተሳካ ሁኔታ ተቆርጧል!`);
                     setUser({ ...user, current_balance: (user.current_balance || 0) - stake });
+                    setBetSlip([]); // User bet is fully placed, clear slip.
                 }
                 setPlacedBetSignatures(prev => [...prev, currentBetSignature]);
-                if(window.innerWidth < 1024) setIsMobileBetSlipOpen(false); 
+                if(window.innerWidth < 1024 && user) setIsMobileBetSlipOpen(false); 
             }
         } catch (error: any) {
             setErrorMessage("ስህተት ተፈጥሯል");
@@ -191,11 +191,11 @@ export default function Home() {
         }
     };
 
-    const handleLoadTicket = async () => {
-        if (!ticketCodeInput.trim()) return;
+    const loadTicketByCode = async (code: string) => {
+        if (!code.trim()) return;
         setIsLoading(true);
         try {
-            const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/load/${ticketCodeInput}`);
+            const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/load/${code}`);
             if (response.data.success && response.data.data.selections) {
                 const loadedSelections = response.data.data.selections.map((s: any) => ({
                     fixture_id: s.fixture_id,
@@ -208,16 +208,23 @@ export default function Home() {
                     league_name: 'Loaded Match'
                 }));
                 setBetSlip(loadedSelections);
-                setTicketCodeInput('');
                 setBookingCode(null);
+                return true;
             } else {
                 alert("ትኬቱ አልተገኘም! እባክዎ ትክክለኛ Booking Code ያስገቡ።");
+                return false;
             }
         } catch (err) {
             alert("ትኬት ማምጣት አልተቻለም!");
+            return false;
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const handleLoadTicket = async () => {
+        const success = await loadTicketByCode(ticketCodeInput);
+        if (success) setTicketCodeInput('');
     };
 
     const handleCheckCustomerTicket = async (e: React.FormEvent) => {
@@ -241,11 +248,105 @@ export default function Home() {
         }
     };
 
+    const handleBetAgain = async () => {
+        if (!checkedTicketData) return;
+        const codeToLoad = checkedTicketData.booking_code || checkedTicketData.ticket_number;
+        const success = await loadTicketByCode(codeToLoad);
+        if (success) {
+            closeCheckTicketModal();
+            if(window.innerWidth < 1024) setIsMobileBetSlipOpen(true);
+        }
+    };
+
     const closeCheckTicketModal = () => {
         setIsCheckTicketModalOpen(false);
         setCheckInputCode('');
         setCheckedTicketData(null);
         setCheckTicketError(null);
+    };
+
+    const handlePrintBooking = () => {
+        const printFrame = document.createElement('iframe');
+        printFrame.style.position = 'fixed';
+        printFrame.style.right = '0';
+        printFrame.style.bottom = '0';
+        printFrame.style.width = '0';
+        printFrame.style.height = '0';
+        printFrame.style.border = '0';
+        document.body.appendChild(printFrame);
+
+        const doc = printFrame.contentWindow?.document;
+        if (!doc) return;
+
+        const htmlContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <style>
+                    @page { margin: 0; size: 80mm auto; }
+                    body {
+                        margin: 0; padding: 5mm;
+                        font-family: Arial, sans-serif;
+                        text-align: center; color: #000;
+                        position: relative;
+                        background: #fff;
+                    }
+                    .watermark {
+                        position: absolute; top: 50%; left: 50%;
+                        transform: translate(-50%, -50%) rotate(-45deg);
+                        font-size: 26px; color: rgba(255, 0, 0, 0.15);
+                        white-space: nowrap; font-weight: 900;
+                        pointer-events: none; z-index: 0; text-align: center;
+                        line-height: 1.2;
+                    }
+                    .content { position: relative; z-index: 1; }
+                    h2 { margin: 0 0 5px 0; font-size: 16px; font-weight: 900;}
+                    .code { font-size: 28px; font-weight: 900; margin: 10px 0; letter-spacing: 2px; }
+                    .details { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 10px; border-bottom: 2px dashed #000; padding-bottom: 8px;}
+                    .match { text-align: left; font-size: 11px; margin-bottom: 8px; border-bottom: 1px dotted #888; padding-bottom: 6px; }
+                    .match-teams { font-weight: 900; margin-bottom: 2px;}
+                    .match-pick { display: flex; justify-content: space-between; margin-top: 2px; }
+                </style>
+            </head>
+            <body>
+                <div class="watermark">NOT FOR PAYOUT<br>BOOKING ONLY</div>
+                <div class="content">
+                    <h2>VIBE BET - BOOKING</h2>
+                    <div class="code">*${bookingCode}*</div>
+                    <div class="details">
+                        <div>Date: ${new Date().toLocaleDateString()}</div>
+                        <div style="text-align: right;">Stake: ${stake.toFixed(2)} Br<br>Potential Win: ${grossWin.toFixed(2)} Br</div>
+                    </div>
+                    <div style="text-align: left; margin-bottom: 5px; font-size: 12px; font-weight: 900;">EVENTS PLAYED:</div>
+                    ${betSlip.map(item => `
+                        <div class="match">
+                            <div class="match-teams">${item.home_team} vs ${item.away_team}</div>
+                            <div class="match-pick">
+                                <span>Pick: ${item.odd_name}</span>
+                                <span style="font-weight: 900;">@${item.odd_value}</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                    <div style="text-align: center; font-size: 10px; margin-top: 15px; font-weight: bold;">
+                        This is a booking slip.<br>Please visit a branch to confirm your bet.
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+        doc.open(); doc.write(htmlContent); doc.close();
+        setTimeout(() => {
+            printFrame.contentWindow?.focus();
+            printFrame.contentWindow?.print();
+            setTimeout(() => document.body.removeChild(printFrame), 1000);
+        }, 500);
+    };
+
+    const handleCopyLink = () => {
+        const link = `${window.location.origin}?booking=${bookingCode}`;
+        navigator.clipboard.writeText(link);
+        alert("Link Copied!");
     };
 
     const handleAuthSuccess = (userData: any, userToken: string) => {
@@ -964,7 +1065,6 @@ export default function Home() {
                                                     const btnX = currentDisplayOdds[1];
                                                     const btn2 = currentDisplayOdds[2];
                                                     
-                                                    // 🌟 አዲስ፡ ይሄ ክለብ (ወይም የክለቡ ማርኬት) ተመርጦ እንደሆነ ቼክ የሚያደርግ 🌟
                                                     const hasSelectionInGame = betSlip.some((item: any) => item.fixture_id === game.id);
 
                                                     return (
@@ -990,7 +1090,6 @@ export default function Home() {
                                                                     </button>
                                                                 </div>
 
-                                                                {/* 🌟 ተስተካክሏል: ማርኬት ከተመረጠ በተኑ ወደ ቢጫ ይቀየራል 🌟 */}
                                                                 <div className="w-10 sm:w-14 flex items-center justify-center border-l border-[#2a3038] shrink-0 bg-[#1a1f24]/50">
                                                                     <button onClick={() => setExpandedMatchId(isExpanded ? null : game.id)} className={`w-full h-full text-[10px] font-bold transition-colors flex flex-col items-center justify-center ${hasSelectionInGame ? 'bg-[#ffcc00] text-black shadow-inner' : isExpanded ? 'bg-[#2a3038] text-white shadow-inner' : 'text-slate-400 hover:text-white hover:bg-[#2a3038]'}`}>
                                                                         <span className={`text-xs ${hasSelectionInGame ? 'text-black' : ''}`}>{isExpanded ? '▲' : '▼'}</span>
@@ -1154,9 +1253,9 @@ export default function Home() {
                 </aside>
             </div>
 
-            {/* 🌟 ደንበኛው ውጤት የሚያይበት ማረጋገጫ መስኮት (Check Ticket Modal) 🌟 */}
+            {/* 🌟 ቲኬት ማረጋገጫ (Check Ticket Modal) 🌟 */}
             {isCheckTicketModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4 overflow-y-auto">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-2 sm:p-4 overflow-y-auto">
                     <div className="bg-[#1e2328] border border-[#3b4148] rounded-xl w-full max-w-lg shadow-2xl relative my-auto animate-fade-in-down flex flex-col max-h-full">
                         
                         <div className="p-4 border-b border-[#3b4148] flex justify-between items-center bg-[#24292e] rounded-t-xl shrink-0">
@@ -1181,7 +1280,7 @@ export default function Home() {
                         </div>
 
                         {checkedTicketData && (
-                            <div className="p-4 pt-0 overflow-y-auto custom-scrollbar flex-1">
+                            <div className="p-3 sm:p-4 pt-0 overflow-y-auto custom-scrollbar flex-1">
                                 {(() => {
                                     let displayStatus = checkedTicketData.status;
                                     const allItemsWon = checkedTicketData.selections?.length > 0 && checkedTicketData.selections.every((item: any) => item.match_status === 'won');
@@ -1193,49 +1292,66 @@ export default function Home() {
                                     }
 
                                     return (
-                                        <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-4 shadow-inner">
-                                            <div className="flex justify-between items-end border-b border-[#30363d] pb-3 mb-3">
-                                                <div>
-                                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Ticket ID / Booking</p>
-                                                    <p className="text-lg font-mono font-black text-white tracking-widest">{checkedTicketData.ticket_number || checkedTicketData.booking_code}</p>
-                                                </div>
-                                                <div className="text-right">
-                                                    <div className={`px-3 py-1 rounded border shadow-sm ${displayStatus === 'won' ? 'bg-[#00e700]/10 border-[#00e700]/50 text-[#00e700]' : displayStatus === 'paid' ? 'bg-blue-500/10 border-blue-500/50 text-blue-400' : displayStatus === 'void' ? 'bg-slate-500/10 border-slate-500/50 text-slate-400' : displayStatus === 'expired' ? 'bg-red-500/10 border-red-500/50 text-red-500' : displayStatus === 'lost' ? 'bg-red-500/10 border-red-500/50 text-red-500' : 'bg-[#161b22] border-[#30363d] text-slate-300'}`}>
-                                                        <p className="text-xs font-black uppercase tracking-widest">
-                                                            {displayStatus === 'won' ? '🎉 አሸንፏል' : displayStatus === 'paid' ? '✅ ተከፍሏል' : displayStatus === 'void' ? '🚫 ተሰርዟል' : displayStatus === 'expired' ? '⏳ EXPIRED' : displayStatus === 'lost' ? '❌ ተበልቷል' : '⏳ በመጠባበቅ'}
-                                                        </p>
-                                                    </div>
+                                        <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-3 sm:p-4 shadow-inner">
+                                            {/* Header Info */}
+                                            <div className="grid grid-cols-4 text-center text-xs border-b border-[#3b4148] pb-3 mb-3">
+                                                <div><p className="text-slate-500 text-[10px] mb-1">Date</p><p className="text-white font-bold">{new Date(checkedTicketData.created_at).toLocaleDateString([], {day:'2-digit', month:'2-digit'})}</p></div>
+                                                <div><p className="text-slate-500 text-[10px] mb-1">Type</p><p className="text-white font-bold">Prematch</p></div>
+                                                <div><p className="text-slate-500 text-[10px] mb-1">Amount</p><p className="text-white font-bold">{checkedTicketData.stake_amount}</p></div>
+                                                <div><p className="text-slate-500 text-[10px] mb-1">Win</p><p className="text-[#00e700] font-bold">{checkedTicketData.potential_win}</p></div>
+                                            </div>
+
+                                            {/* Action Buttons */}
+                                            <div className="flex gap-2 mb-4">
+                                                <button onClick={() => {
+                                                    navigator.clipboard.writeText(`${window.location.origin}?booking=${checkedTicketData.booking_code || checkedTicketData.ticket_number}`);
+                                                    alert("Link Copied!");
+                                                }} className="flex-1 bg-[#24292e] hover:bg-[#2a3038] text-slate-300 font-bold text-xs py-2.5 rounded transition-colors flex items-center justify-center gap-2 border border-[#3b4148]">
+                                                    🔗 SHARE BET
+                                                </button>
+                                                <button onClick={handleBetAgain} className="flex-1 bg-[#24292e] hover:bg-[#3b4148] text-[#ffcc00] font-bold text-xs py-2.5 rounded transition-colors flex items-center justify-center gap-2 border border-[#ffcc00]/30">
+                                                    🔄 BET AGAIN
+                                                </button>
+                                            </div>
+
+                                            <div className="flex justify-between items-center mb-2">
+                                                <p className="text-xs font-bold text-slate-400">Events</p>
+                                                <div className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest ${displayStatus === 'won' ? 'bg-[#00e700]/20 text-[#00e700]' : displayStatus === 'paid' ? 'bg-blue-500/20 text-blue-400' : displayStatus === 'void' ? 'bg-slate-500/20 text-slate-400' : displayStatus === 'expired' ? 'bg-red-500/20 text-red-500' : displayStatus === 'lost' ? 'bg-red-500/20 text-red-500' : 'bg-[#1e2328] border border-[#30363d] text-slate-300'}`}>
+                                                    {displayStatus === 'won' ? '🎉 Won' : displayStatus === 'paid' ? '✅ Paid' : displayStatus === 'void' ? '🚫 Void' : displayStatus === 'expired' ? '⏳ Expired' : displayStatus === 'lost' ? '❌ Lost' : '⏳ Pending'}
                                                 </div>
                                             </div>
 
-                                            <div className="space-y-2 mb-4">
+                                            {/* Events List (Image 2 Redesign) */}
+                                            <div className="space-y-2 mb-2">
                                                 {checkedTicketData.selections?.map((item: any, i: number) => {
                                                     const isWon = item.match_status === 'won'; 
                                                     const isLost = item.match_status === 'lost'; 
+                                                    const icon = isWon ? '✅' : isLost ? '❌' : '⏳';
+                                                    
+                                                    const teams = item.match_info.split(' vs ');
+                                                    const homeTeam = teams[0] || 'Home';
+                                                    const awayTeam = teams[1] || 'Away';
 
                                                     return (
-                                                        <div key={i} className={`p-3 rounded-lg border flex justify-between items-center transition shadow-sm ${isWon ? 'bg-[#00e700]/10 border-[#00e700]/40' : isLost ? 'bg-red-500/10 border-red-500/40' : 'bg-[#161b22] border-[#30363d]'}`}>
-                                                            <div>
-                                                                <p className={`font-bold text-xs mb-1 ${isWon ? 'text-[#00e700]' : isLost ? 'text-red-400' : 'text-white'}`}>{item.match_info}</p>
-                                                                <p className="text-[10px] text-slate-400 font-bold">Pick: <span className="font-black text-white ml-1">{item.odd_name}</span> <span className="opacity-70 ml-1">(@{item.odd_value})</span></p>
+                                                        <div key={i} className={`bg-[#161b22] border ${isWon ? 'border-[#00e700]/30' : isLost ? 'border-red-500/30' : 'border-[#30363d]'} rounded-lg overflow-hidden`}>
+                                                            <div className="flex items-center justify-between p-3 border-b border-[#30363d]">
+                                                                <span className="w-5 text-center text-sm">{icon}</span>
+                                                                <div className="flex-1 flex justify-between items-center px-2 sm:px-3">
+                                                                    <span className="text-[11px] sm:text-xs font-bold text-white text-right flex-1 truncate">{homeTeam}</span>
+                                                                    <span className="mx-2 text-[10px] bg-[#24292e] px-2 py-0.5 rounded text-slate-400 shrink-0 font-black border border-[#3b4148]">vs</span>
+                                                                    <span className="text-[11px] sm:text-xs font-bold text-white text-left flex-1 truncate">{awayTeam}</span>
+                                                                </div>
+                                                                <span className="text-slate-500 text-xs">❯</span>
                                                             </div>
-                                                            <div className={`font-black text-[11px] text-right uppercase tracking-wider ${isWon ? 'text-[#00e700]' : isLost ? 'text-red-500' : 'text-slate-400'}`}>
-                                                                {isWon ? '✅ አሸነፈ' : isLost ? '❌ ተበላ' : '⏳ PENDING'}
+                                                            <div className="bg-[#0d1117] p-2 flex justify-between items-center text-[10px] text-slate-400">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="bg-[#1e2328] px-1.5 py-0.5 rounded border border-[#3b4148]">Pick: <span className="font-bold text-white ml-1">{item.odd_name} <span className="text-[#ffcc00]">({item.odd_value})</span></span></span>
+                                                                </div>
+                                                                <div>Outcome: <span className={`font-bold ml-1 uppercase ${isWon ? 'text-[#00e700]' : isLost ? 'text-red-500' : 'text-slate-300'}`}>{item.match_status || 'Pending'}</span></div>
                                                             </div>
                                                         </div>
                                                     );
                                                 })}
-                                            </div>
-
-                                            <div className="flex justify-between items-center bg-gradient-to-r from-[#161b22] to-[#24292e] p-4 rounded-xl border border-[#30363d] shadow-sm">
-                                                <div>
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">የተወራረደው (Stake)</p>
-                                                    <p className="text-base font-black text-white">{checkedTicketData.stake_amount} Br</p>
-                                                </div>
-                                                <div className="text-right">
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">ያሸነፈው / የሚያሸንፈው</p>
-                                                    <p className={`text-xl font-black ${displayStatus === 'lost' ? 'text-red-500 line-through' : 'text-[#00e700]'}`}>{checkedTicketData.potential_win} Br</p>
-                                                </div>
                                             </div>
                                         </div>
                                     );
@@ -1246,27 +1362,73 @@ export default function Home() {
                 </div>
             )}
 
+            {/* 🌟 አዲሱ የቡኪንግ ሞዳል (Booking Modal) በምስሉ መሰረት 🌟 */}
             {bookingCode && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in-down p-4">
-                    <div className="bg-[#1e2328] border border-[#ffcc00] rounded-xl p-6 w-full max-w-sm shadow-2xl relative flex flex-col items-center">
-                        <button onClick={() => setBookingCode(null)} className="absolute top-3 right-4 text-slate-400 hover:text-white text-xl">✕</button>
-                        <div className="w-16 h-16 bg-[#ffcc00]/20 rounded-full flex items-center justify-center mb-4 shadow-inner">
-                            <span className="text-3xl">✅</span>
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md animate-fade-in p-4">
+                    <div className="bg-[#1a1f24] border border-[#ffcc00]/50 rounded-xl w-full max-w-sm shadow-[0_0_30px_rgba(255,204,0,0.15)] relative flex flex-col items-center animate-fade-in-down overflow-hidden">
+                        
+                        <div className="w-full bg-[#ffcc00] text-black text-center py-2 relative">
+                            <h3 className="font-black uppercase tracking-widest text-sm">Vibe Bet Booking</h3>
+                            <button onClick={() => setBookingCode(null)} className="absolute top-1 right-3 text-black/60 hover:text-black text-2xl leading-none">×</button>
                         </div>
-                        <h3 className="text-[#ffcc00] font-black uppercase text-sm mb-2 tracking-widest">Booking Code</h3>
-                        <div className="bg-[#16191c] border border-[#3b4148] w-full text-center py-4 rounded-lg mb-4 cursor-pointer hover:bg-[#24292e] shadow-sm" onClick={() => navigator.clipboard.writeText(bookingCode)}>
-                            <p className="text-4xl font-black text-white tracking-widest">{bookingCode}</p>
-                            <span className="text-[10px] text-slate-500 mt-1 block">Click to copy</span>
-                        </div>
-                        <p className="text-[11px] text-slate-400 text-center mb-6 px-2">
-                            ይህንን የቡኪንግ ኮድ ይዘው በአቅራቢያዎ ወደሚገኝ ቅርንጫፍ በመሄድ ክፍያዎን ይፈጽሙ።
-                        </p>
-                        <div className="flex gap-3 w-full">
-                            <button onClick={() => {setBookingCode(null); setBetSlip([])}} className="flex-1 bg-[#2a3038] hover:bg-[#3b4148] text-white text-sm font-bold py-3 rounded transition shadow-sm">
-                                አዲስ ጀምር
-                            </button>
-                            <button onClick={() => setBookingCode(null)} className="flex-1 bg-[#ffcc00] hover:bg-[#e6b800] text-black text-sm font-black py-3 rounded transition shadow-md">
-                                ዝጋ (Close)
+
+                        <div className="w-full p-5 flex flex-col items-center">
+                            <p className="text-slate-400 italic text-[11px] mb-1">Your bet has been booked</p>
+                            
+                            <div className="flex items-center gap-3 mb-4">
+                                <p className="text-3xl font-black text-white tracking-widest">*<span className="text-[#ffcc00]">{bookingCode}</span>*</p>
+                                <button onClick={() => { navigator.clipboard.writeText(bookingCode); alert("Copied!"); }} className="text-slate-400 hover:text-white text-xl bg-[#24292e] p-2 rounded-lg border border-[#3b4148] transition">
+                                    📋
+                                </button>
+                            </div>
+
+                            <div className="w-full flex justify-between text-center text-[10px] text-slate-400 border-y border-[#3b4148] py-3 mb-4">
+                                <div>
+                                    <p className="mb-1">BETTING DATE</p>
+                                    <p className="text-white font-bold text-xs">{new Date().toLocaleDateString('en-GB')}</p>
+                                </div>
+                                <div>
+                                    <p className="mb-1">TOTAL STAKE</p>
+                                    <p className="text-white font-bold text-xs">{stake.toFixed(2)}</p>
+                                </div>
+                                <div>
+                                    <p className="mb-1">WIN AMOUNT</p>
+                                    <p className="text-[#00e700] font-bold text-xs">{grossWin.toFixed(2)}</p>
+                                </div>
+                            </div>
+
+                            <div className="w-full bg-[#0d1117] rounded-lg border border-[#3b4148] overflow-hidden mb-5">
+                                <div className="bg-[#24292e] text-center py-1.5 border-b border-[#3b4148]">
+                                    <p className="text-[10px] font-bold text-slate-400 tracking-widest">EVENTS PLAYED</p>
+                                </div>
+                                <div className="max-h-[160px] overflow-y-auto custom-scrollbar p-3 space-y-3">
+                                    {betSlip.map(item => (
+                                        <div key={item.odd_id} className="flex justify-between items-center border-b border-[#2a3038] last:border-0 pb-2 last:pb-0">
+                                            <div className="flex flex-col">
+                                                <span className="text-[11px] font-bold text-slate-200 leading-tight">{item.home_team}</span>
+                                                <span className="text-[11px] font-bold text-slate-200 leading-tight">{item.away_team}</span>
+                                                <span className="text-[9px] text-slate-500 mt-0.5">{new Date(item.match_time).toLocaleDateString('en-GB')} {new Date(item.match_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-[10px] text-slate-400">Pick: <span className="font-bold text-white">{item.odd_name}</span></p>
+                                                <p className="text-xs font-black text-[#ffcc00] mt-0.5">{item.odd_value}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="w-full flex gap-2 mb-3">
+                                <button onClick={() => setBookingCode(null)} className="flex-1 bg-[#24292e] hover:bg-[#2a3038] text-white text-xs font-bold py-3 rounded border border-[#3b4148] transition shadow-sm">
+                                    🔄 REPEAT BET
+                                </button>
+                                <button onClick={handlePrintBooking} className="flex-1 bg-[#24292e] hover:bg-[#2a3038] text-white text-xs font-bold py-3 rounded border border-[#3b4148] transition shadow-sm flex items-center justify-center gap-2">
+                                    🖨️ PRINT
+                                </button>
+                            </div>
+                            
+                            <button onClick={handleCopyLink} className="bg-white hover:bg-slate-200 text-black text-xs font-bold py-2 px-6 rounded-full transition flex items-center gap-2 shadow-md">
+                                🔗 Copy link
                             </button>
                         </div>
                     </div>
