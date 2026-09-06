@@ -55,13 +55,13 @@ export default function AdminDashboard() {
     useEffect(() => {
         if (token && activeTab === 'settings') {
             fetchApiKeys();
-            axios.get('${process.env.NEXT_PUBLIC_API_URL}/api/matches/api-usage').then(res => {
+            axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/matches/api-usage`).then(res => {
                 if (res.data.success) setApiUsage(res.data.data);
             }).catch(() => {});
         }
         
         if (token && activeTab === 'dashboard') {
-            axios.get('${process.env.NEXT_PUBLIC_API_URL}/api/matches/list').then(res => {
+            axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/matches/list`).then(res => {
                 if (res.data.success) setTotalMatches(res.data.data.length);
             }).catch(() => setTotalMatches(0));
             fetchReports(); 
@@ -78,7 +78,7 @@ export default function AdminDashboard() {
 
     // 🌟 አዲስ፡ የገባውን የ API Keys ዝርዝር ያመጣል 🌟
     const fetchApiKeys = () => {
-        axios.get('${process.env.NEXT_PUBLIC_API_URL}/api/matches/get-api-key').then(res => {
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/matches/get-api-key`).then(res => {
             if (res.data.success && res.data.api_key) {
                 const keysArray = res.data.api_key.split(',').map((k: string) => k.trim()).filter((k: string) => k.length > 0);
                 setApiKeysList(keysArray);
@@ -106,7 +106,7 @@ export default function AdminDashboard() {
 
     const fetchStaffList = async () => {
         try {
-            const res = await axios.get('${process.env.NEXT_PUBLIC_API_URL}/api/tickets/staff-list', {
+            const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/staff-list`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if (res.data.success) {
@@ -121,7 +121,7 @@ export default function AdminDashboard() {
         e.preventDefault();
         setLoginError('');
         try {
-            const res = await axios.post('${process.env.NEXT_PUBLIC_API_URL}/api/auth/login', { username: loginUsername, password: loginPassword });
+            const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/login`, { username: loginUsername, password: loginPassword });
             if (res.data.success && res.data.user.role === 'admin') {
                 setToken(res.data.token);
                 setAdminName(res.data.user.username);
@@ -147,7 +147,7 @@ export default function AdminDashboard() {
         setIsLoading(true);
         setStaffMsg(null);
         try {
-            const res = await axios.post('${process.env.NEXT_PUBLIC_API_URL}/api/auth/register-staff', { username: newUsername, password: newPassword, role: newRole });
+            const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/register-staff`, { username: newUsername, password: newPassword, role: newRole });
             setStaffMsg({ type: 'success', text: res.data.message });
             setNewUsername('');
             setNewPassword('');
@@ -165,7 +165,7 @@ export default function AdminDashboard() {
         setApiMsg(null);
         try {
             const keysStr = keysArray.join(',');
-            await axios.post('${process.env.NEXT_PUBLIC_API_URL}/api/matches/update-api-key', { api_key: keysStr });
+            await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/matches/update-api-key`, { api_key: keysStr });
             setApiKeysList(keysArray);
             setApiMsg({ type: 'success', text: '✅ የ API Keys ዝርዝር በተሳካ ሁኔታ ተዘምኗል!' });
         } catch (err: any) {
@@ -194,14 +194,14 @@ export default function AdminDashboard() {
         setIsSyncing(true);
         setApiMsg({ type: 'success', text: '⏳ አዳዲስ ጨዋታዎችን ከ API በማምጣት ላይ... እባክዎ ትንሽ ይጠብቁ' });
         try {
-            const res = await axios.post('${process.env.NEXT_PUBLIC_API_URL}/api/matches/manual-sync');
+            const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/matches/manual-sync`);
             setApiMsg({ type: 'success', text: res.data.message });
             
-            axios.get('${process.env.NEXT_PUBLIC_API_URL}/api/matches/list').then(r => {
+            axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/matches/list`).then(r => {
                 if (r.data.success) setTotalMatches(r.data.data.length);
             });
             // ሲያመጣ ኮታ ስለሚበላ የ API Usageን ዳግም ይጠይቃል
-            axios.get('${process.env.NEXT_PUBLIC_API_URL}/api/matches/api-usage').then(r => {
+            axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/matches/api-usage`).then(r => {
                 if (r.data.success) setApiUsage(r.data.data);
             }).catch(() => {});
             // ከዳታቤዝ አዲስ የ Keys ዝርዝር ያመጣል (ካለቀ እያጠፋ ስለሚሄድ)
@@ -542,7 +542,7 @@ export default function AdminDashboard() {
                 {activeTab === 'settings' && (
                     <div className="max-w-4xl animate-fade-in-down">
                         <h1 className="text-3xl font-black text-white mb-2">⚙️ ሲስተም ሴቲንግ</h1>
-                        <p className="text-slate-400 mb-8">የስፖርት ዳታ (Odds API) ቁልፍን እና ሌሎች ማስተካከያዎችን ከዚህ ይቆጣጠሩ።</p>
+                        <p className="text-slate-400 mb-8">የስፖርት ዳታ (Odds API) ቁልፍን እና ሌሎች ማስተካከያዎችን ከዚህ ይቆጣጠሩ。</p>
 
                         {/* 🌟 አዲስ፡ የ API Usage የሚያሳይ ውብ ቦርድ 🌟 */}
                         <div className="bg-[#24292e] p-6 rounded-xl border border-[#3b4148] mb-8 shadow-md relative overflow-hidden">
