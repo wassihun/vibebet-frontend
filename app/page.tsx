@@ -11,7 +11,7 @@ const MIN_STAKE = 20;
 export default function Home() {
     const [fixtures, setFixtures] = useState<any[]>([]);
     const [betSlip, setBetSlip] = useState<any[]>([]);
-    const [stake, setStake] = useState<number>(50);
+    const [stake, setStake] = useState<number>(20); // 🌟 ተስተካክሏል: Default 20 ብር 🌟
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [isFetchingFixtures, setIsFetchingFixtures] = useState<boolean>(true);
     const [bookingCode, setBookingCode] = useState<string | null>(null);
@@ -171,7 +171,8 @@ export default function Home() {
                 selections: betSlip.map(item => ({ fixture_id: item.fixture_id, odd_id: item.odd_id, odd_value: item.odd_value, match_info: `${item.home_team} vs ${item.away_team}`, odd_name: item.odd_name }))
             };
             const headers = user ? { Authorization: `Bearer ${token}` } : {};
-            const response = await axios.post('${process.env.NEXT_PUBLIC_API_URL}/api/tickets/place', payload, { headers });
+            // 🌟 ተስተካክሏል: የኔጠላ ኮማ 스ህተት ወደ ባክቲክ ተቀይሯል 🌟
+            const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/place`, payload, { headers });
             
             if (response.data.success) {
                 if (!user) {
@@ -240,7 +241,6 @@ export default function Home() {
         }
     };
 
-    // 🌟 ማስተካከያ፡ ሞዳሉ ሲዘጋ ዳታው ሙሉ በሙሉ ይጠፋል (Clear History) 🌟
     const closeCheckTicketModal = () => {
         setIsCheckTicketModalOpen(false);
         setCheckInputCode('');
@@ -963,6 +963,9 @@ export default function Home() {
                                                     const btn1 = currentDisplayOdds[0];
                                                     const btnX = currentDisplayOdds[1];
                                                     const btn2 = currentDisplayOdds[2];
+                                                    
+                                                    // 🌟 አዲስ፡ ይሄ ክለብ (ወይም የክለቡ ማርኬት) ተመርጦ እንደሆነ ቼክ የሚያደርግ 🌟
+                                                    const hasSelectionInGame = betSlip.some((item: any) => item.fixture_id === game.id);
 
                                                     return (
                                                         <div key={game.id} className="flex flex-col border-b border-[#2a3038] last:border-b-0 hover:bg-[#24292e] transition-colors">
@@ -987,10 +990,11 @@ export default function Home() {
                                                                     </button>
                                                                 </div>
 
+                                                                {/* 🌟 ተስተካክሏል: ማርኬት ከተመረጠ በተኑ ወደ ቢጫ ይቀየራል 🌟 */}
                                                                 <div className="w-10 sm:w-14 flex items-center justify-center border-l border-[#2a3038] shrink-0 bg-[#1a1f24]/50">
-                                                                    <button onClick={() => setExpandedMatchId(isExpanded ? null : game.id)} className={`w-full h-full text-[10px] font-bold transition-colors flex flex-col items-center justify-center ${isExpanded ? 'bg-[#2a3038] text-white shadow-inner' : 'text-slate-400 hover:text-white hover:bg-[#2a3038]'}`}>
-                                                                        <span className="text-xs">{isExpanded ? '▲' : '▼'}</span>
-                                                                        <span>+{Object.values(categorizedMarkets).reduce((acc, cat) => acc + cat.length, 0)}</span>
+                                                                    <button onClick={() => setExpandedMatchId(isExpanded ? null : game.id)} className={`w-full h-full text-[10px] font-bold transition-colors flex flex-col items-center justify-center ${hasSelectionInGame ? 'bg-[#ffcc00] text-black shadow-inner' : isExpanded ? 'bg-[#2a3038] text-white shadow-inner' : 'text-slate-400 hover:text-white hover:bg-[#2a3038]'}`}>
+                                                                        <span className={`text-xs ${hasSelectionInGame ? 'text-black' : ''}`}>{isExpanded ? '▲' : '▼'}</span>
+                                                                        <span className={hasSelectionInGame ? 'text-black' : ''}>+{Object.values(categorizedMarkets).reduce((acc, cat) => acc + cat.length, 0)}</span>
                                                                     </button>
                                                                 </div>
                                                             </div>
