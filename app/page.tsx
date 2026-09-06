@@ -343,12 +343,6 @@ export default function Home() {
         }, 500);
     };
 
-    const handleCopyLink = () => {
-        const link = `${window.location.origin}?booking=${bookingCode}`;
-        navigator.clipboard.writeText(link);
-        alert("Link Copied!");
-    };
-
     const handleAuthSuccess = (userData: any, userToken: string) => {
         setUser(userData);
         setToken(userToken);
@@ -1358,65 +1352,83 @@ export default function Home() {
                 </div>
             )}
 
-            {/* 🌟 አዲሱ የቡኪንግ ሞዳል (Booking Modal) በምስሉ (Paper Design) መሰረት 🌟 */}
+            {/* 🌟 አዲሱ የቡኪንግ ሞዳል (Booking Modal) በምስሉ (Table Design) መሰረት 🌟 */}
             {bookingCode && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4 overflow-y-auto">
-                    <div className="bg-[#efefef] border border-gray-300 w-full max-w-md shadow-2xl relative my-auto flex flex-col animate-fade-in-down">
+                    <div className="bg-[#dfdfdf] w-full max-w-4xl shadow-2xl relative my-auto flex flex-col animate-fade-in-down rounded-sm overflow-hidden">
                         
-                        <div className="w-full pt-6 pb-4 flex flex-col items-center relative">
-                            <button onClick={() => setBookingCode(null)} className="absolute top-2 right-4 text-gray-500 hover:text-black text-2xl leading-none">✕</button>
+                        <div className="w-full bg-[#dfdfdf] p-6 pb-2 relative">
+                            <button onClick={() => setBookingCode(null)} className="absolute top-3 right-4 text-gray-500 hover:text-black text-2xl leading-none">✕</button>
                             
-                            {/* 🌟 የተጨመረው የቤቱ ስም 🌟 */}
-                            <h2 className="text-2xl font-black tracking-widest text-black mb-1 uppercase">VIBE BET</h2>
-                            
-                            <p className="text-gray-700 italic text-[15px] mb-1">Your bet has been booked</p>
-                            
-                            <div className="flex items-center gap-2 mb-4">
-                                <p className="text-[28px] font-normal text-black tracking-wide">*{bookingCode}*</p>
-                                <button onClick={() => { navigator.clipboard.writeText(bookingCode); alert("Copied!"); }} className="text-gray-600 hover:text-black text-xl transition">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1h-3a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
-                                </button>
-                            </div>
-
-                            <div className="w-full text-center text-xs text-gray-700 flex flex-col gap-1">
-                                <p className="text-gray-500 mb-0.5">BETING DATE</p>
-                                <p className="text-black mb-1.5">{new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
-                                
-                                <p className="text-gray-500 mb-0.5">TOTAL STAKE</p>
-                                <p className="text-black mb-1.5">{stake.toFixed(2)}</p>
-                                
-                                <p className="text-gray-500 mb-0.5">WIN AMOUNT</p>
-                                <p className="text-black">{grossWin.toFixed(2)}</p>
-                            </div>
-                        </div>
-
-                        <div className="w-full bg-[#dfdfdf] text-center py-2.5">
-                            <p className="text-[13px] text-gray-700 tracking-wide font-medium">EVENTS PLAYED</p>
-                        </div>
-
-                        {/* List without borders, pure paper look */}
-                        <div className="w-full bg-[#f4f4f4] px-4 py-2 flex flex-col">
-                            {betSlip.map((item, idx) => (
-                                <div key={idx} className="flex justify-between items-center py-3 border-b border-gray-200 border-dashed last:border-0">
-                                    <div className="flex flex-col text-[13px] text-gray-800 text-center items-center">
-                                        <span className="leading-tight">{item.home_team}</span>
-                                        <span className="leading-tight">{item.away_team}</span>
-                                        <span className="text-[11px] text-gray-600 mt-1">{new Date(item.match_time).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} {new Date(item.match_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                                    </div>
-                                    <div className="text-[13px] text-gray-800 flex items-center gap-2">
-                                        {/* 🌟 ተስተካክሏል: Match Result የሚል ጽሁፍ ተጨምሯል 🌟 */}
-                                        <span>Match Result {item.odd_name === '1' ? 'W1' : item.odd_name === '2' ? 'W2' : item.odd_name}</span>
-                                        <span className="font-medium">{item.odd_value.toFixed(2)}</span>
+                            <div className="flex flex-col md:flex-row justify-between items-center md:items-end gap-6 mb-2">
+                                <div className="text-center md:text-left">
+                                    <p className="text-gray-700 italic text-[17px] mb-1">Your bet has been booked</p>
+                                    <div className="flex items-center justify-center md:justify-start gap-2">
+                                        <p className="text-[32px] font-medium text-black tracking-wider">*{bookingCode}*</p>
+                                        <button onClick={() => { navigator.clipboard.writeText(bookingCode); alert("Copied!"); }} className="text-gray-700 hover:text-black transition">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1h-3a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
+                                        </button>
                                     </div>
                                 </div>
-                            ))}
+
+                                <div className="flex gap-10 text-center text-sm">
+                                    <div>
+                                        <p className="text-[#1c2024] font-bold mb-1 uppercase tracking-wide">BETING DATE</p>
+                                        <p className="text-gray-700 font-medium text-[15px]">{new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[#1c2024] font-bold mb-1 uppercase tracking-wide">TOTAL STAKE</p>
+                                        <p className="text-gray-700 font-medium text-[15px]">{stake.toFixed(2)}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[#1c2024] font-bold mb-1 uppercase tracking-wide">WIN AMOUNT</p>
+                                        <p className="text-gray-700 font-medium text-[15px]">{grossWin.toFixed(2)}</p>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        <div className="w-full bg-[#dfdfdf] flex p-4 gap-4">
-                            <button onClick={() => setBookingCode(null)} className="flex-1 bg-[#d0d0d0] hover:bg-[#c0c0c0] text-gray-700 text-sm font-medium py-2.5 rounded transition shadow-sm border border-gray-300">
+                        <div className="w-full px-4 md:px-6">
+                            <div className="w-full border border-gray-300 bg-white">
+                                <div className="grid grid-cols-12 bg-[#1c2024] text-white text-xs font-bold text-center border-b border-gray-300">
+                                    <div className="col-span-3 py-3 border-r border-[#3b4148]">Event Date</div>
+                                    <div className="col-span-3 py-3 border-r border-[#3b4148]">Tournament</div>
+                                    <div className="col-span-3 py-3 border-r border-[#3b4148]">Event</div>
+                                    <div className="col-span-2 py-3 border-r border-[#3b4148]">Market</div>
+                                    <div className="col-span-1 py-3 text-[#ffcc00]">Odd</div>
+                                </div>
+
+                                <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                                    {betSlip.map((item, idx) => {
+                                        const matchDate = new Date(item.match_time);
+                                        const dateStr = `${matchDate.getFullYear()}-${String(matchDate.getMonth()+1).padStart(2,'0')}-${String(matchDate.getDate()).padStart(2,'0')}T${String(matchDate.getHours()).padStart(2,'0')}:${String(matchDate.getMinutes()).padStart(2,'0')}:00`;
+                                        
+                                        let marketText = item.odd_name;
+                                        if (['1', 'X', '2'].includes(item.odd_name)) {
+                                            marketText = `Match Result: ${item.odd_name === '1' ? 'W1' : item.odd_name === '2' ? 'W2' : 'Draw'}`;
+                                        } else if (['1X', '12', 'X2'].includes(item.odd_name)) {
+                                            marketText = `Double Chance: ${item.odd_name}`;
+                                        }
+
+                                        return (
+                                            <div key={idx} className="grid grid-cols-12 text-center text-[13px] text-gray-800 border-b border-gray-200 hover:bg-gray-50 transition-colors">
+                                                <div className="col-span-3 py-3 px-2 border-r border-gray-200 truncate">{dateStr}</div>
+                                                <div className="col-span-3 py-3 px-2 border-r border-gray-200 truncate" title={item.league_name}>{item.league_name}</div>
+                                                <div className="col-span-3 py-3 px-2 border-r border-gray-200 truncate" title={`${item.home_team} - ${item.away_team}`}>{item.home_team} - {item.away_team}</div>
+                                                <div className="col-span-2 py-3 px-2 border-r border-gray-200 truncate">{marketText}</div>
+                                                <div className="col-span-1 py-3 px-2 font-medium">{item.odd_value.toFixed(2)}</div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="w-full bg-[#dfdfdf] flex p-4 md:px-6 md:py-4 gap-4 mt-2">
+                            <button onClick={() => setBookingCode(null)} className="bg-[#d2d2d2] hover:bg-[#c2c2c2] text-black text-[13px] font-bold px-6 py-2.5 transition shadow-sm border border-gray-300">
                                 REPEAT BET
                             </button>
-                            <button onClick={handlePrintBooking} className="flex-1 bg-[#d0d0d0] hover:bg-[#c0c0c0] text-gray-700 text-sm font-medium py-2.5 rounded transition shadow-sm border border-gray-300 flex items-center justify-center gap-2">
+                            <button onClick={handlePrintBooking} className="bg-[#d2d2d2] hover:bg-[#c2c2c2] text-black text-[13px] font-bold px-6 py-2.5 transition shadow-sm border border-gray-300 flex items-center justify-center gap-2">
                                 PRINT 🖨️
                             </button>
                         </div>
