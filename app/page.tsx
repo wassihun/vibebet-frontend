@@ -179,7 +179,7 @@ export default function Home() {
                 } else {
                     alert(`ትኬትዎ በተሳካ ሁኔታ ተቆርጧል!`);
                     setUser({ ...user, current_balance: (user.current_balance || 0) - stake });
-                    setBetSlip([]); // User bet is fully placed, clear slip.
+                    setBetSlip([]); 
                 }
                 setPlacedBetSignatures(prev => [...prev, currentBetSignature]);
                 if(window.innerWidth < 1024 && user) setIsMobileBetSlipOpen(false); 
@@ -695,17 +695,13 @@ export default function Home() {
                         🔍 <span className="hidden sm:inline">ትኬት አረጋግጥ</span>
                     </button>
 
-                    {user ? (
+                    {user && (
                         <div className="flex items-center gap-3 bg-black/10 border border-black/20 px-3 py-1.5 rounded-full">
                             <span className="hidden sm:inline text-xs font-bold text-black">{user.username}</span>
                             <span className="text-xs font-black text-black sm:border-l border-black/30 sm:pl-2">
                                 {(user.current_balance || 0).toFixed(2)} Br
                             </span>
                             <button onClick={handleLogout} className="text-xs font-bold text-black hover:underline ml-2">Logout</button>
-                        </div>
-                    ) : (
-                        <div className="flex gap-2">
-                            <button onClick={() => { setAuthMode('login'); setIsAuthModalOpen(true); }} className="text-xs font-bold text-black flex items-center gap-1 bg-white hover:bg-gray-100 px-3 py-1.5 rounded transition-colors shadow-sm">👤 Login</button>
                         </div>
                     )}
                 </div>
@@ -1321,7 +1317,7 @@ export default function Home() {
                                                 </div>
                                             </div>
 
-                                            {/* Events List (Image 2 Redesign) */}
+                                            {/* Events List */}
                                             <div className="space-y-2 mb-2">
                                                 {checkedTicketData.selections?.map((item: any, i: number) => {
                                                     const isWon = item.match_status === 'won'; 
@@ -1362,73 +1358,62 @@ export default function Home() {
                 </div>
             )}
 
-            {/* 🌟 አዲሱ የቡኪንግ ሞዳል (Booking Modal) በምስሉ መሰረት 🌟 */}
+            {/* 🌟 አዲሱ የቡኪንግ ሞዳል (Booking Modal) በምስሉ (Paper Design) መሰረት 🌟 */}
             {bookingCode && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md animate-fade-in p-4">
-                    <div className="bg-[#1a1f24] border border-[#ffcc00]/50 rounded-xl w-full max-w-sm shadow-[0_0_30px_rgba(255,204,0,0.15)] relative flex flex-col items-center animate-fade-in-down overflow-hidden">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4 overflow-y-auto">
+                    <div className="bg-[#efefef] border border-gray-300 w-full max-w-md shadow-2xl relative my-auto flex flex-col animate-fade-in-down">
                         
-                        <div className="w-full bg-[#ffcc00] text-black text-center py-2 relative">
-                            <h3 className="font-black uppercase tracking-widest text-sm">Vibe Bet Booking</h3>
-                            <button onClick={() => setBookingCode(null)} className="absolute top-1 right-3 text-black/60 hover:text-black text-2xl leading-none">×</button>
+                        <div className="w-full pt-6 pb-4 flex flex-col items-center relative">
+                            <button onClick={() => setBookingCode(null)} className="absolute top-2 right-4 text-gray-500 hover:text-black text-2xl leading-none">✕</button>
+                            
+                            <p className="text-gray-700 italic text-[15px] mb-1">Your bet has been booked</p>
+                            
+                            <div className="flex items-center gap-2 mb-4">
+                                <p className="text-[28px] font-normal text-black tracking-wide">*{bookingCode}*</p>
+                                <button onClick={() => { navigator.clipboard.writeText(bookingCode); alert("Copied!"); }} className="text-gray-600 hover:text-black text-xl transition">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1h-3a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
+                                </button>
+                            </div>
+
+                            <div className="w-full text-center text-xs text-gray-700 flex flex-col gap-1">
+                                <p className="text-gray-500 mb-0.5">BETING DATE</p>
+                                <p className="text-black mb-1.5">{new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
+                                
+                                <p className="text-gray-500 mb-0.5">TOTAL STAKE</p>
+                                <p className="text-black mb-1.5">{stake.toFixed(2)}</p>
+                                
+                                <p className="text-gray-500 mb-0.5">WIN AMOUNT</p>
+                                <p className="text-black">{grossWin.toFixed(2)}</p>
+                            </div>
                         </div>
 
-                        <div className="w-full p-5 flex flex-col items-center">
-                            <p className="text-slate-400 italic text-[11px] mb-1">Your bet has been booked</p>
-                            
-                            <div className="flex items-center gap-3 mb-4">
-                                <p className="text-3xl font-black text-white tracking-widest">*<span className="text-[#ffcc00]">{bookingCode}</span>*</p>
-                                <button onClick={() => { navigator.clipboard.writeText(bookingCode); alert("Copied!"); }} className="text-slate-400 hover:text-white text-xl bg-[#24292e] p-2 rounded-lg border border-[#3b4148] transition">
-                                    📋
-                                </button>
-                            </div>
+                        <div className="w-full bg-[#dfdfdf] text-center py-2.5">
+                            <p className="text-[13px] text-gray-700 tracking-wide font-medium">EVENTS PLAYED</p>
+                        </div>
 
-                            <div className="w-full flex justify-between text-center text-[10px] text-slate-400 border-y border-[#3b4148] py-3 mb-4">
-                                <div>
-                                    <p className="mb-1">BETTING DATE</p>
-                                    <p className="text-white font-bold text-xs">{new Date().toLocaleDateString('en-GB')}</p>
+                        {/* List without borders, pure paper look */}
+                        <div className="w-full bg-[#f4f4f4] px-4 py-2 flex flex-col">
+                            {betSlip.map((item, idx) => (
+                                <div key={idx} className="flex justify-between items-center py-3 border-b border-gray-200 border-dashed last:border-0">
+                                    <div className="flex flex-col text-[13px] text-gray-800">
+                                        <span className="leading-tight">{item.home_team}</span>
+                                        <span className="leading-tight">{item.away_team}</span>
+                                        <span className="text-[11px] text-gray-600 mt-1">{new Date(item.match_time).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} {new Date(item.match_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                    </div>
+                                    <div className="text-[13px] text-gray-800 flex items-center gap-2">
+                                        <span>{item.odd_name}</span>
+                                        <span>{item.odd_value.toFixed(2)}</span>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p className="mb-1">TOTAL STAKE</p>
-                                    <p className="text-white font-bold text-xs">{stake.toFixed(2)}</p>
-                                </div>
-                                <div>
-                                    <p className="mb-1">WIN AMOUNT</p>
-                                    <p className="text-[#00e700] font-bold text-xs">{grossWin.toFixed(2)}</p>
-                                </div>
-                            </div>
+                            ))}
+                        </div>
 
-                            <div className="w-full bg-[#0d1117] rounded-lg border border-[#3b4148] overflow-hidden mb-5">
-                                <div className="bg-[#24292e] text-center py-1.5 border-b border-[#3b4148]">
-                                    <p className="text-[10px] font-bold text-slate-400 tracking-widest">EVENTS PLAYED</p>
-                                </div>
-                                <div className="max-h-[160px] overflow-y-auto custom-scrollbar p-3 space-y-3">
-                                    {betSlip.map(item => (
-                                        <div key={item.odd_id} className="flex justify-between items-center border-b border-[#2a3038] last:border-0 pb-2 last:pb-0">
-                                            <div className="flex flex-col">
-                                                <span className="text-[11px] font-bold text-slate-200 leading-tight">{item.home_team}</span>
-                                                <span className="text-[11px] font-bold text-slate-200 leading-tight">{item.away_team}</span>
-                                                <span className="text-[9px] text-slate-500 mt-0.5">{new Date(item.match_time).toLocaleDateString('en-GB')} {new Date(item.match_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className="text-[10px] text-slate-400">Pick: <span className="font-bold text-white">{item.odd_name}</span></p>
-                                                <p className="text-xs font-black text-[#ffcc00] mt-0.5">{item.odd_value}</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="w-full flex gap-2 mb-3">
-                                <button onClick={() => setBookingCode(null)} className="flex-1 bg-[#24292e] hover:bg-[#2a3038] text-white text-xs font-bold py-3 rounded border border-[#3b4148] transition shadow-sm">
-                                    🔄 REPEAT BET
-                                </button>
-                                <button onClick={handlePrintBooking} className="flex-1 bg-[#24292e] hover:bg-[#2a3038] text-white text-xs font-bold py-3 rounded border border-[#3b4148] transition shadow-sm flex items-center justify-center gap-2">
-                                    🖨️ PRINT
-                                </button>
-                            </div>
-                            
-                            <button onClick={handleCopyLink} className="bg-white hover:bg-slate-200 text-black text-xs font-bold py-2 px-6 rounded-full transition flex items-center gap-2 shadow-md">
-                                🔗 Copy link
+                        <div className="w-full bg-[#dfdfdf] flex p-4 gap-4">
+                            <button onClick={() => setBookingCode(null)} className="flex-1 bg-[#d0d0d0] hover:bg-[#c0c0c0] text-gray-700 text-sm font-medium py-2.5 rounded transition shadow-sm border border-gray-300">
+                                REPEAT BET
+                            </button>
+                            <button onClick={handlePrintBooking} className="flex-1 bg-[#d0d0d0] hover:bg-[#c0c0c0] text-gray-700 text-sm font-medium py-2.5 rounded transition shadow-sm border border-gray-300 flex items-center justify-center gap-2">
+                                PRINT 🖨️
                             </button>
                         </div>
                     </div>
