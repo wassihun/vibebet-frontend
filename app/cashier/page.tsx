@@ -240,7 +240,6 @@ export default function CashierDashboard() {
 
     const openPrintModal = () => { setIsPrintModalOpen(true); };
 
-    // 🌟 ማስተካከያ: ወረቀት ለመቆጠብ የፕሪንት ዲዛይኑ በጣም ጠቧል እና አነስ ብሏል 🌟
     const handleCustomPrint = (ticketDetails: any) => {
         const printFrame = document.createElement('iframe');
         printFrame.style.position = 'fixed';
@@ -282,7 +281,6 @@ export default function CashierDashboard() {
                     h1 { font-size: 20px; margin: 2px 0 1px 0; letter-spacing: 0.5px; }
                     .small-text { font-size: 9px; margin-bottom: 1px;}
                     
-                    /* 🌟 የሊግ ስም እና ሰዓት ዲዛይን 🌟 */
                     .league-time { 
                         display: flex; 
                         justify-content: space-between; 
@@ -295,7 +293,6 @@ export default function CashierDashboard() {
                         font-weight: normal !important; 
                     }
                     
-                    /* 🌟 የጨዋታው (የክለቦቹ) ስም ደማቅ 🌟 */
                     .m-match { 
                         font-size: 11px !important; 
                         font-weight: 900 !important; 
@@ -622,7 +619,7 @@ export default function CashierDashboard() {
 
                         {activeTab === 'new' && (
                             <div className="bg-[#24292e] p-6 rounded-xl border border-[#3b4148] shadow-sm flex-1 flex flex-col">
-                                <h2 className="text-xl font-black text-white mb-5 flex items-center gap-2"><span>🔍</span> ቡኪንግ ኮድ መፈለጊያ</h2>
+                                <h2 className="text-xl font-black text-white mb-5 flex items-center gap-2"><span>🔍</span> ትኬት መቁረጫ</h2>
                                 <form onSubmit={searchTicket} className="flex gap-3 mb-6 shrink-0">
                                     <input 
                                         type="text" value={searchCode} onChange={(e) => setSearchCode(e.target.value.trim().toUpperCase())}
@@ -635,40 +632,40 @@ export default function CashierDashboard() {
                                 </form>
 
                                 {ticketData && (
-                                    <div className="flex-1 flex flex-col bg-[#1c2024] border border-[#3b4148] rounded-xl p-5 animate-fade-in-down shadow-inner overflow-hidden">
-                                        <div className="flex justify-between items-end border-b border-[#3b4148] pb-4 mb-4 shrink-0">
+                                    <div className="flex-1 flex flex-col bg-[#f5f5f5] border border-gray-300 rounded-lg p-3 animate-fade-in-down shadow-md overflow-hidden text-black mx-auto w-full max-w-2xl">
+                                        <div className="flex justify-between items-end border-b border-gray-300 pb-2 mb-2 shrink-0">
                                             <div>
-                                                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1">Booking Code</p>
-                                                <p className="text-2xl font-mono font-black text-[#ffcc00] tracking-widest bg-[#ffcc00]/10 px-3 py-1 rounded-md border border-[#ffcc00]/20 inline-block">
+                                                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Booking Code</p>
+                                                <p className="text-lg font-mono font-black text-black tracking-widest bg-white px-2 py-0.5 rounded border border-gray-300 inline-block shadow-sm">
                                                     {ticketData.booking_code === 'REBOOK' ? '🔄 REBOOK' : ticketData.booking_code}
                                                 </p>
                                             </div>
-                                            <div className="text-right flex flex-col gap-2">
-                                                <p className="text-[12px] font-bold text-slate-400">Total Odds: <span className="text-white text-base font-black ml-1">{ticketData.total_odds}</span></p>
-                                                <div className="flex items-center justify-end gap-2 bg-[#24292e] p-2 rounded-lg border border-[#3b4148] shadow-inner">
-                                                    <span className="text-[11px] font-bold text-slate-400 uppercase">Stake:</span>
+                                            <div className="text-right flex flex-col gap-1">
+                                                <p className="text-[11px] font-bold text-gray-600">Total Odds: <span className="text-black text-sm font-black ml-1">{ticketData.total_odds}</span></p>
+                                                <div className="flex items-center justify-end gap-1 bg-white p-1 rounded border border-gray-300 shadow-sm">
+                                                    <span className="text-[10px] font-bold text-gray-600 uppercase">Stake:</span>
                                                     {!ticketData.ticket_number ? (
                                                         <input 
                                                             type="number" 
                                                             value={ticketData.stake_amount || ''} 
                                                             onChange={(e) => handleStakeChange(e.target.value)}
-                                                            className="w-20 bg-transparent border-b-2 border-dashed border-[#ffcc00] text-[#ffcc00] font-black text-base outline-none text-center focus:border-solid transition-colors"
+                                                            className="w-16 bg-transparent border-b border-dashed border-gray-400 text-black font-black text-sm outline-none text-center focus:border-solid transition-colors"
                                                         />
                                                     ) : (
-                                                        <span className="text-white text-base font-black px-2">{ticketData.stake_amount}</span>
+                                                        <span className="text-black text-sm font-black px-1">{ticketData.stake_amount}</span>
                                                     )}
-                                                    <span className="text-[11px] font-bold text-slate-400">Br</span>
+                                                    <span className="text-[10px] font-bold text-gray-600">Br</span>
                                                 </div>
                                             </div>
                                         </div>
 
                                         {hasStartedGames && !ticketData.ticket_number && (
-                                            <div className="bg-red-500/10 text-red-400 p-3 rounded-lg text-xs font-bold mb-4 flex items-center border border-red-500/30 animate-pulse shrink-0">
+                                            <div className="bg-red-100 text-red-600 p-2 rounded text-[10px] font-bold mb-2 flex items-center border border-red-200 animate-pulse shrink-0">
                                                 <span>⚠️ የጀመሩ ጨዋታዎች አሉ! ማረጋገጥ አይችሉም (ከጨዋታው ይቀንሱ)።</span>
                                             </div>
                                         )}
 
-                                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 mb-4 space-y-2.5">
+                                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 mb-2 space-y-1">
                                             {ticketData.selections?.map((item: any, idx: number) => {
                                                 const now = new Date();
                                                 const matchTime = item.commence_time ? new Date(item.commence_time) : null;
@@ -686,34 +683,36 @@ export default function CashierDashboard() {
                                                 }
 
                                                 return (
-                                                    <div key={idx} className={`p-3 rounded-xl border flex justify-between items-center transition shadow-sm ${hasStarted && !ticketData.ticket_number ? 'bg-red-500/10 border-red-500/50' : 'bg-[#24292e] border-[#3b4148]'}`}>
-                                                        <div className="w-full">
-                                                            <div className="flex justify-between items-center mb-1">
-                                                                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider truncate max-w-[70%]">{lName}</span>
-                                                                <span className="text-[9px] text-[#ffcc00] font-black shrink-0">{mTime}</span>
+                                                    <div key={idx} className={`p-1.5 rounded border flex justify-between items-center transition shadow-sm ${hasStarted && !ticketData.ticket_number ? 'bg-red-50 border-red-300' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
+                                                        <div className="w-full flex-1">
+                                                            <div className="flex justify-between items-center mb-0.5">
+                                                                <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider truncate max-w-[70%]">{lName}</span>
+                                                                <span className="text-[9px] text-gray-800 font-black shrink-0">{mTime}</span>
                                                             </div>
-                                                            <p className="font-bold text-sm text-white flex items-center gap-2 mb-1">
-                                                                {item.match_info || item.home_team + ' vs ' + item.away_team}
-                                                                {hasStarted && !ticketData.ticket_number && <span className="text-[9px] text-white bg-red-500 px-2 py-0.5 rounded uppercase font-black animate-pulse">Started</span>}
-                                                            </p>
-                                                            <p className="text-[11px] text-slate-400 font-bold">Pick: <span className="text-[#ffcc00] font-black ml-1">{item.odd_name}</span> <span className="text-slate-500 ml-1">(@{item.odd_value})</span></p>
+                                                            <div className="flex justify-between items-center">
+                                                                <p className="font-bold text-[11px] text-black flex items-center gap-1">
+                                                                    {item.match_info || item.home_team + ' vs ' + item.away_team}
+                                                                    {hasStarted && !ticketData.ticket_number && <span className="text-[8px] text-white bg-red-500 px-1 rounded uppercase font-black animate-pulse">Started</span>}
+                                                                </p>
+                                                            </div>
+                                                            <p className="text-[10px] text-gray-600 font-bold mt-0.5">Pick: <span className="text-black font-black">{item.odd_name}</span> <span className="text-gray-500">(@{item.odd_value})</span></p>
                                                         </div>
                                                         {!ticketData.ticket_number && (
-                                                            <button onClick={() => handleRemoveGame(idx)} className="ml-3 shrink-0 w-8 h-8 rounded-lg bg-[#1a1f24] border border-[#3b4148] text-slate-400 hover:bg-red-500 hover:text-white hover:border-red-500 flex justify-center items-center font-black text-sm transition">✕</button>
+                                                            <button onClick={() => handleRemoveGame(idx)} className="ml-2 shrink-0 w-6 h-6 rounded bg-gray-100 border border-gray-300 text-gray-500 hover:bg-red-500 hover:text-white hover:border-red-500 flex justify-center items-center font-black text-xs transition">✕</button>
                                                         )}
                                                     </div>
                                                 );
                                             })}
                                         </div>
 
-                                        <div className="flex justify-between items-center bg-gradient-to-r from-[#1a1f24] to-[#24292e] p-5 rounded-xl border border-[#3b4148] shrink-0 mb-4 shadow-sm">
+                                        <div className="flex justify-between items-center bg-gray-200 p-2.5 rounded border border-gray-300 shrink-0 mb-2 shadow-sm">
                                             <div>
-                                                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">ከ 10 ብር ክፍያ ጋር የሚቀበሉ</p>
-                                                <p className="text-2xl font-black text-[#ffcc00]">{(parseFloat(ticketData.stake_amount || 0) + 10).toFixed(2)} Br</p>
+                                                <p className="text-[9px] font-bold text-gray-600 uppercase tracking-widest mb-0.5">ከ 10 ብር ክፍያ ጋር የሚቀበሉ</p>
+                                                <p className="text-lg font-black text-black">{(parseFloat(ticketData.stake_amount || 0) + 10).toFixed(2)} Br</p>
                                             </div>
                                             <div className="text-right">
-                                                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">የሚያሸንፈው (Potential Win)</p>
-                                                <p className="text-2xl font-black text-[#00e700]">{parseFloat(ticketData.potential_win || 0).toFixed(2)} Br</p>
+                                                <p className="text-[9px] font-bold text-gray-600 uppercase tracking-widest mb-0.5">የሚያሸንፈው (Potential Win)</p>
+                                                <p className="text-lg font-black text-green-700">{parseFloat(ticketData.potential_win || 0).toFixed(2)} Br</p>
                                             </div>
                                         </div>
 
@@ -722,12 +721,12 @@ export default function CashierDashboard() {
                                                 <button 
                                                     onClick={handleSubmitAndPrint} 
                                                     disabled={isLoading}
-                                                    className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-[#3b4148] disabled:text-slate-500 text-white font-black py-4 rounded-xl text-lg transition transform active:scale-[0.98] tracking-widest flex items-center justify-center gap-2 shadow-md"
+                                                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:text-gray-200 text-white font-black py-2.5 rounded text-sm transition transform active:scale-[0.98] tracking-widest flex items-center justify-center gap-2 shadow-md"
                                                 >
-                                                    {isLoading ? '...' : `አትም (SUBMIT & PRINT)`} <span className="text-xs bg-black/20 px-2 py-0.5 rounded ml-2">F2</span>
+                                                    {isLoading ? '...' : `አትም (SUBMIT & PRINT)`} <span className="text-[10px] bg-black/20 px-1.5 py-0.5 rounded ml-1">F2</span>
                                                 </button>
                                             ) : (
-                                                <div className="w-full bg-[#24292e] text-[#00e700] font-black text-base py-4 rounded-xl flex items-center justify-center gap-2 border border-[#00e700]/30 animate-pulse">
+                                                <div className="w-full bg-green-100 text-green-700 font-black text-sm py-2.5 rounded flex items-center justify-center gap-2 border border-green-300 animate-pulse">
                                                     ✅ ትኬቱ እየታተመ ነው...
                                                 </div>
                                             )}
@@ -752,7 +751,7 @@ export default function CashierDashboard() {
                                 </form>
 
                                 {payoutDetails && (
-                                    <div className="flex-1 flex flex-col bg-[#1c2024] border border-[#3b4148] rounded-xl p-5 animate-fade-in-down shadow-inner overflow-hidden">
+                                    <div className="flex-1 flex flex-col bg-[#1c2024] border border-[#3b4148] rounded-xl p-5 animate-fade-in-down shadow-inner overflow-hidden max-w-3xl mx-auto w-full">
                                         <div className="flex justify-between items-end border-b border-[#3b4148] pb-4 mb-4 shrink-0">
                                             <div>
                                                 <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1">Ticket Number</p>
@@ -776,42 +775,43 @@ export default function CashierDashboard() {
                                             </div>
                                         </div>
 
-                                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 mb-4 space-y-2.5">
-                                            {payoutDetails.selections?.map((item: any, i: number) => {
-                                                const isWon = item.match_status === 'won'; 
-                                                const isLost = item.match_status === 'lost'; 
+                                        {/* 🌟 ማስተካከያ፡ የውጤት ዝርዝር በምስሉ (Paper style) መሰረት 🌟 */}
+                                        <div className="flex-1 overflow-y-auto custom-scrollbar mb-4">
+                                            <div className="bg-white border border-gray-300 rounded overflow-hidden shadow-sm">
+                                                {payoutDetails.selections?.map((item: any, i: number) => {
+                                                    const isWon = item.match_status === 'won'; 
+                                                    const isLost = item.match_status === 'lost'; 
+                                                    const icon = isWon ? '👍' : isLost ? '👎' : '🕒';
+                                                    const iconColor = isWon ? 'text-green-600' : isLost ? 'text-red-600' : 'text-gray-500';
+                                                    
+                                                    const teams = item.match_info.split(' vs ');
+                                                    const homeTeam = teams[0] || 'Home';
+                                                    const awayTeam = teams[1] || 'Away';
+                                                    
+                                                    const score = item.score || (isWon || isLost ? 'FT' : '-:-');
+                                                    const mTime = new Date(item.match_time || new Date()).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute:'2-digit' }).replace(',', '');
 
-                                                const matchDetails = fixtures.find((f: any) => f.id === item.fixture_id);
-                                                let lName = "Soccer";
-                                                let mTime = "";
-                                                if (matchDetails) {
-                                                    lName = getLeagueDetails(matchDetails.sport_key || matchDetails.league).name;
-                                                    mTime = new Date(matchDetails.commence_time || matchDetails.match_time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' });
-                                                } else if (item.match_time || item.commence_time) {
-                                                    mTime = new Date(item.match_time || item.commence_time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' });
-                                                    lName = item.league_name || "Soccer";
-                                                }
-
-                                                return (
-                                                    <div key={i} className={`p-3.5 rounded-xl border flex flex-col justify-between transition shadow-sm ${isWon ? 'bg-[#00e700]/10 border-[#00e700]/40' : isLost ? 'bg-red-500/10 border-red-500/40' : 'bg-[#24292e] border-[#3b4148]'}`}>
-                                                        <div className="flex justify-between items-center mb-1.5 w-full">
-                                                            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{lName}</span>
-                                                            <span className="text-[9px] text-slate-400 font-bold">{mTime}</span>
-                                                        </div>
-                                                        <div className="flex justify-between items-end w-full">
-                                                            <div>
-                                                                <p className={`font-bold text-sm mb-1 ${isWon ? 'text-[#00e700]' : isLost ? 'text-red-400' : 'text-white'}`}>{item.match_info}</p>
-                                                                <p className="text-[11px] text-slate-400 font-bold">Pick: <span className="font-black text-white ml-1">{item.odd_name}</span> <span className="opacity-70 ml-1">(@{item.odd_value})</span></p>
+                                                    return (
+                                                        <div key={i} className="border-b-2 border-gray-300 last:border-b-0 p-2.5">
+                                                            <div className="flex justify-between items-center text-[11px] font-black text-gray-800 uppercase">
+                                                                <span>{homeTeam}</span>
+                                                                <span className="font-normal text-[10px] text-gray-500">{mTime}</span>
                                                             </div>
-                                                            <div className="flex items-center gap-2">
-                                                                <div className={`font-black text-xs w-[90px] text-right uppercase tracking-wider ${isWon ? 'text-[#00e700]' : isLost ? 'text-red-500' : 'text-slate-400'}`}>
-                                                                    {isWon ? '✅ አሸነፈ' : isLost ? '❌ ተበላ' : '⏳ PENDING'}
+                                                            <div className="flex justify-between items-center text-[11px] font-black text-gray-800 uppercase mt-0.5">
+                                                                <span>{awayTeam}</span>
+                                                                <span>{score}</span>
+                                                            </div>
+                                                            <div className="flex justify-between items-center text-[10px] text-gray-600 mt-2">
+                                                                <span>{item.odd_name && ['1','X','2'].includes(item.odd_name) ? `Match Result: ${item.odd_name}` : `Pick: ${item.odd_name}`}</span>
+                                                                <div className="flex items-center gap-1.5 font-bold">
+                                                                    <span className="text-blue-600 text-[11px]">{parseFloat(item.odd_value).toFixed(2)}</span>
+                                                                    <span className={`text-sm ${iconColor}`}>{icon}</span>
                                                                 </div>
                                                             </div>
                                                         </div>
-                                                    </div>
-                                                );
-                                            })}
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
 
                                         <div className="flex justify-between items-center bg-gradient-to-r from-[#1a1f24] to-[#24292e] p-5 rounded-xl border border-[#3b4148] shrink-0 shadow-sm">
@@ -825,7 +825,6 @@ export default function CashierDashboard() {
                                             </div>
                                         </div>
 
-                                        {/* 🌟 ማስተካከያ፡ የክፈል (Pay) በተን ሁሌም ይታያል፣ ነገር ግን ካላሸነፈ Inactive (Disabled) ይሆናል 🌟 */}
                                         <div className="shrink-0 mt-4">
                                             <button 
                                                 onClick={handleConfirmPayout} 
@@ -892,7 +891,8 @@ export default function CashierDashboard() {
                                             </div>
                                         </div>
 
-                                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 shrink-0 mt-auto">
+                                        {/* 🌟 ማስተካከያ፡ ጠቅላላ ትርፍ (Gross Profit) ተጨምሯል 🌟 */}
+                                        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 shrink-0 mt-auto">
                                             <div className="bg-gradient-to-br from-[#1a1f24] to-[#24292e] border border-[#3b4148] p-6 rounded-xl flex items-center justify-between shadow-md">
                                                 <div>
                                                     <p className="text-sm font-black text-slate-300 uppercase tracking-widest mb-1">ንፁህ ትርፍ</p>
@@ -900,12 +900,21 @@ export default function CashierDashboard() {
                                                 </div>
                                                 <p className="text-3xl font-black text-[#00bfff]">{Number(cashierReport.net_profit).toLocaleString()} Br</p>
                                             </div>
+                                            
                                             <div className="bg-gradient-to-br from-red-500/10 to-red-500/5 border border-red-500/30 p-6 rounded-xl flex items-center justify-between shadow-md">
                                                 <div>
-                                                    <p className="text-sm font-black text-red-400 uppercase tracking-widest mb-1">ያልተከፈለ የተበላ ገንዘብ</p>
+                                                    <p className="text-sm font-black text-red-400 uppercase tracking-widest mb-1">ያልተከፈለ ዕዳ</p>
                                                     <p className="text-[11px] font-bold text-red-300">በእርስዎ የተቆረጡ ያልተከፈሉ</p>
                                                 </div>
                                                 <p className="text-3xl font-black text-red-500">{Number(cashierReport.unpaid_winnings).toLocaleString()} Br</p>
+                                            </div>
+
+                                            <div className="bg-gradient-to-br from-green-500/10 to-green-500/5 border border-green-500/30 p-6 rounded-xl flex items-center justify-between shadow-md">
+                                                <div>
+                                                    <p className="text-sm font-black text-green-400 uppercase tracking-widest mb-1">ጠቅላላ ትርፍ</p>
+                                                    <p className="text-[11px] font-bold text-green-300">ትኬት + ገቢ - የተከፈለ</p>
+                                                </div>
+                                                <p className="text-3xl font-black text-green-500">{((cashierReport.total_tickets * 10) + Number(cashierReport.total_revenue) - Number(cashierReport.total_paid)).toLocaleString()} Br</p>
                                             </div>
                                         </div>
                                     </div>
