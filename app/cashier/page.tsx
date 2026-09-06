@@ -143,7 +143,7 @@ export default function CashierDashboard() {
 
     const fetchRecentTickets = async () => {
         try {
-            const res = await axios.get('${process.env.NEXT_PUBLIC_API_URL}/api/tickets/history', { headers: { Authorization: `Bearer ${token}` } });
+            const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/history`, { headers: { Authorization: `Bearer ${token}` } });
             if (res.data.success) setRecentTickets(res.data.data);
         } catch (err) { console.error("History fetch error"); }
     };
@@ -160,7 +160,7 @@ export default function CashierDashboard() {
         setLoginError('');
         setIsLoggingIn(true);
         try {
-            const res = await axios.post('${process.env.NEXT_PUBLIC_API_URL}/api/auth/login', { username: username.trim(), password });
+            const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/login`, { username: username.trim(), password });
             if (res.data.success && (res.data.user.role === 'cashier' || res.data.user.role === 'admin')) {
                 setToken(res.data.token);
                 setUsername(res.data.user.username);
@@ -462,7 +462,7 @@ export default function CashierDashboard() {
         setIsPayingOut(true);
         const tNum = payoutDetails.ticket_number || payoutDetails.booking_code;
         try {
-            const res = await axios.post('${process.env.NEXT_PUBLIC_API_URL}/api/tickets/payout', 
+            const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/payout`, 
                 { ticket_number: tNum }, { headers: { Authorization: `Bearer ${token}` } });
             setMessage({ type: 'success', text: `${res.data.message}! የተከፈለው: ${payoutDetails.potential_win} ብር` });
             setPayoutDetails(null); setPayoutTicket('');
@@ -474,7 +474,7 @@ export default function CashierDashboard() {
         if (!payoutDetails || !window.confirm("እርግጠኛ ነዎት ይህንን ትኬት መሰረዝ (Void ማድረግ) ይፈልጋሉ?")) return;
         const tNum = payoutDetails.ticket_number || payoutDetails.booking_code;
         try {
-            const res = await axios.post('${process.env.NEXT_PUBLIC_API_URL}/api/tickets/void', 
+            const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/void`, 
                 { ticket_number: tNum }, { headers: { Authorization: `Bearer ${token}` } });
             setMessage({ type: 'success', text: res.data.message });
             fetchTicketDetailsForCheck(tNum);
@@ -488,7 +488,7 @@ export default function CashierDashboard() {
         e.stopPropagation(); 
         if (!window.confirm(`እርግጠኛ ነዎት ትኬት ቁጥር ${ticketNum} መሰረዝ ይፈልጋሉ?`)) return;
         try {
-            const res = await axios.post('${process.env.NEXT_PUBLIC_API_URL}/api/tickets/void', 
+            const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/void`, 
                 { ticket_number: ticketNum }, { headers: { Authorization: `Bearer ${token}` } });
             setMessage({ type: 'success', text: res.data.message || "ትኬቱ ተሰርዟል!" });
             fetchRecentTickets(); 
