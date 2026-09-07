@@ -240,7 +240,6 @@ export default function CashierDashboard() {
 
     const openPrintModal = () => { setIsPrintModalOpen(true); };
 
-    // 🌟 አዲሱ እና በምስሉ መሰረት የተስተካከለው የፕሪንት ማድረጊያ ገፅታ (ያለምንም Unicode Escape ስህተት) 🌟
     const handleCustomPrint = (ticketDetails: any) => {
         const printFrame = document.createElement('iframe');
         printFrame.style.position = 'fixed';
@@ -414,14 +413,14 @@ export default function CashierDashboard() {
                 const placeRes = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/place`, placePayload);
                 const newBookingCode = placeRes.data.data.booking_code;
                 
-                const confirmPayload = { selections: cleanSelections, total_odds: ticketData.total_odds, potential_win: ticketData.potential_win, stake_amount: ticketData.stake_amount };
+                const confirmPayload = { selections: cleanSelections, stake_amount: ticketData.stake_amount };
                 res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/booking/${newBookingCode}/confirm`, confirmPayload, { headers: { Authorization: `Bearer ${token}` } });
                 
                 if(res.data.success) {
                     res.data.data.booking_code = newBookingCode;
                 }
             } else {
-                const payload = { selections: ticketData.selections, total_odds: ticketData.total_odds, potential_win: ticketData.potential_win, stake_amount: ticketData.stake_amount };
+                const payload = { selections: ticketData.selections, stake_amount: ticketData.stake_amount };
                 res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/booking/${ticketData.booking_code}/confirm`, payload, { headers: { Authorization: `Bearer ${token}` } });
             }
 
@@ -499,11 +498,22 @@ export default function CashierDashboard() {
         }
     };
 
-    const handleReportAuth = (e: React.FormEvent) => {
+    const handleReportAuth = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (reportPassword === password || reportPassword === '1234') { 
-            setIsReportUnlocked(true); setReportError(''); 
-        } else { setReportError('የተሳሳተ ፓስወርድ ነው!'); }
+        setReportError('');
+        try {
+            const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/verify-password`, { 
+                password: reportPassword 
+            }, { headers: { Authorization: `Bearer ${token}` } });
+            
+            if (res.data.success) {
+                setIsReportUnlocked(true); 
+            } else {
+                setReportError('የተሳሳተ ፓስወርድ ነው!');
+            }
+        } catch (err: any) {
+            setReportError(err.response?.data?.message || 'የተሳሳተ ፓስወርድ ነው!');
+        }
     };
 
     const isWithin5Minutes = (createdAt: string) => {
@@ -780,7 +790,6 @@ export default function CashierDashboard() {
                                             </div>
                                         </div>
 
-                                        {/* 🌟 ማስተካከያ፡ የውጤት ዝርዝር በምስሉ (Paper style) መሰረት 🌟 */}
                                         <div className="flex-1 overflow-y-auto custom-scrollbar mb-4">
                                             <div className="bg-white border border-gray-300 rounded overflow-hidden shadow-sm">
                                                 {payoutDetails.selections?.map((item: any, i: number) => {
@@ -896,7 +905,6 @@ export default function CashierDashboard() {
                                             </div>
                                         </div>
 
-                                        {/* 🌟 ማስተካከያ፡ ጠቅላላ ትርፍ (Gross Profit) ተጨምሯል 🌟 */}
                                         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 shrink-0 mt-auto">
                                             <div className="bg-gradient-to-br from-[#1a1f24] to-[#24292e] border border-[#3b4148] p-6 rounded-xl flex items-center justify-between shadow-md">
                                                 <div>
