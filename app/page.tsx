@@ -65,14 +65,9 @@ export default function Home() {
     
     const dateInputRef = useRef<HTMLInputElement>(null);
 
-    // 🌟 አዲሱ ማስተካከያ: የብሮውዘር ጽሁፍ እና የኢንተርኔት ግንኙነት (Online Status) መቆጣጠሪያ 🌟
     const [isOnline, setIsOnline] = useState<boolean>(true);
 
     useEffect(() => {
-        // 🌟 ማስተካከያ 1: የብሮውዘር ታብ ጽሁፍ (vibebet.et) 🌟
-        document.title = "vibebet.et";
-
-        // የኢንተርኔት ግንኙነት መቆጣጠሪያ
         setIsOnline(navigator.onLine);
         const handleOnline = () => setIsOnline(true);
         const handleOffline = () => setIsOnline(false);
@@ -693,17 +688,12 @@ export default function Home() {
     return (
         <div className="min-h-screen bg-[#1c2024] text-slate-300 font-sans text-sm relative">
             
-            {/* 🌟 አዲሱ እና ፕሮፌሽናል የሆነው የዋናው ገፅ Header 🌟 */}
             <header className="bg-[#ffcc00] border-b border-[#e6b800] sticky top-0 z-30 h-[60px] flex items-center justify-between px-4 shadow-md">
                 <button onClick={() => window.location.reload()} className="flex items-center gap-3 cursor-pointer hover:opacity-90 transition text-left">
                     
-                    {/* 🌟 ማስተካከያ 2: ሎጎ በቀጥታ ወደ ግራፊክስ (SVG) ተቀይሯል 🌟 */}
-                    <div className="w-11 h-11 shrink-0 rounded-[10px] overflow-hidden shadow-lg border border-[#3b4148]/50">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" className="w-full h-full block">
-                            <rect width="512" height="512" fill="#1c2024" />
-                            <path d="M120 150 L256 390 L392 150 L306 150 L256 260 L206 150 Z" fill="#ffcc00"/>
-                            <path d="M256 390 L392 150 L460 150 L256 460 Z" fill="#ffffff" opacity="0.1"/>
-                        </svg>
+                    {/* 🌟 ሎጎው በቀጥታ ከ icon.svg ፋይል እንዲመጣ ተደርጓል 🌟 */}
+                    <div className="w-11 h-11 shrink-0 rounded-[10px] overflow-hidden shadow-lg border border-[#3b4148]/50 bg-[#1c2024] p-1 flex items-center justify-center">
+                        <img src="/icon.svg" alt="Vibe Bet" className="w-full h-full object-contain" />
                     </div>
                     
                     <div className="hidden sm:flex flex-col justify-center">
@@ -1357,7 +1347,7 @@ export default function Home() {
                                                 </div>
                                             </div>
 
-                                            {/* Events List (Image 2 Redesign) */}
+                                            {/* Events List */}
                                             <div className="space-y-2 mb-2">
                                                 {checkedTicketData.selections?.map((item: any, i: number) => {
                                                     const isWon = item.match_status === 'won'; 
