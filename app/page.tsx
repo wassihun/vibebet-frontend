@@ -69,8 +69,8 @@ export default function Home() {
     const [isOnline, setIsOnline] = useState<boolean>(true);
 
     useEffect(() => {
-        // የብሮውዘር ታብ (Browser Tab) ጽሁፍ እንዲያስተካክል ተደርጓል
-        document.title = "Vibe Bet - Premium Sports Betting";
+        // 🌟 ማስተካከያ 1: የብሮውዘር ታብ ጽሁፍ (vibebet.et) 🌟
+        document.title = "vibebet.et";
 
         // የኢንተርኔት ግንኙነት መቆጣጠሪያ
         setIsOnline(navigator.onLine);
@@ -696,28 +696,40 @@ export default function Home() {
             {/* 🌟 አዲሱ እና ፕሮፌሽናል የሆነው የዋናው ገፅ Header 🌟 */}
             <header className="bg-[#ffcc00] border-b border-[#e6b800] sticky top-0 z-30 h-[60px] flex items-center justify-between px-4 shadow-md">
                 <button onClick={() => window.location.reload()} className="flex items-center gap-3 cursor-pointer hover:opacity-90 transition text-left">
-                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#24292e] to-[#0a0c0f] border border-white/10 flex items-center justify-center shadow-lg relative overflow-hidden shrink-0">
-                        <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,204,0,0.1)_50%,transparent_75%)] bg-[length:250%_250%] animate-pulse"></div>
-                        <span className="font-black text-transparent bg-clip-text bg-gradient-to-br from-[#FFE000] to-[#FF7B00] text-2xl italic tracking-tighter relative z-10">V</span>
+                    {/* ማስተካከያ 2: ሎጎ በትክክል ምስሉ ላይ ባለው መልኩ ተስተካክሏል */}
+                    <div className="w-11 h-11 rounded-xl bg-[#1c2024] flex items-center justify-center shadow-lg relative overflow-hidden shrink-0">
+                        <span className="font-black text-[#ffcc00] text-[26px] italic pr-1 tracking-tighter relative z-10 drop-shadow-md">V</span>
                     </div>
                     
-                    <div className="hidden sm:block">
-                        <h1 className="text-2xl font-black text-black leading-none tracking-tight italic">
-                            VIBE <span className="text-black/80">BET</span>
+                    {/* ማስተካከያ 3: VIBE BET ጽሁፍ እና Online ማሳያ በምስሉ መሰረት ተስተካክሏል */}
+                    <div className="hidden sm:flex flex-col justify-center">
+                        <h1 className="text-[22px] font-black text-black leading-none tracking-tight italic mb-1">
+                            VIBE BET
                         </h1>
-                        <p className="text-[10px] text-black/60 font-bold uppercase tracking-[0.2em] mt-0.5 flex items-center gap-2">
-                            Premium Sportsbook
-                            {isOnline ? <span className="text-black bg-white/40 px-1.5 rounded-sm">● Online</span> : <span className="text-red-600 bg-white/40 px-1.5 rounded-sm animate-pulse">● Offline</span>}
-                        </p>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-black/80 font-black uppercase tracking-[0.1em]">
+                                Premium Sportsbook
+                            </span>
+                            {isOnline ? (
+                                <span className="bg-[#ffe566] text-black text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider flex items-center gap-1 shadow-sm">
+                                    <span className="text-[8px]">●</span> ONLINE
+                                </span>
+                            ) : (
+                                <span className="bg-red-500/20 text-red-700 border border-red-500/30 text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider flex items-center gap-1">
+                                    <span className="text-[8px] animate-pulse">●</span> OFFLINE
+                                </span>
+                            )}
+                        </div>
                     </div>
                 </button>
                 
                 <div className="flex gap-2 sm:gap-4 items-center">
+                    {/* ማስተካከያ 4: ትኬት አረጋግጥ በተን በምስሉ መሰረት ተስተካክሏል */}
                     <button 
                         onClick={() => setIsCheckTicketModalOpen(true)}
-                        className="bg-black text-[#ffcc00] hover:bg-[#1a1a1a] px-3 py-1.5 rounded font-black text-xs flex items-center gap-1 transition-colors shadow-sm border border-black/20"
+                        className="bg-[#0a0a0a] text-[#ffcc00] hover:bg-[#1a1a1a] px-4 py-1.5 rounded-md font-black text-xs flex items-center gap-1.5 transition-colors shadow-md border border-black"
                     >
-                        🔍 <span className="hidden sm:inline">ትኬት አረጋግጥ</span>
+                        <span className="text-sm">🔍</span> <span className="hidden sm:inline">ትኬት አረጋግጥ</span>
                     </button>
 
                     {user && (
@@ -1383,7 +1395,7 @@ export default function Home() {
                 </div>
             )}
 
-            {/* 🌟 አዲሱ የቡኪንግ ሞዳል (Booking Modal) በምስሉ (Table Design) መሰረት 🌟 */}
+            {/* 🌟 አዲሱ የቡኪንግ ሞዳል (Booking Modal) 🌟 */}
             {bookingCode && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4 overflow-y-auto">
                     <div className="bg-[#dfdfdf] w-full max-w-4xl shadow-2xl relative my-auto flex flex-col animate-fade-in-down rounded-sm overflow-hidden">
