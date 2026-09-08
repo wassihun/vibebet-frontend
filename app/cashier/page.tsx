@@ -240,6 +240,7 @@ export default function CashierDashboard() {
 
     const openPrintModal = () => { setIsPrintModalOpen(true); };
 
+    // 🌟 አዲሱ እና ደህንነቱ የተጠበቀው (Secure) የፕሪንት እና የትኬት ዲዛይን 🌟
     const handleCustomPrint = (ticketDetails: any) => {
         const printFrame = document.createElement('iframe');
         printFrame.style.position = 'fixed';
@@ -271,7 +272,7 @@ export default function CashierDashboard() {
                     * {
                         font-weight: 900 !important; 
                         font-size: 11px;
-                        line-height: 1.1;
+                        line-height: 1.15;
                         color: #000 !important;
                     }
                     .text-center { text-align: center; }
@@ -328,22 +329,27 @@ export default function CashierDashboard() {
                         marketText = 'Double Chance';
                     } else if (['Yes', 'No'].includes(item.odd_name) || item.odd_name.includes('GG') || item.odd_name.includes('NG')) {
                         marketText = 'Both Teams To Score';
-                    } else if (item.odd_name.toLowerCase().includes('over') || item.odd_name.toLowerCase().includes('under')) {
+                        pickText = (item.odd_name === 'Yes' || item.odd_name.includes('GG')) ? 'Yes' : 'No';
+                    } else if (item.odd_name.toLowerCase().includes('over') || item.odd_name.toLowerCase().includes('under') || item.odd_name.includes('O/U')) {
                         marketText = 'Total Goals';
+                        if(!pickText.includes('(')) {
+                            pickText = pickText.replace('Over ', 'Over (').replace('Under ', 'Under (') + ')';
+                            pickText = pickText.replace('))', ')'); 
+                        }
                     } else {
                         marketText = 'Market';
                     }
 
                     return `
-                    <div style="border-bottom: 1.5px solid #000; padding: 3px 0;">
-                        <div style="font-size: 11px !important; font-weight: 900 !important; text-align: left; margin-bottom: 1px;">${teamStr}</div>
-                        <div style="display: flex; justify-content: space-between; font-size: 9px !important; margin-bottom: 1px;">
+                    <div style="border-bottom: 1.5px solid #000; padding: 2px 0;">
+                        <div style="font-size: 11px !important; font-weight: 900 !important; text-align: left; line-height: 1.2;">${teamStr}</div>
+                        <div style="display: flex; justify-content: space-between; font-size: 9px !important; line-height: 1.2;">
                             <span style="font-weight: normal !important; text-transform: capitalize;">Football / ${lName.replace('Soccer', 'World').replace('Soccer / ', '')}</span>
                             <span style="font-weight: normal !important;">${dStr}</span>
                         </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 10.5px !important; font-weight: 900 !important;">
+                        <div style="display: flex; justify-content: space-between; font-size: 11px !important; font-weight: 900 !important; line-height: 1.2;">
                             <span style="flex: 1; text-align: left;">${marketText}</span>
-                            <span style="padding-right: 15px; text-align: right;">${pickText}</span>
+                            <span style="width: 50px; text-align: right;">${pickText}</span>
                             <span style="text-align: right; width: 45px;">Q: ${parseFloat(item.odd_value).toFixed(2)}</span>
                         </div>
                     </div>
@@ -389,6 +395,7 @@ export default function CashierDashboard() {
         }, 500);
     };
 
+    // 🌟 የደህንነት ማስተካከያ (Security Fix): አላስፈላጊ (total_odds, potential_win) ዳታዎችን ወደ ሰርቨር ከመላክ ተቆጥበናል 🌟
     const handleSubmitAndPrint = async () => {
         const hasStarted = ticketData.selections.some((item: any) => item.commence_time && new Date(item.commence_time) < new Date());
         if (hasStarted) { alert("የጀመሩ ጨዋታዎች አሉ! እባክዎ ከትኬቱ ላይ ይቀንሱ።"); return; }
@@ -498,6 +505,7 @@ export default function CashierDashboard() {
         }
     };
 
+    // 🌟 የደህንነት ማስተካከያ (Security Fix): የካሸሩ ፓስወርድ Backend ላይ verify እንዲያደርግ ተደርጓል 🌟
     const handleReportAuth = async (e: React.FormEvent) => {
         e.preventDefault();
         setReportError('');
@@ -508,6 +516,7 @@ export default function CashierDashboard() {
             
             if (res.data.success) {
                 setIsReportUnlocked(true); 
+                setReportError('');
             } else {
                 setReportError('የተሳሳተ ፓስወርድ ነው!');
             }
