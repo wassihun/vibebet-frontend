@@ -65,6 +65,26 @@ export default function Home() {
     
     const dateInputRef = useRef<HTMLInputElement>(null);
 
+    // 🌟 አዲሱ ማስተካከያ: የብሮውዘር ጽሁፍ እና የኢንተርኔት ግንኙነት (Online Status) መቆጣጠሪያ 🌟
+    const [isOnline, setIsOnline] = useState<boolean>(true);
+
+    useEffect(() => {
+        // የብሮውዘር ታብ (Browser Tab) ጽሁፍ እንዲያስተካክል ተደርጓል
+        document.title = "Vibe Bet - Premium Sports Betting";
+
+        // የኢንተርኔት ግንኙነት መቆጣጠሪያ
+        setIsOnline(navigator.onLine);
+        const handleOnline = () => setIsOnline(true);
+        const handleOffline = () => setIsOnline(false);
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+        
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
+    }, []);
+
     useEffect(() => {
         const storedUser = localStorage.getItem('user');
         const storedToken = localStorage.getItem('token');
@@ -673,12 +693,23 @@ export default function Home() {
     return (
         <div className="min-h-screen bg-[#1c2024] text-slate-300 font-sans text-sm relative">
             
+            {/* 🌟 አዲሱ እና ፕሮፌሽናል የሆነው የዋናው ገፅ Header 🌟 */}
             <header className="bg-[#ffcc00] border-b border-[#e6b800] sticky top-0 z-30 h-[60px] flex items-center justify-between px-4 shadow-md">
-                <button onClick={() => window.location.reload()} className="flex items-center gap-3 cursor-pointer hover:opacity-90 transition">
-                    <div className="w-8 h-8 bg-black rounded-full flex items-center justify-center font-black text-[#ffcc00] text-xl">V</div>
-                    <h1 className="text-xl font-black text-black tracking-tight flex items-center">
-                        VIBE<span className="font-bold text-black/70 ml-1 text-lg">bet</span>
-                    </h1>
+                <button onClick={() => window.location.reload()} className="flex items-center gap-3 cursor-pointer hover:opacity-90 transition text-left">
+                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#24292e] to-[#0a0c0f] border border-white/10 flex items-center justify-center shadow-lg relative overflow-hidden shrink-0">
+                        <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,204,0,0.1)_50%,transparent_75%)] bg-[length:250%_250%] animate-pulse"></div>
+                        <span className="font-black text-transparent bg-clip-text bg-gradient-to-br from-[#FFE000] to-[#FF7B00] text-2xl italic tracking-tighter relative z-10">V</span>
+                    </div>
+                    
+                    <div className="hidden sm:block">
+                        <h1 className="text-2xl font-black text-black leading-none tracking-tight italic">
+                            VIBE <span className="text-black/80">BET</span>
+                        </h1>
+                        <p className="text-[10px] text-black/60 font-bold uppercase tracking-[0.2em] mt-0.5 flex items-center gap-2">
+                            Premium Sportsbook
+                            {isOnline ? <span className="text-black bg-white/40 px-1.5 rounded-sm">● Online</span> : <span className="text-red-600 bg-white/40 px-1.5 rounded-sm animate-pulse">● Offline</span>}
+                        </p>
+                    </div>
                 </button>
                 
                 <div className="flex gap-2 sm:gap-4 items-center">
