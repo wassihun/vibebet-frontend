@@ -521,7 +521,7 @@ export default function Home() {
                 { title: "Total Goals: Over/Under 1.5", cols: 2, odds: [{ odd_id: `ou_o15_${game.id}`, option: "Over 1.5", value: over15 }, { odd_id: `ou_u15_${game.id}`, option: "Under 1.5", value: under15 }] },
                 { title: "Total Goals: Over/Under 2.5", cols: 2, odds: [{ odd_id: `ou_o25_${game.id}`, option: "Over 2.5", value: over25 }, { odd_id: `ou_u25_${game.id}`, option: "Under 2.5", value: under25 }] },
                 { title: "Total Goals: Over/Under 3.5", cols: 2, odds: [{ odd_id: `ou_o35_${game.id}`, option: "Over 3.5", value: over35 }, { odd_id: `ou_u35_${game.id}`, option: "Under 3.5", value: under35 }] },
-                { title: "Total Goals: Over/Under 4.5", cols: 2, odds: [{ odd_id: `ou_o45_${game.id}`, option: "Over 4.5", value: over45 }, { odd_id: `ou_u45_${game.id}`, option: "Under 4.5", value: under45 }] },
+                { title: "Total Goals: Over/Under 4.5", cols: 2, odds: [{ odd_id: `ou_o45_${game.id}`, option: "Over 4.5", value: over45 }, { odd_id: `ou_u45_${game.id}`, option: "Under 4.5", value: over45 }] },
                 { title: "Both Teams To Score (BTTS)", cols: 2, odds: [{ odd_id: `btts_yes_${game.id}`, option: "Yes (GG)", value: bttsYes }, { odd_id: `btts_no_${game.id}`, option: "No (NG)", value: bttsNo }] },
                 { title: "Odd/Even Goals", cols: 2, odds: [{ odd_id: `odd_${game.id}`, option: "Odd", value: goalsOdd }, { odd_id: `even_${game.id}`, option: "Even", value: goalsEven }] },
                 { title: "Exact Total Goals", cols: 4, odds: [
@@ -696,12 +696,16 @@ export default function Home() {
             {/* 🌟 አዲሱ እና ፕሮፌሽናል የሆነው የዋናው ገፅ Header 🌟 */}
             <header className="bg-[#ffcc00] border-b border-[#e6b800] sticky top-0 z-30 h-[60px] flex items-center justify-between px-4 shadow-md">
                 <button onClick={() => window.location.reload()} className="flex items-center gap-3 cursor-pointer hover:opacity-90 transition text-left">
-                    {/* ማስተካከያ 2: ሎጎ በትክክል ምስሉ ላይ ባለው መልኩ ተስተካክሏል */}
-                    <div className="w-11 h-11 rounded-xl bg-[#1c2024] flex items-center justify-center shadow-lg relative overflow-hidden shrink-0">
-                        <span className="font-black text-[#ffcc00] text-[26px] italic pr-1 tracking-tighter relative z-10 drop-shadow-md">V</span>
+                    
+                    {/* 🌟 ማስተካከያ 2: ሎጎ በቀጥታ ወደ ግራፊክስ (SVG) ተቀይሯል 🌟 */}
+                    <div className="w-11 h-11 shrink-0 rounded-[10px] overflow-hidden shadow-lg border border-[#3b4148]/50">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" className="w-full h-full block">
+                            <rect width="512" height="512" fill="#1c2024" />
+                            <path d="M120 150 L256 390 L392 150 L306 150 L256 260 L206 150 Z" fill="#ffcc00"/>
+                            <path d="M256 390 L392 150 L460 150 L256 460 Z" fill="#ffffff" opacity="0.1"/>
+                        </svg>
                     </div>
                     
-                    {/* ማስተካከያ 3: VIBE BET ጽሁፍ እና Online ማሳያ በምስሉ መሰረት ተስተካክሏል */}
                     <div className="hidden sm:flex flex-col justify-center">
                         <h1 className="text-[22px] font-black text-black leading-none tracking-tight italic mb-1">
                             VIBE BET
@@ -724,7 +728,6 @@ export default function Home() {
                 </button>
                 
                 <div className="flex gap-2 sm:gap-4 items-center">
-                    {/* ማስተካከያ 4: ትኬት አረጋግጥ በተን በምስሉ መሰረት ተስተካክሏል */}
                     <button 
                         onClick={() => setIsCheckTicketModalOpen(true)}
                         className="bg-[#0a0a0a] text-[#ffcc00] hover:bg-[#1a1a1a] px-4 py-1.5 rounded-md font-black text-xs flex items-center gap-1.5 transition-colors shadow-md border border-black"
