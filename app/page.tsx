@@ -68,6 +68,8 @@ export default function Home() {
     const [isOnline, setIsOnline] = useState<boolean>(true);
 
     useEffect(() => {
+        document.title = "vibebet.et";
+
         setIsOnline(navigator.onLine);
         const handleOnline = () => setIsOnline(true);
         const handleOffline = () => setIsOnline(false);
@@ -100,22 +102,23 @@ export default function Home() {
                         try {
                             const bookmakers = typeof game.odds_data === 'string' ? JSON.parse(game.odds_data) : game.odds_data;
                             rawMarkets = bookmakers[0]?.markets || [];
-                            const h2h = rawMarkets.find((m: any) => m.key === 'h2h');
                             
-                            const odd1 = h2h?.outcomes?.find((o: any) => o.name === game.home_team)?.price || 2.10;
-                            const oddX = h2h?.outcomes?.find((o: any) => o.name === 'Draw')?.price || 3.10;
-                            const odd2 = h2h?.outcomes?.find((o: any) => o.name === game.away_team)?.price || 2.80;
+                            // 🌟 የውሸት ስሌት (Fake Defaults) ሙሉ በሙሉ ተነስተዋል 🌟
+                            const h2h = rawMarkets.find((m: any) => m.key === 'h2h');
+                            const odd1 = h2h?.outcomes?.find((o: any) => o.name === game.home_team)?.price || 0;
+                            const oddX = h2h?.outcomes?.find((o: any) => o.name === 'Draw')?.price || 0;
+                            const odd2 = h2h?.outcomes?.find((o: any) => o.name === game.away_team)?.price || 0;
 
                             parsedOdds = [
-                                { odd_id: `1_${game.id}`, option: "1", value: odd1.toFixed(2) },
-                                { odd_id: `x_${game.id}`, option: "X", value: oddX.toFixed(2) },
-                                { odd_id: `2_${game.id}`, option: "2", value: odd2.toFixed(2) }
+                                { odd_id: `1_${game.id}`, option: "1", value: odd1 ? odd1.toFixed(2) : "0.00" },
+                                { odd_id: `x_${game.id}`, option: "X", value: oddX ? oddX.toFixed(2) : "0.00" },
+                                { odd_id: `2_${game.id}`, option: "2", value: odd2 ? odd2.toFixed(2) : "0.00" }
                             ];
                         } catch (e) {
                             parsedOdds = [
-                                { odd_id: `1_${game.id}`, option: "1", value: "2.10" },
-                                { odd_id: `x_${game.id}`, option: "X", value: "3.10" },
-                                { odd_id: `2_${game.id}`, option: "2", value: "2.80" }
+                                { odd_id: `1_${game.id}`, option: "1", value: "0.00" },
+                                { odd_id: `x_${game.id}`, option: "X", value: "0.00" },
+                                { odd_id: `2_${game.id}`, option: "2", value: "0.00" }
                             ];
                         }
 
@@ -138,6 +141,7 @@ export default function Home() {
     }, []);
 
     const toggleSelection = (game: any, odd: any) => {
+        if (!odd || odd.value === "0.00") return; // 🌟 ዜሮ የሆኑ ኦዶችን መቁረጥ እንዳይቻል ይከላከላል
         setBookingCode(null);
         setErrorMessage(null);
         setBetSlip(prev => {
@@ -375,198 +379,69 @@ export default function Home() {
         setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
     };
 
+    // 🌟 አዲሱ እና ንፁሁ የ ማርኬት ማውጫ (Auto-Odds Calculator ሙሉ በሙሉ ወጥቷል!) 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game.raw_markets || [];
-
-        const odd1 = parseFloat(game.odds[0].value) || 2.10;
-        const oddX = parseFloat(game.odds[1].value) || 3.10;
-        const odd2 = parseFloat(game.odds[2].value) || 2.80;
-        const fav = Math.min(odd1, odd2);
-
-        const dcMarket = raw.find((m: any) => m.key === 'double_chance');
-        const dc1X = (dcMarket?.outcomes?.find((o: any) => o.name === '1X')?.price || Math.max(1.05, ((odd1 * oddX) / (odd1 + oddX)) * 0.90)).toFixed(2);
-        const dc12 = (dcMarket?.outcomes?.find((o: any) => o.name === '12')?.price || Math.max(1.05, ((odd1 * odd2) / (odd1 + odd2)) * 0.90)).toFixed(2);
-        const dcX2 = (dcMarket?.outcomes?.find((o: any) => o.name === 'X2')?.price || Math.max(1.05, ((oddX * odd2) / (oddX + odd2)) * 0.90)).toFixed(2);
-
-        const totalsMarket = raw.find((m: any) => m.key === 'totals');
-        const over25 = (totalsMarket?.outcomes?.find((o: any) => o.name.includes('Over'))?.price || (fav > 1.8 ? 1.60 : 1.85)).toFixed(2);
-        const under25 = (totalsMarket?.outcomes?.find((o: any) => o.name.includes('Under'))?.price || (fav > 1.8 ? 2.05 : 1.65)).toFixed(2);
-
-        const bttsMarket = raw.find((m: any) => m.key === 'btts');
-        const bttsYes = (bttsMarket?.outcomes?.find((o: any) => o.name === 'Yes')?.price || 1.75).toFixed(2);
-        const bttsNo = (bttsMarket?.outcomes?.find((o: any) => o.name === 'No')?.price || 1.75).toFixed(2);
-
-        const bO = parseFloat(over25);
-        const bU = parseFloat(under25);
-
-        const dnb1 = Math.max(1.05, odd1 * 0.68).toFixed(2);
-        const dnb2 = Math.max(1.05, odd2 * 0.68).toFixed(2);
-        const winMargin1 = (odd1 * 1.65).toFixed(2);
-        const winMargin2 = (odd2 * 1.65).toFixed(2);
-
-        const cs10 = (odd1 * 2.2).toFixed(2);
-        const cs20 = (odd1 * 3.1).toFixed(2);
-        const cs21 = (odd1 * 3.8).toFixed(2);
-        const cs00 = (oddX * 2.4).toFixed(2);
-        const cs11 = (oddX * 1.9).toFixed(2);
-        const cs01 = (odd2 * 2.2).toFixed(2);
-        const cs02 = (odd2 * 3.1).toFixed(2);
-        const cs12 = (odd2 * 3.8).toFixed(2);
-
-        const over05 = Math.max(1.02, bO * 0.40).toFixed(2);
-        const under05 = (bU * 3.2).toFixed(2);
-        const over15 = Math.max(1.10, bO * 0.60).toFixed(2);
-        const under15 = (bU * 1.65).toFixed(2);
-        const over35 = (bO * 1.95).toFixed(2);
-        const under35 = Math.max(1.15, bU * 0.55).toFixed(2);
-        const over45 = (bO * 3.1).toFixed(2);
-        const under45 = Math.max(1.05, bU * 0.35).toFixed(2);
-
-        const exact0 = under05;
-        const exact1 = (bU * 1.35).toFixed(2);
-        const exact2 = (oddX * 1.05).toFixed(2);
-        const exact3 = (bO * 1.35).toFixed(2);
-        const exact4Plus = (bO * 1.95).toFixed(2);
-
-        const goalsOdd = "1.85";
-        const goalsEven = "1.85";
-
-        const homeO15 = (odd1 * 1.1).toFixed(2);
-        const homeU15 = (odd2 * 1.1).toFixed(2);
-        const awayO15 = (odd2 * 1.1).toFixed(2);
-        const awayU15 = (odd1 * 1.1).toFixed(2);
-
-        const firstToScore1 = Math.max(1.15, odd1 * 0.75).toFixed(2);
-        const firstToScoreNone = under05;
-        const firstToScore2 = Math.max(1.15, odd2 * 0.75).toFixed(2);
-
-        const scoreBothHalves1 = (odd1 * 2.5).toFixed(2);
-        const scoreBothHalves2 = (odd2 * 2.5).toFixed(2);
-        const cleanSheet1 = (odd1 * 1.2).toFixed(2);
-        const cleanSheet2 = (odd2 * 1.2).toFixed(2);
-
-        const ht1 = (odd1 * 1.35).toFixed(2);
-        const htX = Math.max(1.10, oddX * 0.55).toFixed(2);
-        const ht2 = (odd2 * 1.35).toFixed(2);
-
-        const htO05 = (bO * 0.75).toFixed(2);
-        const htU05 = (bU * 1.3).toFixed(2);
-        const htO15 = (bO * 1.4).toFixed(2);
-        const htU15 = (bU * 0.65).toFixed(2);
-
-        const htBttsYes = (bO * 1.6).toFixed(2);
-        const htBttsNo = Math.max(1.05, bU * 0.55).toFixed(2);
-
-        const highestScoringHalf1 = "2.90";
-        const highestScoringHalfTie = "3.20";
-        const highestScoringHalf2 = "1.95";
-
-        const ft11 = (odd1 * 1.45).toFixed(2);
-        const ftX1 = (odd1 * 2.0).toFixed(2);
-        const ft22 = (odd2 * 1.45).toFixed(2);
-        const ftX2 = (odd2 * 2.0).toFixed(2);
-        const ftXX = (oddX * 1.3).toFixed(2);
-
-        const euHcHomeMinus1 = (odd1 * 1.65).toFixed(2);
-        const euHcTieMinus1 = (oddX * 1.10).toFixed(2);
-        const euHcAwayPlus1 = Math.max(1.10, odd2 * 0.55).toFixed(2);
-
-        const asHcHomeMinus05 = odd1.toFixed(2);
-        const asHcAwayPlus05 = dcX2;
-
-        const combo1Y = (odd1 * bO * 0.75).toFixed(2);
-        const combo1N = (odd1 * bU * 0.75).toFixed(2);
-        const comboXY = (oddX * bO * 0.75).toFixed(2);
-        const comboXN = (oddX * bU * 0.75).toFixed(2);
-        const combo2Y = (odd2 * bO * 0.75).toFixed(2);
-        const combo2N = (odd2 * bU * 0.75).toFixed(2);
-
-        const combo1XAndOver25 = (parseFloat(dc1X) * bO * 0.78).toFixed(2);
-        const combo1XAndUnder25 = (parseFloat(dc1X) * bU * 0.78).toFixed(2);
-
-        const over95Corners = "1.75";
-        const under95Corners = "1.75";
-        const mostCorners1 = (odd1 * 0.82).toFixed(2);
-        const mostCornersX = "6.50";
-        const mostCorners2 = (odd2 * 0.82).toFixed(2);
-
-        const over45Cards = "1.72";
-        const under45Cards = "1.82";
-        const redCardYes = "4.20";
-        const redCardNo = "1.12";
-        const penaltyYes = "2.60";
-        const penaltyNo = "1.30";
-
-        const goal15MinYes = "2.95";
-        const goal15MinNo = "1.25";
-
-        return {
-            "Main Match Result": [
-                { title: "1X2 (Match Winner)", cols: 3, odds: [{ odd_id: `1_${game.id}`, option: "1", value: odd1.toFixed(2) }, { odd_id: `x_${game.id}`, option: "X", value: oddX.toFixed(2) }, { odd_id: `2_${game.id}`, option: "2", value: odd2.toFixed(2) }] },
-                { title: "Double Chance", cols: 3, odds: [{ odd_id: `dc_1x_${game.id}`, option: "1X", value: dc1X }, { odd_id: `dc_12_${game.id}`, option: "12", value: dc12 }, { odd_id: `dc_x2_${game.id}`, option: "X2", value: dcX2 }] },
-                { title: "Draw No Bet (DNB)", cols: 2, odds: [{ odd_id: `dnb_1_${game.id}`, option: "1 (Home)", value: dnb1 }, { odd_id: `dnb_2_${game.id}`, option: "2 (Away)", value: dnb2 }] },
-                { title: "Winning Margin", cols: 2, odds: [{ odd_id: `wm_1_${game.id}`, option: "Home by 1", value: winMargin1 }, { odd_id: `wm_2_${game.id}`, option: "Away by 1", value: winMargin2 }] },
-                { title: "Correct Score (Popular)", cols: 4, odds: [
-                    { odd_id: `cs_10_${game.id}`, option: "1-0", value: cs10 }, { odd_id: `cs_20_${game.id}`, option: "2-0", value: cs20 }, { odd_id: `cs_21_${game.id}`, option: "2-1", value: cs21 }, { odd_id: `cs_00_${game.id}`, option: "0-0", value: cs00 },
-                    { odd_id: `cs_01_${game.id}`, option: "0-1", value: cs01 }, { odd_id: `cs_02_${game.id}`, option: "0-2", value: cs02 }, { odd_id: `cs_12_${game.id}`, option: "1-2", value: cs12 }, { odd_id: `cs_11_${game.id}`, option: "1-1", value: cs11 }
-                ]}
-            ],
-            "Goal Markets": [
-                { title: "Total Goals: Over/Under 0.5", cols: 2, odds: [{ odd_id: `ou_o05_${game.id}`, option: "Over 0.5", value: over05 }, { odd_id: `ou_u05_${game.id}`, option: "Under 0.5", value: under05 }] },
-                { title: "Total Goals: Over/Under 1.5", cols: 2, odds: [{ odd_id: `ou_o15_${game.id}`, option: "Over 1.5", value: over15 }, { odd_id: `ou_u15_${game.id}`, option: "Under 1.5", value: under15 }] },
-                { title: "Total Goals: Over/Under 2.5", cols: 2, odds: [{ odd_id: `ou_o25_${game.id}`, option: "Over 2.5", value: over25 }, { odd_id: `ou_u25_${game.id}`, option: "Under 2.5", value: under25 }] },
-                { title: "Total Goals: Over/Under 3.5", cols: 2, odds: [{ odd_id: `ou_o35_${game.id}`, option: "Over 3.5", value: over35 }, { odd_id: `ou_u35_${game.id}`, option: "Under 3.5", value: under35 }] },
-                { title: "Total Goals: Over/Under 4.5", cols: 2, odds: [{ odd_id: `ou_o45_${game.id}`, option: "Over 4.5", value: over45 }, { odd_id: `ou_u45_${game.id}`, option: "Under 4.5", value: over45 }] },
-                { title: "Both Teams To Score (BTTS)", cols: 2, odds: [{ odd_id: `btts_yes_${game.id}`, option: "Yes (GG)", value: bttsYes }, { odd_id: `btts_no_${game.id}`, option: "No (NG)", value: bttsNo }] },
-                { title: "Odd/Even Goals", cols: 2, odds: [{ odd_id: `odd_${game.id}`, option: "Odd", value: goalsOdd }, { odd_id: `even_${game.id}`, option: "Even", value: goalsEven }] },
-                { title: "Exact Total Goals", cols: 4, odds: [
-                    { odd_id: `exg_0_${game.id}`, option: "0 Goals", value: exact0 }, { odd_id: `exg_1_${game.id}`, option: "1 Goal", value: exact1 },
-                    { odd_id: `exg_2_${game.id}`, option: "2 Goals", value: exact2 }, { odd_id: `exg_3_${game.id}`, option: "3 Goals", value: exact3 },
-                    { odd_id: `exg_4p_${game.id}`, option: "4+ Goals", value: exact4Plus }
-                ]},
-                { title: "Home Team Goals O/U 1.5", cols: 2, odds: [{ odd_id: `htg_o15_${game.id}`, option: "Over 1.5", value: homeO15 }, { odd_id: `htg_u15_${game.id}`, option: "Under 1.5", value: homeU15 }] },
-                { title: "Away Team Goals O/U 1.5", cols: 2, odds: [{ odd_id: `atg_o15_${game.id}`, option: "Over 1.5", value: awayO15 }, { odd_id: `atg_u15_${game.id}`, option: "Under 1.5", value: awayU15 }] },
-                { title: "First Team to Score", cols: 3, odds: [{ odd_id: `fts_1_${game.id}`, option: "Home", value: firstToScore1 }, { odd_id: `fts_none_${game.id}`, option: "None", value: firstToScoreNone }, { odd_id: `fts_2_${game.id}`, option: "Away", value: firstToScore2 }] },
-                { title: "Clean Sheet", cols: 2, odds: [{ odd_id: `cs_home_${game.id}`, option: "Home Clean Sheet", value: cleanSheet1 }, { odd_id: `cs_away_${game.id}`, option: "Away Clean Sheet", value: cleanSheet2 }] },
-                { title: "Score in Both Halves", cols: 2, odds: [{ odd_id: `sbh_home_${game.id}`, option: "Home Yes", value: scoreBothHalves1 }, { odd_id: `sbh_away_${game.id}`, option: "Away Yes", value: scoreBothHalves2 }] }
-            ],
-            "Half-Time Markets": [
-                { title: "1st Half 1X2", cols: 3, odds: [{ odd_id: `ht_1_${game.id}`, option: "1", value: ht1 }, { odd_id: `ht_x_${game.id}`, option: "X", value: htX }, { odd_id: `ht_2_${game.id}`, option: "2", value: ht2 }] },
-                { title: "1st Half O/U 0.5 Goals", cols: 2, odds: [{ odd_id: `ht_o05_${game.id}`, option: "Over 0.5", value: htO05 }, { odd_id: `ht_u05_${game.id}`, option: "Under 0.5", value: htU05 }] },
-                { title: "1st Half O/U 1.5 Goals", cols: 2, odds: [{ odd_id: `ht_o15_${game.id}`, option: "Over 1.5", value: htO15 }, { odd_id: `ht_u15_${game.id}`, option: "Under 1.5", value: htU15 }] },
-                { title: "1st Half BTTS", cols: 2, odds: [{ odd_id: `htb_y_${game.id}`, option: "Yes", value: htBttsYes }, { odd_id: `htb_n_${game.id}`, option: "No", value: htBttsNo }] },
-                { title: "Highest Scoring Half", cols: 3, odds: [{ odd_id: `hsh_1_${game.id}`, option: "1st Half", value: highestScoringHalf1 }, { odd_id: `hsh_x_${game.id}`, option: "Tie", value: highestScoringHalfTie }, { odd_id: `hsh_2_${game.id}`, option: "2nd Half", value: highestScoringHalf2 }] },
-                { title: "HT/FT (Half-Time/Full-Time)", cols: 3, odds: [
-                    { odd_id: `htft_11_${game.id}`, option: "1/1", value: ft11 }, { odd_id: `htft_x1_${game.id}`, option: "X/1", value: ftX1 }, 
-                    { odd_id: `htft_22_${game.id}`, option: "2/2", value: ft22 }, { odd_id: `htft_x2_${game.id}`, option: "X/2", value: ftX2 },
-                    { odd_id: `htft_xx_${game.id}`, option: "X/X", value: ftXX }
-                ]}
-            ],
-            "Handicap Markets": [
-                { title: "3-Way Handicap (European)", cols: 3, odds: [{ odd_id: `ehc_1_${game.id}`, option: "Home (-1)", value: euHcHomeMinus1 }, { odd_id: `ehc_x_${game.id}`, option: "Tie (-1)", value: euHcTieMinus1 }, { odd_id: `ehc_2_${game.id}`, option: "Away (+1)", value: euHcAwayPlus1 }] },
-                { title: "Asian Handicap", cols: 2, odds: [{ odd_id: `ahc_1_${game.id}`, option: "Home -0.5", value: asHcHomeMinus05 }, { odd_id: `ahc_2_${game.id}`, option: "Away +0.5", value: asHcAwayPlus05 }] }
-            ],
-            "Combo Markets": [
-                { title: "Match Result & BTTS", cols: 2, odds: [
-                    { odd_id: `combo_1y_${game.id}`, option: "1 & Yes", value: combo1Y }, { odd_id: `combo_1n_${game.id}`, option: "1 & No", value: combo1N }, 
-                    { odd_id: `combo_xy_${game.id}`, option: "X & Yes", value: comboXY }, { odd_id: `combo_xn_${game.id}`, option: "X & No", value: comboXN }, 
-                    { odd_id: `combo_2y_${game.id}`, option: "2 & Yes", value: combo2Y }, { odd_id: `combo_2n_${game.id}`, option: "2 & No", value: combo2N }
-                ]},
-                { title: "Double Chance & O/U 2.5", cols: 2, odds: [
-                    { odd_id: `combo_1xo_${game.id}`, option: "1X & Over", value: combo1XAndOver25 }, { odd_id: `combo_1xu_${game.id}`, option: "1X & Under", value: combo1XAndUnder25 }
-                ]}
-            ],
-            "Stats & Cards": [
-                { title: "Total Corners O/U 9.5", cols: 2, odds: [{ odd_id: `crn_o95_${game.id}`, option: "Over 9.5", value: over95Corners }, { odd_id: `crn_u95_${game.id}`, option: "Under 9.5", value: under95Corners }] },
-                { title: "Match Corners 1X2", cols: 3, odds: [{ odd_id: `crn_1_${game.id}`, option: "1", value: mostCorners1 }, { odd_id: `crn_x_${game.id}`, option: "X", value: mostCornersX }, { odd_id: `crn_2_${game.id}`, option: "2", value: mostCorners2 }] },
-                { title: "Total Cards O/U 4.5", cols: 2, odds: [{ odd_id: `crd_o45_${game.id}`, option: "Over 4.5", value: over45Cards }, { odd_id: `crd_u45_${game.id}`, option: "Under 4.5", value: under45Cards }] },
-                { title: "Red Card in Match", cols: 2, odds: [{ odd_id: `red_y_${game.id}`, option: "Yes", value: redCardYes }, { odd_id: `red_n_${game.id}`, option: "No", value: redCardNo }] },
-                { title: "Penalty Awarded", cols: 2, odds: [{ odd_id: `pen_y_${game.id}`, option: "Yes", value: penaltyYes }, { odd_id: `pen_n_${game.id}`, option: "No", value: penaltyNo }] }
-            ],
-            "Fast Markets": [
-                { title: "Goal in First 15 Mins", cols: 2, odds: [{ odd_id: `fm_o05_15_${game.id}`, option: "Yes", value: goal15MinYes }, { odd_id: `fm_u05_15_${game.id}`, option: "No", value: goal15MinNo }] }
-            ]
+        const marketsObj: Record<string, any[]> = {
+            "Main Match Result": [],
+            "Goal Markets": []
         };
+
+        // 1. H2H (1X2) Market
+        const h2h = raw.find((m: any) => m.key === 'h2h');
+        if (h2h) {
+            marketsObj["Main Match Result"].push({
+                title: "1X2 (Match Winner)", cols: 3, 
+                odds: [
+                    { odd_id: `1_${game.id}`, option: "1", value: (h2h.outcomes?.find((o:any)=> o.name===game.home_team)?.price || 0).toFixed(2) },
+                    { odd_id: `x_${game.id}`, option: "X", value: (h2h.outcomes?.find((o:any)=> o.name==='Draw')?.price || 0).toFixed(2) },
+                    { odd_id: `2_${game.id}`, option: "2", value: (h2h.outcomes?.find((o:any)=> o.name===game.away_team)?.price || 0).toFixed(2) }
+                ]
+            });
+        }
+
+        // 2. Double Chance Market
+        const dc = raw.find((m: any) => m.key === 'double_chance');
+        if (dc) {
+            marketsObj["Main Match Result"].push({
+                title: "Double Chance", cols: 3, 
+                odds: dc.outcomes?.map((o: any) => ({
+                    odd_id: `dc_${o.name.replace(/\s+/g,'_')}_${game.id}`, option: o.name, value: o.price.toFixed(2)
+                })) || []
+            });
+        }
+
+        // 3. Totals (Over/Under) Market
+        const totals = raw.find((m: any) => m.key === 'totals');
+        if (totals) {
+            marketsObj["Goal Markets"].push({
+                title: "Total Goals: Over/Under 2.5", cols: 2, 
+                odds: totals.outcomes?.map((o: any) => ({
+                    odd_id: `ou_${o.name.replace(/\s+/g,'_')}_${game.id}`, option: o.name, value: o.price.toFixed(2)
+                })) || []
+            });
+        }
+
+        // 4. BTTS Market
+        const btts = raw.find((m: any) => m.key === 'btts');
+        if (btts) {
+            marketsObj["Goal Markets"].push({
+                title: "Both Teams To Score (BTTS)", cols: 2, 
+                odds: btts.outcomes?.map((o: any) => ({
+                    odd_id: `btts_${o.name}_${game.id}`, option: o.name === 'Yes' ? 'Yes (GG)' : 'No (NG)', value: o.price.toFixed(2)
+                })) || []
+            });
+        }
+
+        // ባዶ የሆኑ ክፍሎችን (Categories) ማጥፊያ
+        const finalObj: Record<string, any[]> = {};
+        Object.keys(marketsObj).forEach(key => {
+            if (marketsObj[key].length > 0) {
+                finalObj[key] = marketsObj[key];
+            }
+        });
+
+        return finalObj;
     };
 
     const getLeagueDetails = (key: string) => {
@@ -691,7 +566,6 @@ export default function Home() {
             <header className="bg-[#ffcc00] border-b border-[#e6b800] sticky top-0 z-30 h-[60px] flex items-center justify-between px-4 shadow-md">
                 <button onClick={() => window.location.reload()} className="flex items-center gap-3 cursor-pointer hover:opacity-90 transition text-left">
                     
-                    {/* 🌟 ሎጎው በቀጥታ ከ icon.svg ፋይል እንዲመጣ ተደርጓል 🌟 */}
                     <div className="w-11 h-11 shrink-0 rounded-[10px] overflow-hidden shadow-lg border border-[#3b4148]/50 bg-[#1c2024] p-1 flex items-center justify-center">
                         <img src="/icon.svg" alt="Vibe Bet" className="w-full h-full object-contain" />
                     </div>
@@ -1082,14 +956,15 @@ export default function Home() {
                                                     const isExpanded = expandedMatchId === game.id;
                                                     const categorizedMarkets = getCategorizedMarkets(game);
                                                     
-                                                    const mainMarkets = categorizedMarkets["Main Match Result"];
-                                                    const market1X2 = mainMarkets.find(m => m.title === "1X2 (Match Winner)")?.odds || [];
-                                                    const marketDC = mainMarkets.find(m => m.title === "Double Chance")?.odds || [];
+                                                    const mainMarkets = categorizedMarkets["Main Match Result"] || [];
+                                                    const market1X2 = mainMarkets.find((m:any) => m.title === "1X2 (Match Winner)")?.odds || [];
+                                                    const marketDC = mainMarkets.find((m:any) => m.title === "Double Chance")?.odds || [];
                                                     const currentDisplayOdds = mainMarketView === '1X2' ? market1X2 : marketDC;
 
-                                                    const btn1 = currentDisplayOdds[0];
-                                                    const btnX = currentDisplayOdds[1];
-                                                    const btn2 = currentDisplayOdds[2];
+                                                    // 🌟 ማርኬቶች ባይኖሩም እንኳን UI እንዳይበላሽ ደህንነታቸው የተረጋገጠ Fallbacks 🌟
+                                                    const btn1 = currentDisplayOdds[0] || { odd_id: `1_null_${game.id}`, option: "1", value: "0.00" };
+                                                    const btnX = currentDisplayOdds[1] || { odd_id: `x_null_${game.id}`, option: "X", value: "0.00" };
+                                                    const btn2 = currentDisplayOdds[2] || { odd_id: `2_null_${game.id}`, option: "2", value: "0.00" };
                                                     
                                                     const hasSelectionInGame = betSlip.some((item: any) => item.fixture_id === game.id);
 
@@ -1102,16 +977,16 @@ export default function Home() {
                                                                 </div>
 
                                                                 <div className="flex-1 flex items-center gap-0.5 sm:gap-1 p-1 sm:p-1.5 min-w-0">
-                                                                    <button onClick={() => toggleSelection(game, btn1)} className={`flex-1 h-full min-h-[44px] flex justify-between items-center px-1.5 sm:px-3 rounded transition-colors border ${betSlip.some(item => item.odd_id === btn1.odd_id) ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] border-[#3b4148] hover:border-[#ffcc00] shadow-sm'}`}>
+                                                                    <button onClick={() => toggleSelection(game, btn1)} className={`flex-1 h-full min-h-[44px] flex justify-between items-center px-1.5 sm:px-3 rounded transition-colors border ${betSlip.some(item => item.odd_id === btn1.odd_id) ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] border-[#3b4148] hover:border-[#ffcc00] shadow-sm'} ${btn1.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                                                         <span className={`text-[9.5px] sm:text-[11px] font-semibold truncate max-w-[50px] sm:max-w-[90px] ${betSlip.some(item => item.odd_id === btn1.odd_id) ? 'text-black' : 'text-slate-300'}`}>{mainMarketView === '1X2' ? game.home_team : '1X'}</span>
-                                                                        <span className={`font-black text-[11px] sm:text-[12px] ${betSlip.some(item => item.odd_id === btn1.odd_id) ? 'text-black' : 'text-[#ffcc00]'}`}>{btn1?.value}</span>
+                                                                        <span className={`font-black text-[11px] sm:text-[12px] ${betSlip.some(item => item.odd_id === btn1.odd_id) ? 'text-black' : 'text-[#ffcc00]'}`}>{btn1?.value !== "0.00" ? btn1?.value : "-"}</span>
                                                                     </button>
-                                                                    <button onClick={() => toggleSelection(game, btnX)} className={`w-10 sm:w-16 shrink-0 h-full min-h-[44px] flex flex-col sm:flex-row justify-center sm:justify-between items-center px-1 sm:px-2 rounded transition-colors border ${betSlip.some(item => item.odd_id === btnX.odd_id) ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] border-[#3b4148] hover:border-[#ffcc00] shadow-sm'}`}>
+                                                                    <button onClick={() => toggleSelection(game, btnX)} className={`w-10 sm:w-16 shrink-0 h-full min-h-[44px] flex flex-col sm:flex-row justify-center sm:justify-between items-center px-1 sm:px-2 rounded transition-colors border ${betSlip.some(item => item.odd_id === btnX.odd_id) ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] border-[#3b4148] hover:border-[#ffcc00] shadow-sm'} ${btnX.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                                                         {mainMarketView === 'DC' && <span className={`text-[9.5px] sm:text-[11px] font-semibold mb-0.5 sm:mb-0 ${betSlip.some(item => item.odd_id === btnX.odd_id) ? 'text-black' : 'text-slate-300'}`}>12</span>}
-                                                                        <span className={`font-black text-[11px] sm:text-[12px] ${betSlip.some(item => item.odd_id === btnX.odd_id) ? 'text-black' : 'text-slate-300'}`}>{btnX?.value}</span>
+                                                                        <span className={`font-black text-[11px] sm:text-[12px] ${betSlip.some(item => item.odd_id === btnX.odd_id) ? 'text-black' : 'text-slate-300'}`}>{btnX?.value !== "0.00" ? btnX?.value : "-"}</span>
                                                                     </button>
-                                                                    <button onClick={() => toggleSelection(game, btn2)} className={`flex-1 h-full min-h-[44px] flex justify-between items-center px-1.5 sm:px-3 rounded transition-colors border ${betSlip.some(item => item.odd_id === btn2.odd_id) ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] border-[#3b4148] hover:border-[#ffcc00] shadow-sm'}`}>
-                                                                        <span className={`font-black text-[11px] sm:text-[12px] ${betSlip.some(item => item.odd_id === btn2.odd_id) ? 'text-black' : 'text-[#ffcc00]'}`}>{btn2?.value}</span>
+                                                                    <button onClick={() => toggleSelection(game, btn2)} className={`flex-1 h-full min-h-[44px] flex justify-between items-center px-1.5 sm:px-3 rounded transition-colors border ${betSlip.some(item => item.odd_id === btn2.odd_id) ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] border-[#3b4148] hover:border-[#ffcc00] shadow-sm'} ${btn2.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                                        <span className={`font-black text-[11px] sm:text-[12px] ${betSlip.some(item => item.odd_id === btn2.odd_id) ? 'text-black' : 'text-[#ffcc00]'}`}>{btn2?.value !== "0.00" ? btn2?.value : "-"}</span>
                                                                         <span className={`text-[9.5px] sm:text-[11px] font-semibold truncate max-w-[50px] sm:max-w-[90px] ${betSlip.some(item => item.odd_id === btn2.odd_id) ? 'text-black' : 'text-slate-300'}`}>{mainMarketView === '1X2' ? game.away_team : 'X2'}</span>
                                                                     </button>
                                                                 </div>
@@ -1119,7 +994,7 @@ export default function Home() {
                                                                 <div className="w-10 sm:w-14 flex items-center justify-center border-l border-[#2a3038] shrink-0 bg-[#1a1f24]/50">
                                                                     <button onClick={() => setExpandedMatchId(isExpanded ? null : game.id)} className={`w-full h-full text-[10px] font-bold transition-colors flex flex-col items-center justify-center ${hasSelectionInGame ? 'bg-[#ffcc00] text-black shadow-inner' : isExpanded ? 'bg-[#2a3038] text-white shadow-inner' : 'text-slate-400 hover:text-white hover:bg-[#2a3038]'}`}>
                                                                         <span className={`text-xs ${hasSelectionInGame ? 'text-black' : ''}`}>{isExpanded ? '▲' : '▼'}</span>
-                                                                        <span className={hasSelectionInGame ? 'text-black' : ''}>+{Object.values(categorizedMarkets).reduce((acc, cat) => acc + cat.length, 0)}</span>
+                                                                        <span className={hasSelectionInGame ? 'text-black' : ''}>+{Object.values(categorizedMarkets).reduce((acc: any, cat: any) => acc + cat.length, 0)}</span>
                                                                     </button>
                                                                 </div>
                                                             </div>
