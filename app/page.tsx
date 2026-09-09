@@ -34,7 +34,7 @@ export default function Home() {
     const [isSoccerOpen, setIsSoccerOpen] = useState(true);
     const [openCountry, setOpenCountry] = useState<string | null>('England');
 
-    const [openAccordions, setOpenAccordions] = useState<string[]>(['1X2 (Match Winner)', 'Double Chance', 'Total Goals: Over/Under 2.5']);
+    const [openAccordions, setOpenAccordions] = useState<string[]>(['Match Winner', 'Double Chance', 'Goals Over/Under']);
 
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [isMobileBetSlipOpen, setIsMobileBetSlipOpen] = useState(false);
@@ -103,11 +103,11 @@ export default function Home() {
                             const bookmakers = typeof game.odds_data === 'string' ? JSON.parse(game.odds_data) : game.odds_data;
                             rawMarkets = bookmakers[0]?.markets || [];
                             
-                            // 🌟 የውሸት ስሌት (Fake Defaults) ሙሉ በሙሉ ተነስተዋል 🌟
-                            const h2h = rawMarkets.find((m: any) => m.key === 'h2h');
-                            const odd1 = h2h?.outcomes?.find((o: any) => o.name === game.home_team)?.price || 0;
-                            const oddX = h2h?.outcomes?.find((o: any) => o.name === 'Draw')?.price || 0;
-                            const odd2 = h2h?.outcomes?.find((o: any) => o.name === game.away_team)?.price || 0;
+                            // 🌟 የ API-Footballን ዳይናሚክ የቡድን ስሞች (Home/Away) መለየት 🌟
+                            const h2h = rawMarkets.find((m: any) => m.key === 'h2h' || m.title?.toLowerCase().includes('winner'));
+                            const odd1 = h2h?.outcomes?.find((o: any) => o.name === game.home_team || o.name === 'Home')?.price || 0;
+                            const oddX = h2h?.outcomes?.find((o: any) => o.name === 'Draw' || o.name === 'X')?.price || 0;
+                            const odd2 = h2h?.outcomes?.find((o: any) => o.name === game.away_team || o.name === 'Away')?.price || 0;
 
                             parsedOdds = [
                                 { odd_id: `1_${game.id}`, option: "1", value: odd1 ? odd1.toFixed(2) : "0.00" },
@@ -141,7 +141,7 @@ export default function Home() {
     }, []);
 
     const toggleSelection = (game: any, odd: any) => {
-        if (!odd || odd.value === "0.00") return; // 🌟 ዜሮ የሆኑ ኦዶችን መቁረጥ እንዳይቻል ይከላከላል
+        if (!odd || odd.value === "0.00") return; 
         setBookingCode(null);
         setErrorMessage(null);
         setBetSlip(prev => {
@@ -379,59 +379,46 @@ export default function Home() {
         setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
     };
 
-    // 🌟 አዲሱ እና ንፁሁ የ ማርኬት ማውጫ (Auto-Odds Calculator ሙሉ በሙሉ ወጥቷል!) 🌟
+    // 🌟 አዲሱ እና ዳይናሚክ የሆነው የማርኬቶች አወቃቀር (All Markets Fetcher) 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game.raw_markets || [];
         const marketsObj: Record<string, any[]> = {
             "Main Match Result": [],
-            "Goal Markets": []
+            "Goal Markets": [],
+            "Handicap & Others": []
         };
 
-        // 1. H2H (1X2) Market
-        const h2h = raw.find((m: any) => m.key === 'h2h');
-        if (h2h) {
-            marketsObj["Main Match Result"].push({
-                title: "1X2 (Match Winner)", cols: 3, 
-                odds: [
-                    { odd_id: `1_${game.id}`, option: "1", value: (h2h.outcomes?.find((o:any)=> o.name===game.home_team)?.price || 0).toFixed(2) },
-                    { odd_id: `x_${game.id}`, option: "X", value: (h2h.outcomes?.find((o:any)=> o.name==='Draw')?.price || 0).toFixed(2) },
-                    { odd_id: `2_${game.id}`, option: "2", value: (h2h.outcomes?.find((o:any)=> o.name===game.away_team)?.price || 0).toFixed(2) }
-                ]
-            });
-        }
+        raw.forEach((market: any) => {
+            let category = "Handicap & Others";
+            let title = market.title || market.key;
+            const keyLower = market.key.toLowerCase();
+            const titleLower = title.toLowerCase();
 
-        // 2. Double Chance Market
-        const dc = raw.find((m: any) => m.key === 'double_chance');
-        if (dc) {
-            marketsObj["Main Match Result"].push({
-                title: "Double Chance", cols: 3, 
-                odds: dc.outcomes?.map((o: any) => ({
-                    odd_id: `dc_${o.name.replace(/\s+/g,'_')}_${game.id}`, option: o.name, value: o.price.toFixed(2)
-                })) || []
-            });
-        }
+            // ርዕሶቹን እና ቁልፎችን በማየት በየቦታው እንመድባቸዋለን (Categorization)
+            if (['h2h', 'double_chance'].includes(keyLower) || titleLower.includes('winner') || titleLower.includes('result') || titleLower.includes('correct score')) {
+                category = "Main Match Result";
+            } else if (['totals', 'btts'].includes(keyLower) || titleLower.includes('goal') || titleLower.includes('score')) {
+                category = "Goal Markets";
+            }
 
-        // 3. Totals (Over/Under) Market
-        const totals = raw.find((m: any) => m.key === 'totals');
-        if (totals) {
-            marketsObj["Goal Markets"].push({
-                title: "Total Goals: Over/Under 2.5", cols: 2, 
-                odds: totals.outcomes?.map((o: any) => ({
-                    odd_id: `ou_${o.name.replace(/\s+/g,'_')}_${game.id}`, option: o.name, value: o.price.toFixed(2)
-                })) || []
-            });
-        }
+            const outcomes = (market.outcomes || []).map((o: any, idx: number) => ({
+                odd_id: `${market.key}_${o.name.replace(/[^a-zA-Z0-9]/g, '_')}_${game.id}_${idx}`, 
+                option: o.name, 
+                value: parseFloat(o.price).toFixed(2)
+            }));
 
-        // 4. BTTS Market
-        const btts = raw.find((m: any) => m.key === 'btts');
-        if (btts) {
-            marketsObj["Goal Markets"].push({
-                title: "Both Teams To Score (BTTS)", cols: 2, 
-                odds: btts.outcomes?.map((o: any) => ({
-                    odd_id: `btts_${o.name}_${game.id}`, option: o.name === 'Yes' ? 'Yes (GG)' : 'No (NG)', value: o.price.toFixed(2)
-                })) || []
-            });
-        }
+            // ባዶ ያልሆኑ ማርኬቶችን ብቻ እናሳያለን
+            if (outcomes.length > 0) {
+                let cols = 2; // Default 2 columns
+                if (outcomes.length === 3 || outcomes.length > 6) cols = 3;
+                
+                marketsObj[category].push({
+                    title: title,
+                    cols: cols, 
+                    odds: outcomes
+                });
+            }
+        });
 
         // ባዶ የሆኑ ክፍሎችን (Categories) ማጥፊያ
         const finalObj: Record<string, any[]> = {};
@@ -957,8 +944,8 @@ export default function Home() {
                                                     const categorizedMarkets = getCategorizedMarkets(game);
                                                     
                                                     const mainMarkets = categorizedMarkets["Main Match Result"] || [];
-                                                    const market1X2 = mainMarkets.find((m:any) => m.title === "1X2 (Match Winner)")?.odds || [];
-                                                    const marketDC = mainMarkets.find((m:any) => m.title === "Double Chance")?.odds || [];
+                                                    const market1X2 = mainMarkets.find((m:any) => m.title.toLowerCase().includes("winner") || m.title.toLowerCase().includes("h2h"))?.odds || [];
+                                                    const marketDC = mainMarkets.find((m:any) => m.title.toLowerCase().includes("double chance"))?.odds || [];
                                                     const currentDisplayOdds = mainMarketView === '1X2' ? market1X2 : marketDC;
 
                                                     // 🌟 ማርኬቶች ባይኖሩም እንኳን UI እንዳይበላሽ ደህንነታቸው የተረጋገጠ Fallbacks 🌟
