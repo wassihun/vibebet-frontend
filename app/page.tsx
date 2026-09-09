@@ -104,7 +104,11 @@ export default function Home() {
                             rawMarkets = bookmakers[0]?.markets || [];
                             
                             // 🌟 የደህንነት ማለፊያ (Safe Fallbacks) ተጨምሯል 🌟
-                            const h2h = rawMarkets.find((m: any) => m?.key === 'h2h' || m?.title?.toLowerCase().includes('winner') || m?.title?.toLowerCase().includes('result'));
+                            const h2h = rawMarkets.find((m: any) => {
+                                const title = (m?.title || '').toLowerCase();
+                                return m?.key === 'h2h' || title.includes('winner') || title.includes('result');
+                            });
+
                             const odd1 = h2h?.outcomes?.find((o: any) => o?.name === game.home_team || o?.name === 'Home' || o?.name === '1')?.price || 0;
                             const oddX = h2h?.outcomes?.find((o: any) => o?.name === 'Draw' || o?.name === 'X')?.price || 0;
                             const odd2 = h2h?.outcomes?.find((o: any) => o?.name === game.away_team || o?.name === 'Away' || o?.name === '2')?.price || 0;
@@ -381,7 +385,7 @@ export default function Home() {
 
     // 🌟 አዲሱ እጅግ አስተማማኝ (Crash-proof) ማርኬት ማውጫ 🌟
     const getCategorizedMarkets = (game: any) => {
-        const raw = game.raw_markets || [];
+        const raw = game?.raw_markets || [];
         const marketsObj: Record<string, any[]> = {
             "Main Match Result": [],
             "Goal Markets": [],
@@ -391,7 +395,7 @@ export default function Home() {
         if (!Array.isArray(raw)) return marketsObj;
 
         raw.forEach((market: any) => {
-            if (!market) return; // Null data መከላከያ
+            if (!market) return; 
             
             let category = "Handicap & Others";
             let title = market.title || market.key || "Market";
@@ -405,7 +409,7 @@ export default function Home() {
             }
 
             const outcomes = Array.isArray(market.outcomes) ? market.outcomes.map((o: any, idx: number) => ({
-                odd_id: `${market.key || 'unk'}_${(o?.name || '').replace(/[^a-zA-Z0-9]/g, '_')}_${game.id}_${idx}`, 
+                odd_id: `${market.key || 'unk'}_${(o?.name || '').toString().replace(/[^a-zA-Z0-9]/g, '_')}_${game.id}_${idx}`, 
                 option: o?.name || 'Opt', 
                 value: parseFloat(o?.price || 0).toFixed(2)
             })) : [];
@@ -433,7 +437,8 @@ export default function Home() {
     };
 
     const getLeagueDetails = (key: string) => {
-        if (!key) return { country: 'World', flag: 'https://flagcdn.com/w40/un.png', name: 'Soccer', isTop: false };
+        // 🌟 Key የሌለው ከሆነ ወይም string ካልሆነ እንዳይበላሽ መከላከያ 🌟
+        if (!key || typeof key !== 'string') return { country: 'World', flag: 'https://flagcdn.com/w40/un.png', name: 'Soccer', isTop: false };
 
         const topLeagueKeys = [
             'soccer_epl', 'soccer_germany_bundesliga', 'soccer_netherlands_eredivisie',
@@ -501,7 +506,7 @@ export default function Home() {
 
     const groupedFixtures = activeFixtures.reduce((acc: any, game: any) => {
         const details = getLeagueDetails(game.league);
-        const uniqueKey = game.league;
+        const uniqueKey = game.league || 'unknown';
         if (!acc[uniqueKey]) acc[uniqueKey] = { details, games: [] };
         acc[uniqueKey].games.push(game);
         return acc;
@@ -948,8 +953,18 @@ export default function Home() {
                                                     const categorizedMarkets = getCategorizedMarkets(game);
                                                     
                                                     const mainMarkets = categorizedMarkets["Main Match Result"] || [];
-                                                    const market1X2 = mainMarkets.find((m:any) => m?.title?.toLowerCase().includes("winner") || m?.title?.toLowerCase().includes("h2h") || m?.title?.toLowerCase().includes("result"))?.odds || [];
-                                                    const marketDC = mainMarkets.find((m:any) => m?.title?.toLowerCase().includes("double chance"))?.odds || [];
+                                                    
+                                                    // 🌟 እጅግ ጥብቅ የሆነ (Crash-proof) ማርኬት ማፈላለጊያ 🌟
+                                                    const market1X2 = mainMarkets.find((m:any) => {
+                                                        const t = (m?.title || '').toLowerCase();
+                                                        return t.includes("winner") || t.includes("h2h") || t.includes("result") || t.includes("match betting");
+                                                    })?.odds || [];
+                                                    
+                                                    const marketDC = mainMarkets.find((m:any) => {
+                                                        const t = (m?.title || '').toLowerCase();
+                                                        return t.includes("double chance");
+                                                    })?.odds || [];
+                                                    
                                                     const currentDisplayOdds = mainMarketView === '1X2' ? market1X2 : marketDC;
 
                                                     // Safe fallback rendering for odds
