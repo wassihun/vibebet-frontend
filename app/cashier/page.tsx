@@ -52,6 +52,9 @@ export default function CashierDashboard() {
     }
 
     useEffect(() => {
+        // 🌟 ማስተካከያ 1: የብሮውዘር ታብ ጽሁፍ 🌟
+        document.title = "vibebet.et - Cashier";
+
         setIsOnline(navigator.onLine);
         const handleOnline = () => setIsOnline(true);
         const handleOffline = () => setIsOnline(false);
@@ -240,7 +243,6 @@ export default function CashierDashboard() {
 
     const openPrintModal = () => { setIsPrintModalOpen(true); };
 
-    // 🌟 አዲሱ እና ደህንነቱ የተጠበቀው (Secure) የፕሪንት እና የትኬት ዲዛይን 🌟
     const handleCustomPrint = (ticketDetails: any) => {
         const printFrame = document.createElement('iframe');
         printFrame.style.position = 'fixed';
@@ -395,7 +397,6 @@ export default function CashierDashboard() {
         }, 500);
     };
 
-    // 🌟 የደህንነት ማስተካከያ (Security Fix): አላስፈላጊ (total_odds, potential_win) ዳታዎችን ወደ ሰርቨር ከመላክ ተቆጥበናል 🌟
     const handleSubmitAndPrint = async () => {
         const hasStarted = ticketData.selections.some((item: any) => item.commence_time && new Date(item.commence_time) < new Date());
         if (hasStarted) { alert("የጀመሩ ጨዋታዎች አሉ! እባክዎ ከትኬቱ ላይ ይቀንሱ።"); return; }
@@ -505,7 +506,6 @@ export default function CashierDashboard() {
         }
     };
 
-    // 🌟 የደህንነት ማስተካከያ (Security Fix): የካሸሩ ፓስወርድ Backend ላይ verify እንዲያደርግ ተደርጓል 🌟
     const handleReportAuth = async (e: React.FormEvent) => {
         e.preventDefault();
         setReportError('');
@@ -538,8 +538,11 @@ export default function CashierDashboard() {
             <div className="min-h-screen bg-[#1c2024] flex items-center justify-center font-sans">
                 <div className="bg-[#24292e] p-8 rounded-2xl shadow-2xl border border-[#3b4148] w-[380px]">
                     <div className="text-center mb-8">
-                        <div className="w-20 h-20 bg-black rounded-full flex items-center justify-center font-black text-[#ffcc00] text-5xl mx-auto mb-4 shadow-inner border-2 border-[#3b4148]">V</div>
-                        <h2 className="text-3xl font-black text-white tracking-wide">VIBE <span className="text-[#ffcc00]">BET</span></h2>
+                        {/* 🌟 Login ሎጎ ወደ አዲሱ SVG ተቀይሯል 🌟 */}
+                        <div className="w-20 h-20 bg-[#1c2024] rounded-[15px] flex items-center justify-center mx-auto mb-4 shadow-inner border border-[#3b4148] p-2">
+                            <img src="/icon.svg" alt="Vibe Bet" className="w-full h-full object-contain" />
+                        </div>
+                        <h2 className="text-3xl font-black text-white tracking-wide italic">VIBE <span className="text-[#ffcc00]">BET</span></h2>
                         <p className="text-slate-400 text-xs mt-2 uppercase tracking-widest font-bold bg-[#1a1f24] inline-block px-3 py-1 rounded-full border border-[#3b4148]">Cashier Portal</p>
                     </div>
                     <form onSubmit={handleLogin} className="space-y-5">
@@ -567,11 +570,14 @@ export default function CashierDashboard() {
         <div className="min-h-screen bg-[#1c2024] text-slate-300 font-sans flex flex-col relative">
             
             <div className="no-print flex flex-col flex-1">
+                {/* 🌟 የካሸር ራስጌ (Header) በአዲሱ ሎጎ እና ዲዛይን ተስተካክሏል 🌟 */}
                 <header className="bg-[#ffcc00] border-b border-[#e6b800] h-[60px] flex items-center justify-between px-6 sticky top-0 z-30 shadow-md">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center font-black text-[#ffcc00] text-2xl shadow-inner">V</div>
+                        <div className="w-11 h-11 shrink-0 rounded-[10px] overflow-hidden shadow-lg border border-[#3b4148]/50 bg-[#1c2024] p-1 flex items-center justify-center">
+                            <img src="/icon.svg" alt="Vibe Bet" className="w-full h-full object-contain" />
+                        </div>
                         <div>
-                            <h1 className="text-xl font-black text-black leading-none">VIBE <span className="text-black/70">BET</span></h1>
+                            <h1 className="text-[22px] font-black text-black leading-none tracking-tight italic mb-0.5">VIBE BET</h1>
                             <p className="text-[10px] text-black/60 font-bold uppercase tracking-widest mt-0.5 flex items-center gap-2">
                                 Cashier Terminal
                                 {isOnline ? <span className="text-black bg-white/30 px-1.5 rounded-sm">● Online</span> : <span className="text-red-600 bg-white/30 px-1.5 rounded-sm animate-pulse">● Offline</span>}
@@ -801,6 +807,7 @@ export default function CashierDashboard() {
 
                                         <div className="flex-1 overflow-y-auto custom-scrollbar mb-4">
                                             <div className="bg-white border border-gray-300 rounded overflow-hidden shadow-sm">
+                                                {/* 🌟 ማስተካከያ 2: Live Match Score 🌟 */}
                                                 {payoutDetails.selections?.map((item: any, i: number) => {
                                                     const isWon = item.match_status === 'won'; 
                                                     const isLost = item.match_status === 'lost'; 
@@ -822,7 +829,12 @@ export default function CashierDashboard() {
                                                             </div>
                                                             <div className="flex justify-between items-center text-[11px] font-black text-gray-800 uppercase mt-0.5">
                                                                 <span>{awayTeam}</span>
-                                                                <span>{score}</span>
+                                                                
+                                                                {/* አዲሱ የትክክለኛ ውጤት (Score) ማሳያ */}
+                                                                <span className={`mx-2 text-[10px] px-2 py-0.5 rounded shrink-0 font-black border ${item.score && item.score !== '-:-' ? 'bg-[#ffcc00] text-black border-[#e6b800] shadow-sm' : 'bg-[#24292e] text-slate-400 border-[#3b4148]'}`}>
+                                                                    {item.score && item.score !== '-:-' ? item.score : 'vs'}
+                                                                </span>
+
                                                             </div>
                                                             <div className="flex justify-between items-center text-[10px] text-gray-600 mt-2">
                                                                 <span>{item.odd_name && ['1','X','2'].includes(item.odd_name) ? `Match Result: ${item.odd_name}` : `Pick: ${item.odd_name}`}</span>
@@ -868,7 +880,7 @@ export default function CashierDashboard() {
                                     <div className="py-20 max-w-sm mx-auto text-center flex-1 flex flex-col justify-center">
                                         <div className="w-20 h-20 bg-blue-500/10 text-blue-500 rounded-full flex items-center justify-center text-4xl mx-auto mb-6 border-2 border-blue-500/30 shadow-inner">🔒</div>
                                         <h2 className="text-2xl font-black text-white mb-2">ሪፖርትዎን ለመክፈት</h2>
-                                        <p className="text-slate-400 text-sm font-bold mb-8">የግል የገንዘብ ሪፖርትዎን ለማየት መግቢያ ፓስወርድዎን ያስገቡ。</p>
+                                        <p className="text-slate-400 text-sm font-bold mb-8">የግል የገንዘብ ሪፖርትዎን ለማየት መግቢያ ፓስወርድዎን ያስገቡ።</p>
                                         
                                         <form onSubmit={handleReportAuth} className="space-y-4 w-full">
                                             {reportError && <p className="text-red-400 text-sm font-bold bg-red-500/10 p-3 rounded-lg border border-red-500/30">{reportError}</p>}
