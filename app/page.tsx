@@ -103,11 +103,11 @@ export default function Home() {
                             const bookmakers = typeof game.odds_data === 'string' ? JSON.parse(game.odds_data) : game.odds_data;
                             rawMarkets = bookmakers[0]?.markets || [];
                             
-                            // 🌟 የ API-Footballን ዳይናሚክ የቡድን ስሞች (Home/Away) መለየት 🌟
-                            const h2h = rawMarkets.find((m: any) => m.key === 'h2h' || m.title?.toLowerCase().includes('winner'));
-                            const odd1 = h2h?.outcomes?.find((o: any) => o.name === game.home_team || o.name === 'Home')?.price || 0;
-                            const oddX = h2h?.outcomes?.find((o: any) => o.name === 'Draw' || o.name === 'X')?.price || 0;
-                            const odd2 = h2h?.outcomes?.find((o: any) => o.name === game.away_team || o.name === 'Away')?.price || 0;
+                            // 🌟 የደህንነት ማለፊያ (Safe Fallbacks) ተጨምሯል 🌟
+                            const h2h = rawMarkets.find((m: any) => m?.key === 'h2h' || m?.title?.toLowerCase().includes('winner') || m?.title?.toLowerCase().includes('result'));
+                            const odd1 = h2h?.outcomes?.find((o: any) => o?.name === game.home_team || o?.name === 'Home' || o?.name === '1')?.price || 0;
+                            const oddX = h2h?.outcomes?.find((o: any) => o?.name === 'Draw' || o?.name === 'X')?.price || 0;
+                            const odd2 = h2h?.outcomes?.find((o: any) => o?.name === game.away_team || o?.name === 'Away' || o?.name === '2')?.price || 0;
 
                             parsedOdds = [
                                 { odd_id: `1_${game.id}`, option: "1", value: odd1 ? odd1.toFixed(2) : "0.00" },
@@ -124,10 +124,10 @@ export default function Home() {
 
                         return {
                             id: game.id,
-                            home_team: game.home_team,
-                            away_team: game.away_team,
+                            home_team: game.home_team || "Home",
+                            away_team: game.away_team || "Away",
                             match_time: game.commence_time,
-                            league: game.sport_key,
+                            league: game.sport_key || "world_soccer",
                             odds: parsedOdds,
                             raw_markets: rawMarkets 
                         };
@@ -141,7 +141,7 @@ export default function Home() {
     }, []);
 
     const toggleSelection = (game: any, odd: any) => {
-        if (!odd || odd.value === "0.00") return; 
+        if (!odd || odd.value === "0.00" || odd.value === "-") return; 
         setBookingCode(null);
         setErrorMessage(null);
         setBetSlip(prev => {
@@ -164,7 +164,7 @@ export default function Home() {
         });
     };
 
-    const totalOdds = betSlip.reduce((total, item) => total * item.odd_value, 1).toFixed(2);
+    const totalOdds = betSlip.reduce((total, item) => total * (item.odd_value || 1), 1).toFixed(2);
     const grossWin = parseFloat(totalOdds) * stake;
 
     const isUnderStake = stake < MIN_STAKE;
@@ -222,7 +222,7 @@ export default function Home() {
                     away_team: s.match_info ? s.match_info.split(' vs ')[1] : 'Away',
                     odd_id: s.odd_id,
                     odd_name: s.odd_name,
-                    odd_value: parseFloat(s.odd_value),
+                    odd_value: parseFloat(s.odd_value || 0),
                     match_time: new Date().toISOString(), 
                     league_name: 'Loaded Match'
                 }));
@@ -379,7 +379,7 @@ export default function Home() {
         setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
     };
 
-    // 🌟 አዲሱ እና ዳይናሚክ የሆነው የማርኬቶች አወቃቀር (All Markets Fetcher) 🌟
+    // 🌟 አዲሱ እጅግ አስተማማኝ (Crash-proof) ማርኬት ማውጫ 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game.raw_markets || [];
         const marketsObj: Record<string, any[]> = {
@@ -388,28 +388,30 @@ export default function Home() {
             "Handicap & Others": []
         };
 
-        raw.forEach((market: any) => {
-            let category = "Handicap & Others";
-            let title = market.title || market.key;
-            const keyLower = market.key.toLowerCase();
-            const titleLower = title.toLowerCase();
+        if (!Array.isArray(raw)) return marketsObj;
 
-            // ርዕሶቹን እና ቁልፎችን በማየት በየቦታው እንመድባቸዋለን (Categorization)
+        raw.forEach((market: any) => {
+            if (!market) return; // Null data መከላከያ
+            
+            let category = "Handicap & Others";
+            let title = market.title || market.key || "Market";
+            const keyLower = (market.key || "").toLowerCase();
+            const titleLower = (title || "").toLowerCase();
+
             if (['h2h', 'double_chance'].includes(keyLower) || titleLower.includes('winner') || titleLower.includes('result') || titleLower.includes('correct score')) {
                 category = "Main Match Result";
             } else if (['totals', 'btts'].includes(keyLower) || titleLower.includes('goal') || titleLower.includes('score')) {
                 category = "Goal Markets";
             }
 
-            const outcomes = (market.outcomes || []).map((o: any, idx: number) => ({
-                odd_id: `${market.key}_${o.name.replace(/[^a-zA-Z0-9]/g, '_')}_${game.id}_${idx}`, 
-                option: o.name, 
-                value: parseFloat(o.price).toFixed(2)
-            }));
+            const outcomes = Array.isArray(market.outcomes) ? market.outcomes.map((o: any, idx: number) => ({
+                odd_id: `${market.key || 'unk'}_${(o?.name || '').replace(/[^a-zA-Z0-9]/g, '_')}_${game.id}_${idx}`, 
+                option: o?.name || 'Opt', 
+                value: parseFloat(o?.price || 0).toFixed(2)
+            })) : [];
 
-            // ባዶ ያልሆኑ ማርኬቶችን ብቻ እናሳያለን
             if (outcomes.length > 0) {
-                let cols = 2; // Default 2 columns
+                let cols = 2; 
                 if (outcomes.length === 3 || outcomes.length > 6) cols = 3;
                 
                 marketsObj[category].push({
@@ -420,7 +422,6 @@ export default function Home() {
             }
         });
 
-        // ባዶ የሆኑ ክፍሎችን (Categories) ማጥፊያ
         const finalObj: Record<string, any[]> = {};
         Object.keys(marketsObj).forEach(key => {
             if (marketsObj[key].length > 0) {
@@ -432,6 +433,8 @@ export default function Home() {
     };
 
     const getLeagueDetails = (key: string) => {
+        if (!key) return { country: 'World', flag: 'https://flagcdn.com/w40/un.png', name: 'Soccer', isTop: false };
+
         const topLeagueKeys = [
             'soccer_epl', 'soccer_germany_bundesliga', 'soccer_netherlands_eredivisie',
             'soccer_spain_la_liga', 'soccer_portugal_primeira_liga', 'soccer_france_ligue_one',
@@ -486,6 +489,7 @@ export default function Home() {
     };
 
     const renderFlag = (flagObj: string) => {
+        if (!flagObj) return <img src="https://flagcdn.com/w40/un.png" alt="flag" className="w-full h-full object-cover" />;
         if (flagObj.includes('http') || flagObj.includes('/') || flagObj.includes('.')) {
             return <img src={flagObj} alt="flag" onError={(e: any) => e.target.src='https://flagcdn.com/w40/un.png'} className="w-full h-full object-cover" />;
         }
@@ -493,7 +497,7 @@ export default function Home() {
     };
 
     const currentTime = new Date().getTime();
-    const activeFixtures = fixtures.filter(g => new Date(g.match_time).getTime() > currentTime);
+    const activeFixtures = fixtures.filter(g => g && g.match_time && new Date(g.match_time).getTime() > currentTime);
 
     const groupedFixtures = activeFixtures.reduce((acc: any, game: any) => {
         const details = getLeagueDetails(game.league);
@@ -907,7 +911,7 @@ export default function Home() {
                                         }
 
                                         const filteredGames = gamesToRender.filter((g: any) => {
-                                            const matchesSearch = g.home_team.toLowerCase().includes(searchTerm.toLowerCase()) || g.away_team.toLowerCase().includes(searchTerm.toLowerCase());
+                                            const matchesSearch = (g.home_team || '').toLowerCase().includes(searchTerm.toLowerCase()) || (g.away_team || '').toLowerCase().includes(searchTerm.toLowerCase());
                                             const matchesDate = selectedDateFilter === 'All' || new Date(g.match_time).toDateString() === selectedDateFilter;
                                             return matchesSearch && matchesDate;
                                         }).sort((a: any, b: any) => new Date(a.match_time).getTime() - new Date(b.match_time).getTime());
@@ -944,11 +948,11 @@ export default function Home() {
                                                     const categorizedMarkets = getCategorizedMarkets(game);
                                                     
                                                     const mainMarkets = categorizedMarkets["Main Match Result"] || [];
-                                                    const market1X2 = mainMarkets.find((m:any) => m.title.toLowerCase().includes("winner") || m.title.toLowerCase().includes("h2h"))?.odds || [];
-                                                    const marketDC = mainMarkets.find((m:any) => m.title.toLowerCase().includes("double chance"))?.odds || [];
+                                                    const market1X2 = mainMarkets.find((m:any) => m?.title?.toLowerCase().includes("winner") || m?.title?.toLowerCase().includes("h2h") || m?.title?.toLowerCase().includes("result"))?.odds || [];
+                                                    const marketDC = mainMarkets.find((m:any) => m?.title?.toLowerCase().includes("double chance"))?.odds || [];
                                                     const currentDisplayOdds = mainMarketView === '1X2' ? market1X2 : marketDC;
 
-                                                    // 🌟 ማርኬቶች ባይኖሩም እንኳን UI እንዳይበላሽ ደህንነታቸው የተረጋገጠ Fallbacks 🌟
+                                                    // Safe fallback rendering for odds
                                                     const btn1 = currentDisplayOdds[0] || { odd_id: `1_null_${game.id}`, option: "1", value: "0.00" };
                                                     const btnX = currentDisplayOdds[1] || { odd_id: `x_null_${game.id}`, option: "X", value: "0.00" };
                                                     const btn2 = currentDisplayOdds[2] || { odd_id: `2_null_${game.id}`, option: "2", value: "0.00" };
@@ -1216,7 +1220,7 @@ export default function Home() {
                                                     const isLost = item.match_status === 'lost'; 
                                                     const icon = isWon ? '✅' : isLost ? '❌' : '⏳';
                                                     
-                                                    const teams = item.match_info.split(' vs ');
+                                                    const teams = (item.match_info || "Home vs Away").split(' vs ');
                                                     const homeTeam = teams[0] || 'Home';
                                                     const awayTeam = teams[1] || 'Away';
 
@@ -1314,7 +1318,7 @@ export default function Home() {
                                                 <div className="col-span-3 py-1.5 px-1.5 border-r border-gray-200 truncate" title={item.league_name}>{item.league_name}</div>
                                                 <div className="col-span-3 py-1.5 px-1.5 border-r border-gray-200 truncate" title={`${item.home_team} - ${item.away_team}`}>{item.home_team} - {item.away_team}</div>
                                                 <div className="col-span-2 py-1.5 px-1.5 border-r border-gray-200 truncate">{marketText}</div>
-                                                <div className="col-span-1 py-1.5 px-1.5 font-medium">{item.odd_value.toFixed(2)}</div>
+                                                <div className="col-span-1 py-1.5 px-1.5 font-medium">{(item.odd_value || 0).toFixed(2)}</div>
                                             </div>
                                         );
                                     })}
