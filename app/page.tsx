@@ -9,7 +9,7 @@ const MAX_WIN = 10000;
 const MIN_STAKE = 20; 
 
 export default function Home() {
-    const [isMounted, setIsMounted] = useState(false);
+    const [isMounted, setIsMounted] = useState(false); // 🌟 Hydration Error ለመከላከል
     const [fixtures, setFixtures] = useState<any[]>([]);
     const [betSlip, setBetSlip] = useState<any[]>([]);
     const [stake, setStake] = useState<number>(20);
@@ -35,6 +35,7 @@ export default function Home() {
     const [isSoccerOpen, setIsSoccerOpen] = useState(true);
     const [openCountry, setOpenCountry] = useState<string | null>(null);
 
+    // 🌟 ዋና ማርኬቶች በነባሪነት ክፍት እንዲሆኑ 🌟
     const [openAccordions, setOpenAccordions] = useState<string[]>(['3 Way', 'Both teams to score', 'Double chance', 'Over/Under']);
 
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -69,7 +70,7 @@ export default function Home() {
     const [isOnline, setIsOnline] = useState<boolean>(true);
 
     useEffect(() => {
-        setIsMounted(true);
+        setIsMounted(true); // 🌟 Client-side rendering ብቻ እንዲሰራ
         document.title = "vibebet.et";
         setIsOnline(navigator.onLine);
         const handleOnline = () => setIsOnline(true);
@@ -474,7 +475,7 @@ export default function Home() {
                     } else {
                         const existingMarket = catArray[existingIdx];
                         const existingOpts = new Set(existingMarket.odds.map((o:any) => o.option.trim().toLowerCase()));
-                        outcomes.forEach(o => {
+                        outcomes.forEach((o: any) => {
                             if (!existingOpts.has(o.option.trim().toLowerCase())) {
                                 existingMarket.odds.push({...o});
                                 existingOpts.add(o.option.trim().toLowerCase());
