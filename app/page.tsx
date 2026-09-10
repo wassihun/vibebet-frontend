@@ -284,7 +284,7 @@ export default function Home() {
         setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
     };
 
-    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ (Strict Market Mapping API-Football to UI) 🌟
+    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ እና ሎጂክ (Strict Market Mapping & Smart Sorting) 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game?.raw_markets || [];
         const marketsObj: Record<string, any[]> = {
@@ -335,8 +335,34 @@ export default function Home() {
             const titleLower = String(title).toLowerCase().trim();
             const mId = market.id;
 
-            // --- 1. MAIN MARKET ---
-            if (mId === 1 || titleLower.includes('match winner') || titleLower === '1x2') {
+            // --- 1. COMBINATION MARKET ---
+            if (titleLower.includes('&') || titleLower.includes(' and ') || titleLower.includes('10 minutes') || titleLower.includes('anytime goalscorer') || (titleLower.includes('corner 1x2') && !titleLower.includes('half')) || titleLower.includes('last corner') || titleLower.includes('last goal') || titleLower.includes('which team to score') || titleLower.includes('odd/even corners')) {
+                category = "Combination";
+                if(titleLower.includes('corner range') && (titleLower.includes(game.home_team?.toLowerCase()) || titleLower.includes(game.away_team?.toLowerCase()))) {
+                    category = "Combination";
+                    title = `${game.home_team} corner range`;
+                }
+                // Tweak naming for standard view
+                if (titleLower.includes('3 way & over/under')) title = "3 Way & Over/Under";
+                if (titleLower.includes('3 way & both teams to score')) title = "3 Way & both teams to score";
+            }
+            // --- 2. HALF MARKET ---
+            else if (titleLower.includes('half') || titleLower.includes('ht') || titleLower.includes('1st') || titleLower.includes('2nd') || titleLower.includes('halves')) {
+                category = "Half";
+                title = String(title).replace(/first half/i, '1st Half').replace(/second half/i, '2nd Half').replace(/match winner/i, '3 Way');
+            }
+            // --- 3. HANDICAP MARKET ---
+            else if (titleLower.includes('handicap') || titleLower.includes('asian')) {
+                category = "Handicap";
+            }
+            // --- 4. TOTAL MARKET ---
+            else if (titleLower.includes('exact goals') || titleLower.includes('goal range') || titleLower.includes('goals range') || titleLower.includes('corner range') || titleLower.includes('over/under corners') || titleLower.includes('corners over/under')) {
+                category = "Total";
+                if (mId === 11) title = "Exact goals";
+                if (titleLower.includes('over/under corners')) title = "Over/Under corners";
+            }
+            // --- 5. MAIN MARKET ---
+            else if (mId === 1 || titleLower.includes('match winner') || titleLower === '1x2' || titleLower === '3 way') {
                 title = "3 Way"; category = "Main Market";
             }
             else if (mId === 8 || titleLower.includes('both teams score') || titleLower === 'both teams to score') {
@@ -345,13 +371,13 @@ export default function Home() {
             else if (mId === 12 || titleLower.includes('double chance')) {
                 title = "Double chance"; category = "Main Market";
             }
-            else if (mId === 5 || titleLower === 'goals over/under' || (titleLower.includes('over/under') && !titleLower.includes('half') && !titleLower.includes('corner') && !titleLower.includes('&') && !titleLower.includes('and'))) {
+            else if (mId === 5 || titleLower === 'goals over/under' || titleLower.includes('over/under')) {
                 title = "Over/Under"; category = "Main Market";
             }
-            else if (mId === 17 || (titleLower.includes('halftime/fulltime') && !titleLower.includes('&'))) {
+            else if (mId === 17 || titleLower === 'halftime/fulltime') {
                 title = "Halftime/Fulltime"; category = "Main Market";
             }
-            else if (mId === 24 || (titleLower.includes('odd/even') && !titleLower.includes('half') && !titleLower.includes('corner'))) {
+            else if (mId === 24 || titleLower === 'odd/even') {
                 title = "Odd/even"; category = "Main Market";
             }
             else if (mId === 21 || titleLower.includes('draw no bet')) {
@@ -360,77 +386,11 @@ export default function Home() {
             else if (mId === 40 || titleLower.includes('highest scoring half')) {
                 title = "Highest scoring half"; category = "Main Market";
             }
-            else if (mId === 10 || (titleLower.includes('correct score') && !titleLower.includes('half'))) {
+            else if (mId === 10 || titleLower === 'correct score') {
                 title = "Correct score"; category = "Main Market";
             }
-
-            // --- 2. TOTAL MARKET ---
-            else if (mId === 6 || titleLower === 'first half winner' || (titleLower.includes('1st half') && titleLower.includes('over/under') && !titleLower.includes('&') && !titleLower.includes('corner'))) {
-                title = "1st half - Over/Under"; category = "Total";
-            }
-            else if (mId === 11 || (titleLower.includes('exact goals') && !titleLower.includes('half') && !titleLower.includes('&'))) {
-                title = "Exact goals"; category = "Total";
-            }
-            else if (titleLower.includes('goal range') || titleLower.includes('goals range')) {
-                title = "Goal range"; category = "Total";
-            }
-            else if (titleLower.includes('corner range') && !titleLower.includes('half') && !titleLower.includes((game.home_team || '').toLowerCase())) {
-                title = "Corner range"; category = "Total";
-            }
-            else if (titleLower.includes('over/under corners') || titleLower.includes('corners over/under')) {
-                title = "Over/Under corners"; category = "Total";
-            }
-
-            // --- 3. COMBINATION MARKET ---
-            else if (titleLower.includes('3 way & over/under') || titleLower.includes('match winner and over/under')) {
-                title = "3 Way & Over/Under"; category = "Combination";
-            }
-            else if (titleLower.includes('3 way & both teams to score') || titleLower.includes('match winner and both teams')) {
-                title = "3 Way & both teams to score"; category = "Combination";
-            }
-            else if (titleLower.includes('10 minutes')) {
-                title = "10 minutes - 3 Way from 1 to 10"; category = "Combination";
-            }
-            else if (titleLower.includes('anytime goalscorer')) {
-                title = "Anytime goalscorer"; category = "Combination";
-            }
-            else if (titleLower.includes('corner 1x2') && !titleLower.includes('half')) {
-                title = "Corner 1x2"; category = "Combination";
-            }
-            else if (titleLower.includes('double chance & both teams') || titleLower.includes('double chance and both teams')) {
-                title = "Double chance & both teams to score"; category = "Combination";
-            }
-            else if (titleLower.includes('last corner') && !titleLower.includes('half')) {
-                title = "Last corner"; category = "Combination";
-            }
-            else if (titleLower.includes('last goal') && !titleLower.includes('scorer')) {
-                title = "Last goal"; category = "Combination";
-            }
-            else if (titleLower.includes('last goalscorer')) {
-                title = "Last goalscorer"; category = "Combination";
-            }
-            else if (titleLower.includes('odd/even corners') && !titleLower.includes('half')) {
-                title = "Odd/even corners"; category = "Combination";
-            }
-            else if (titleLower.includes('over/under & both teams') || titleLower.includes('goals over/under and both teams')) {
-                title = "Over/Under & both teams to score"; category = "Combination";
-            }
-            else if (titleLower.includes('which team to score')) {
-                title = "Which team to score"; category = "Combination";
-            }
-            else if (titleLower.includes('corner range') && (titleLower.includes((game.home_team || '').toLowerCase()) || titleLower.includes((game.away_team || '').toLowerCase()))) {
-                title = `${game.home_team} corner range`; category = "Combination";
-            }
-
-            // --- 4. HALF MARKET ---
-            else if (titleLower.includes('half') || titleLower.includes('ht') || titleLower.includes('1st') || titleLower.includes('2nd') || titleLower.includes('first half') || titleLower.includes('second half') || titleLower.includes('both halves') || titleLower.includes('halftime/fulltime &') || titleLower.includes('to win either half')) {
-                category = "Half";
-                title = String(title).replace(/first half/i, '1st Half').replace(/second half/i, '2nd Half').replace(/match winner/i, '3 Way');
-            }
-
-            // --- 5. HANDICAP MARKET ---
-            else if (titleLower.includes('handicap') || titleLower.includes('asian')) {
-                category = "Handicap";
+            else {
+                category = "All"; // Fallback
             }
 
             if (!category) return;
@@ -484,7 +444,9 @@ export default function Home() {
                     }
                 };
 
-                mergeIntoCategory(marketsObj[category]);
+                if (category !== "All") {
+                    mergeIntoCategory(marketsObj[category]);
+                }
                 mergeIntoCategory(marketsObj["All"]);
             }
         });
