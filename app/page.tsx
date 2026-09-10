@@ -284,7 +284,7 @@ export default function Home() {
         setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
     };
 
-    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ፣ ማጣሪያ እና ሎጂክ (STRICT MAPPING & DEDUPLICATION) 🌟
+    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ፣ ማጣሪያ እና ሎጂክ (Strict Market Mapping & Deduplication) 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game?.raw_markets || [];
         const marketsObj: Record<string, any[]> = {
@@ -292,31 +292,6 @@ export default function Home() {
         };
 
         if (!Array.isArray(raw)) return marketsObj;
-
-        // 🌟 የቅደም ተከተል አሰላለፍ (Smart Sorting Logic)
-        const sortOutcomes = (oddsArray: any[]) => {
-            return oddsArray.sort((a, b) => {
-                const optA = String(a.option || '').toLowerCase();
-                const optB = String(b.option || '').toLowerCase();
-                
-                const numA = parseFloat(optA.match(/-?\d+(\.\d+)?/)?.[0] || "NaN");
-                const numB = parseFloat(optB.match(/-?\d+(\.\d+)?/)?.[0] || "NaN");
-                
-                if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB;
-                
-                if (optA.includes('over') && optB.includes('under')) return -1;
-                if (optA.includes('under') && optB.includes('over')) return 1;
-                if (optA.includes('yes') && optB.includes('no')) return -1;
-                if (optA.includes('no') && optB.includes('yes')) return 1;
-                
-                const sortOrder: Record<string, number> = { '1': 1, 'x': 2, '2': 3, '1x': 4, '12': 5, 'x2': 6 };
-                const keyA = optA.trim();
-                const keyB = optB.trim();
-                if (sortOrder[keyA] && sortOrder[keyB]) return sortOrder[keyA] - sortOrder[keyB];
-                
-                return optA.localeCompare(optB);
-            });
-        };
 
         raw.forEach((market: any) => {
             if (!market || !market.outcomes || market.outcomes.length === 0) return; 
@@ -413,9 +388,9 @@ export default function Home() {
             if (category === "All") return;
 
             // 🌟 3. የውጤት ጥብቅ ማጣሪያ (Sanitize outcomes to prevent junk from entering main markets) 🌟
-            if (title === "3 Way") outcomes = outcomes.filter(o => ['1', 'X', '2'].includes(o.option));
-            else if (title === "Double chance") outcomes = outcomes.filter(o => ['1X', '12', 'X2'].includes(o.option));
-            else if (title === "Both teams to score") outcomes = outcomes.filter(o => ['yes', 'no'].includes(o.option.toLowerCase()));
+            if (title === "3 Way") outcomes = outcomes.filter((o: any) => ['1', 'X', '2'].includes(o.option));
+            else if (title === "Double chance") outcomes = outcomes.filter((o: any) => ['1X', '12', 'X2'].includes(o.option));
+            else if (title === "Both teams to score") outcomes = outcomes.filter((o: any) => ['yes', 'no'].includes(o.option.toLowerCase()));
 
             if (outcomes.length === 0) return;
 
@@ -430,6 +405,30 @@ export default function Home() {
                 }
             });
             outcomes = uniqueOutcomes;
+
+            const sortOutcomes = (oddsArray: any[]) => {
+                return oddsArray.sort((a, b) => {
+                    const optA = String(a.option || '').toLowerCase();
+                    const optB = String(b.option || '').toLowerCase();
+                    
+                    const numA = parseFloat(optA.match(/-?\d+(\.\d+)?/)?.[0] || "NaN");
+                    const numB = parseFloat(optB.match(/-?\d+(\.\d+)?/)?.[0] || "NaN");
+                    
+                    if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB;
+                    
+                    if (optA.includes('over') && optB.includes('under')) return -1;
+                    if (optA.includes('under') && optB.includes('over')) return 1;
+                    if (optA.includes('yes') && optB.includes('no')) return -1;
+                    if (optA.includes('no') && optB.includes('yes')) return 1;
+                    
+                    const sortOrder: Record<string, number> = { '1': 1, 'x': 2, '2': 3, '1x': 4, '12': 5, 'x2': 6 };
+                    const keyA = optA.trim();
+                    const keyB = optB.trim();
+                    if (sortOrder[keyA] && sortOrder[keyB]) return sortOrder[keyA] - sortOrder[keyB];
+                    
+                    return optA.localeCompare(optB);
+                });
+            };
 
             outcomes = sortOutcomes(outcomes);
 
