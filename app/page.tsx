@@ -26,14 +26,16 @@ export default function Home() {
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
     const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
     
-    // 🌟 አዲሱ Dedicated Market Page 🌟
     const [selectedMatch, setSelectedMatch] = useState<any>(null);
     const [marketTab, setMarketTab] = useState<string>('All');
     
-    const [selectedLeague, setSelectedLeague] = useState<string>('Top Matches');
+    const [selectedLeague, setSelectedLeague] = useState<string>('Upcoming');
     const [isTopLeaguesOpen, setIsTopLeaguesOpen] = useState(true);
     const [isSoccerOpen, setIsSoccerOpen] = useState(true);
     const [openCountry, setOpenCountry] = useState<string | null>(null);
+
+    // 🌟 ዋና ዋና ማርኬቶች በነባሪነት ክፍት እንዲሆኑ 🌟
+    const [openAccordions, setOpenAccordions] = useState<string[]>(['3 Way', 'Double chance', 'Over/Under']);
 
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [isMobileBetSlipOpen, setIsMobileBetSlipOpen] = useState(false);
@@ -48,7 +50,6 @@ export default function Home() {
     const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false);
     const [selectedCountryFilter, setSelectedCountryFilter] = useState<string>('All Countries');
 
-    // 🌟 Accept Odd Changes Checkbox 🌟
     const [acceptOddsChange, setAcceptOddsChange] = useState<boolean>(true);
 
     const today = new Date();
@@ -154,10 +155,10 @@ export default function Home() {
         });
     };
 
-    // 🌟 አዲሱ የማርኬት ገፅ ላይ ኦድ ሲነካ ወደ ዋናው ገፅ የሚመልሰው 🌟
+    // 🌟 ኦድ ሲነካ ወደ ኋላ የሚመልሰው (Fast Betting) 🌟
     const handleMarketSelection = (game: any, odd: any) => {
         toggleSelection(game, odd);
-        setSelectedMatch(null); // ወደ ኋላ ይመልሰዋል
+        setSelectedMatch(null); 
     };
 
     const totalOdds = betSlip.reduce((total, item) => total * (item.odd_value || 1), 1).toFixed(2);
@@ -175,14 +176,13 @@ export default function Home() {
     else if (isOverWin) limitWarning = `ከ ${MAX_WIN.toLocaleString()} ብር በላይ ማሸነፍ አይቻልም!`;
     else if (isDuplicateBet) limitWarning = "ይህ ምርጫ (ትኬት) ተቆርጧል! ሌላ ሰው ኮፒ ማድረግ አይችልም።";
 
-    // 🌟 የቡኪንግ ኮድ ትክክለኛ ማስተካከያ (Booking Code Fix) 🌟
     const handlePlaceBet = async () => {
         if (betSlip.length === 0 || stake < MIN_STAKE || limitWarning) return;
         setIsLoading(true);
         try {
             const payload = {
                 stake_amount: stake, is_guest: !user,
-                accept_odds_change: acceptOddsChange, // Backend may use this if needed
+                accept_odds_change: acceptOddsChange,
                 selections: betSlip.map(item => ({ fixture_id: item.fixture_id, odd_id: item.odd_id, odd_value: item.odd_value, match_info: `${item.home_team} vs ${item.away_team}`, odd_name: item.odd_name }))
             };
             const headers = user ? { Authorization: `Bearer ${token}` } : {};
@@ -190,11 +190,9 @@ export default function Home() {
             
             if (response.data.success) {
                 if (!user) {
-                    // 🌟 እዚህ ጋር ነበር ስህተቱ፡ data.booking_code ወይንም data.data.booking_code
                     const bCode = response.data.booking_code || response.data.data?.booking_code;
                     setBookingCode(bCode);
-                }
-                else {
+                } else {
                     alert(`ትኬትዎ በተሳካ ሁኔታ ተቆርጧል!`);
                     setUser({ ...user, current_balance: (user.current_balance || 0) - stake });
                     setBetSlip([]); 
@@ -217,7 +215,7 @@ export default function Home() {
                     match_time: new Date().toISOString(), league_name: 'Loaded Match'
                 }));
                 setBetSlip(loadedSelections); setBookingCode(null); return true;
-            } else { alert("ትኬቱ አልተገኘም!"); return false; }
+            } else { alert("ትኬቱ አልተገኘም! እባክዎ ትክክለኛ Booking Code ያስገቡ።"); return false; }
         } catch (err) { alert("ትኬት ማምጣት አልተቻለም!"); return false; } finally { setIsLoading(false); }
     };
 
@@ -234,12 +232,13 @@ export default function Home() {
         try {
             const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/check/${cleanCode}`);
             if (response.data.success) setCheckedTicketData(response.data.data);
-        } catch (err: any) { setCheckTicketError(err.response?.data?.message || 'ይህ ትኬት አልተገኘም!'); } finally { setIsCheckingTicket(false); }
+        } catch (err: any) { setCheckTicketError(err.response?.data?.message || 'ይህ ትኬት ወይም ቡኪንግ ኮድ አልተገኘም!'); } finally { setIsCheckingTicket(false); }
     };
 
     const handleBetAgain = async () => {
         if (!checkedTicketData) return;
-        const success = await loadTicketByCode(checkedTicketData.booking_code || checkedTicketData.ticket_number);
+        const codeToLoad = checkedTicketData.booking_code || checkedTicketData.ticket_number;
+        const success = await loadTicketByCode(codeToLoad);
         if (success) { closeCheckTicketModal(); if(window.innerWidth < 1024) setIsMobileBetSlipOpen(true); }
     };
 
@@ -281,10 +280,15 @@ export default function Home() {
 
     const handleLogout = () => { setUser(null); setToken(null); localStorage.removeItem('user'); localStorage.removeItem('token'); };
 
-    // 🌟 አዲሱ እና ትክክለኛው የማርኬት (All Markets) አወቃቀር እንደ ምስሉ 🌟
+    const toggleAccordion = (title: string) => {
+        setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
+    };
+
+    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ (Strict Market Categorization) 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game?.raw_markets || [];
         const marketsObj: Record<string, any[]> = {
+            "All": [],
             "Main Market": [],
             "Total": [],
             "Combination": [],
@@ -302,17 +306,23 @@ export default function Home() {
             let title = market.title || market.key || "Market";
             const titleLower = title.toLowerCase();
 
-            // 🌟 Categorize Based on the Image Tabs 🌟
-            if (/winner|result|h2h|1x2|match betting|double chance|draw no bet|correct score/i.test(titleLower)) {
-                category = "Main Market";
-            } else if (/total|over|under|goal|btts|both teams to score/i.test(titleLower)) {
-                category = "Total";
-            } else if (/combo|and|&/i.test(titleLower)) {
-                category = "Combination";
-            } else if (/half|ht|1st|2nd/i.test(titleLower)) {
-                category = "Half";
-            } else if (/handicap|asian/i.test(titleLower)) {
+            // 1. የ API-Football ስሞችን ወደምንፈልገው (UI) ስም መቀየር
+            if (market.id === 1 || titleLower === 'match winner') title = "3 Way";
+
+            // 2. በላኩት ዝርዝር መሰረት መመደብ (Categorize)
+            if (/handicap/i.test(titleLower)) {
                 category = "Handicap";
+            } else if (/combo|and|&|anytime|last corner|last goal|corner 1x2|which team to score/i.test(titleLower)) {
+                category = "Combination";
+            } else if (/half|ht|1st|2nd/i.test(titleLower) && !/halftime\/fulltime$/i.test(titleLower)) {
+                // "halftime/fulltime &" ካለው ወደ Half, ካለበለዚያ Main
+                if (titleLower.includes('halftime/fulltime &')) category = "Half";
+                else category = "Half";
+            } else if (/exact goals|goal range|corner range|over\/under corners/i.test(titleLower) || (market.id === 5 && titleLower.includes('total'))) {
+                category = "Total";
+            } else if (/3 way|match winner|both teams to score|double chance|over\/under|halftime\/fulltime|odd\/even|draw no bet|highest scoring half|correct score/i.test(titleLower) || [1, 12, 8].includes(market.id)) {
+                if (titleLower.includes('1st half') || titleLower.includes('2nd half')) category = "Half";
+                else category = "Main Market";
             }
 
             const outcomes = Array.isArray(market.outcomes) ? market.outcomes.map((o: any, idx: number) => ({
@@ -326,15 +336,18 @@ export default function Home() {
                 if (outcomes.length === 3 || outcomes.length > 6) cols = 3;
                 if (outcomes.length === 1) cols = 1;
                 
-                marketsObj[category].push({
-                    title: title,
-                    cols: cols, 
-                    odds: outcomes
-                });
+                const marketData = { title: title, cols: cols, odds: outcomes };
+                marketsObj[category].push(marketData);
+                marketsObj["All"].push(marketData); // ሁሉንም ወደ All መጨመር
             }
         });
 
-        return marketsObj;
+        const finalObj: Record<string, any[]> = {};
+        Object.keys(marketsObj).forEach(key => {
+            if (marketsObj[key].length > 0) finalObj[key] = marketsObj[key];
+        });
+
+        return finalObj;
     };
 
     const getLeagueDetails = (key: string, flagFromApi?: string) => {
@@ -548,8 +561,8 @@ export default function Home() {
                 </aside>
                 
                 <main className="flex-1 flex flex-col min-w-0 bg-[#16191c] overflow-hidden relative">
-                    {/* 🌟 Dedicated Match View 🌟 */}
                     {selectedMatch ? (
+                        // 🌟 አዲሱ Dedicated Market Page (እንደ ላኩት ምስል የተሰራ) 🌟
                         <div className="flex flex-col h-full bg-[#16191c] animate-fade-in">
                             <div className="bg-[#24292e] px-4 py-3 flex items-center justify-between border-b border-[#3b4148]">
                                 <button onClick={() => setSelectedMatch(null)} className="text-[#ffcc00] font-bold hover:text-white flex items-center gap-1 transition text-xs sm:text-sm">
@@ -567,12 +580,13 @@ export default function Home() {
 
                                 return (
                                     <>
-                                        <div className="flex overflow-x-auto gap-2 p-3 bg-[#1a1f24] border-b border-[#3b4148] custom-scrollbar shrink-0">
+                                        {/* 🌟 ታቦቹ ልክ በምስሉ (Rounded Pills) 🌟 */}
+                                        <div className="flex overflow-x-auto gap-3 p-3 bg-[#24292e] border-b border-[#3b4148] custom-scrollbar shrink-0">
                                             {availableTabs.map(tab => (
                                                 <button 
                                                     key={tab} 
                                                     onClick={() => setMarketTab(tab)} 
-                                                    className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${marketTab === tab ? 'bg-[#4ca154] border-[#4ca154] text-white shadow-md' : 'bg-[#2a3038] border-[#3b4148] text-slate-300 hover:text-white hover:bg-[#323840]'}`}
+                                                    className={`px-5 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition-colors ${marketTab === tab ? 'bg-[#5db05f] text-white shadow' : 'bg-[#2a3038] text-slate-300 hover:text-white hover:bg-[#323840]'}`}
                                                 >
                                                     {tab}
                                                 </button>
@@ -580,30 +594,41 @@ export default function Home() {
                                         </div>
 
                                         <div className="flex-1 overflow-y-auto p-2 sm:p-4 custom-scrollbar">
-                                            <div className="max-w-4xl mx-auto space-y-4">
+                                            <div className="max-w-4xl mx-auto space-y-2">
                                                 {availableTabs.filter(t => t !== 'All').map(cat => {
                                                     if (marketTab !== 'All' && marketTab !== cat) return null;
                                                     const markets = allCats[cat] || [];
-                                                    return markets.map((market: any, mIdx: number) => (
-                                                        <div key={`${cat}-${mIdx}`} className="bg-[#1e2328] rounded-md border border-[#2a3038] overflow-hidden shadow-sm">
-                                                            <div className="bg-[#1a1f24] px-3 py-2 border-b border-[#2a3038]">
-                                                                <h3 className="text-[#ffcc00] font-black text-xs uppercase tracking-wider">{market.title}</h3>
+                                                    return markets.map((market: any, mIdx: number) => {
+                                                        const isOpen = openAccordions.includes(market.title);
+                                                        return (
+                                                            // 🌟 የ Accordion ዲዛይን (Star Icon + Dark Theme) 🌟
+                                                            <div key={`${cat}-${mIdx}`} className="bg-[#24292e] border border-[#3b4148] rounded-md overflow-hidden shadow-sm">
+                                                                <button onClick={() => toggleAccordion(market.title)} className="w-full flex items-center justify-between p-3.5 hover:bg-[#2a3038] transition-colors">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path></svg>
+                                                                        <span className="text-[13px] font-bold text-white tracking-wide text-left">{market.title}</span>
+                                                                    </div>
+                                                                    <svg className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                                                                </button>
+                                                                
+                                                                {isOpen && (
+                                                                    <div className="p-3 bg-[#1e2328] border-t border-[#3b4148]">
+                                                                        <div className={`grid gap-2 ${market.cols === 4 ? 'grid-cols-2 md:grid-cols-4' : market.cols === 3 ? 'grid-cols-1 md:grid-cols-3' : market.cols === 1 ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
+                                                                            {market.odds.map((odd: any) => {
+                                                                                const isSelected = betSlip.some((item: any) => item.odd_id === odd.odd_id);
+                                                                                return (
+                                                                                    <button key={odd.odd_id} onClick={() => handleMarketSelection(selectedMatch, odd)} className={`flex justify-between items-center px-3 py-2.5 rounded-sm transition-colors border ${isSelected ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow' : 'bg-[#1a1f24] border-[#3b4148] hover:border-[#ffcc00]'}`}>
+                                                                                        <span className={`text-[11px] ${isSelected ? 'text-black font-bold' : 'text-slate-300'}`}>{odd.option}</span>
+                                                                                        <span className={`text-[12px] font-black ${isSelected ? 'text-black' : 'text-[#ffcc00]'}`}>{odd.value}</span>
+                                                                                    </button>
+                                                                                )
+                                                                            })}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
                                                             </div>
-                                                            <div className="p-2">
-                                                                <div className={`grid gap-1 ${market.cols === 4 ? 'grid-cols-2 md:grid-cols-4' : market.cols === 3 ? 'grid-cols-1 md:grid-cols-3' : market.cols === 1 ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
-                                                                    {market.odds.map((odd: any) => {
-                                                                        const isSelected = betSlip.some((item: any) => item.odd_id === odd.odd_id);
-                                                                        return (
-                                                                            <button key={odd.odd_id} onClick={() => handleMarketSelection(selectedMatch, odd)} className={`flex justify-between items-center px-3 py-2.5 rounded-sm transition-colors border ${isSelected ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow' : 'bg-[#1a1f24] border-[#3b4148] hover:border-[#ffcc00]'}`}>
-                                                                                <span className={`text-[11px] ${isSelected ? 'text-black font-bold' : 'text-slate-300'}`}>{odd.option}</span>
-                                                                                <span className={`text-[12px] font-black ${isSelected ? 'text-black' : 'text-[#ffcc00]'}`}>{odd.value}</span>
-                                                                            </button>
-                                                                        )
-                                                                    })}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ));
+                                                        );
+                                                    });
                                                 })}
                                             </div>
                                         </div>
@@ -716,7 +741,7 @@ export default function Home() {
                                                             const btn2 = currentDisplayOdds[2] || { odd_id: `2_null_${game.id}`, option: "2", value: "0.00" };
                                                             const hasSelectionInGame = betSlip.some((item: any) => item.fixture_id === game.id);
 
-                                                            // 🌟 የ ማርኬቶች ብዛት (Total Markets Count) 🌟
+                                                            // 🌟 የማርኬቶች ብዛት 🌟
                                                             const totalMarketsCount = Object.values(categorizedMarkets).reduce((acc: any, cat: any) => acc + cat.length, 0);
 
                                                             return (
@@ -742,7 +767,6 @@ export default function Home() {
                                                                             </button>
                                                                         </div>
 
-                                                                        {/* 🌟 እዚህ ጋር ሲነካ ወደ ማርኬት ገፁ ይወስዳል 🌟 */}
                                                                         <div className="w-10 sm:w-14 flex items-center justify-center border-l border-[#2a3038] shrink-0 bg-[#1a1f24]/50">
                                                                             <button onClick={() => setSelectedMatch(game)} className={`w-full h-full text-[10px] font-bold transition-colors flex flex-col items-center justify-center ${hasSelectionInGame ? 'bg-[#ffcc00] text-black shadow-inner' : 'text-slate-400 hover:text-white hover:bg-[#2a3038]'}`}>
                                                                                 <span className={`text-xs ${hasSelectionInGame ? 'text-black' : 'text-slate-300'}`}>❯</span>
@@ -802,7 +826,6 @@ export default function Home() {
                                 <span className="text-[10px] font-bold text-slate-400 pl-3 uppercase">Stake</span><input type="number" value={stake} onChange={(e) => setStake(Number(e.target.value))} className="flex-1 h-full bg-transparent text-white text-sm font-bold outline-none text-right pr-3" />
                             </div>
 
-                            {/* 🌟 Accept Odds Change Checkbox 🌟 */}
                             <label className="flex items-center gap-2 mb-2 cursor-pointer w-max">
                                 <input type="checkbox" checked={acceptOddsChange} onChange={(e) => setAcceptOddsChange(e.target.checked)} className="w-3.5 h-3.5 accent-[#ffcc00]" />
                                 <span className="text-[10px] font-bold text-slate-400 select-none uppercase tracking-wider">Accept all odd changes</span>
@@ -860,6 +883,7 @@ export default function Home() {
 
                                     return (
                                         <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-3 sm:p-4 shadow-inner">
+                                            {/* Header Info */}
                                             <div className="grid grid-cols-4 text-center text-xs border-b border-[#3b4148] pb-3 mb-3">
                                                 <div><p className="text-slate-500 text-[10px] mb-1">Date</p><p className="text-white font-bold">{new Date(checkedTicketData.created_at).toLocaleDateString([], {day:'2-digit', month:'2-digit'})}</p></div>
                                                 <div><p className="text-slate-500 text-[10px] mb-1">Type</p><p className="text-white font-bold">Prematch</p></div>
@@ -867,6 +891,7 @@ export default function Home() {
                                                 <div><p className="text-slate-500 text-[10px] mb-1">Win</p><p className="text-[#00e700] font-bold">{checkedTicketData.potential_win}</p></div>
                                             </div>
 
+                                            {/* Action Buttons */}
                                             <div className="flex gap-2 mb-4">
                                                 <button onClick={() => {
                                                     navigator.clipboard.writeText(`${window.location.origin}?booking=${checkedTicketData.booking_code || checkedTicketData.ticket_number}`);
@@ -886,6 +911,7 @@ export default function Home() {
                                                 </div>
                                             </div>
 
+                                            {/* Events List */}
                                             <div className="space-y-2 mb-2">
                                                 {checkedTicketData.selections?.map((item: any, i: number) => {
                                                     const isWon = item.match_status === 'won'; 
