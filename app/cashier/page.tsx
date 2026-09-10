@@ -116,9 +116,9 @@ export default function CashierDashboard() {
                 e.preventDefault();
                 if (activeTab === 'new' && ticketData && !isPrintModalOpen) {
                     if (!ticketData.ticket_number) {
-                        handleConfirmTicket(); // ገና ካልተቆረጠ አረጋግጥ
+                        handleConfirmTicket();
                     } else {
-                        handleCustomPrint(ticketData); // ከተቆረጠ ፕሪንት አድርግ
+                        handleCustomPrint(ticketData); 
                     }
                 } else if (activeTab === 'check' && payoutDetails) {
                     if (displayStatus === 'won') {
@@ -140,7 +140,7 @@ export default function CashierDashboard() {
             'soccer_saudi_professional_league': 'Pro League', 'soccer_saudi_arabia_pro_league': 'Pro League',
             'soccer_spl': 'Premiership', 'soccer_brazil_campeonato': 'Serie A'
         };
-        if (mapped[key]) return { name mapped[key] };
+        if (mapped[key]) return { name: mapped[key] };
         const parts = key.replace('soccer_', '').split('_');
         let leagueName = parts.slice(1).join(' ').replace(/\b\w/g, l => l.toUpperCase());
         return { name: leagueName || "Soccer" };
@@ -245,7 +245,6 @@ export default function CashierDashboard() {
 
     const openPrintModal = () => { setIsPrintModalOpen(true); };
 
-    // 🌟 አዲሱ እና ጥብቅ (Compact) የሆነው የፕሪንት ዲዛይን 🌟
     const handleCustomPrint = (ticketDetails: any) => {
         const htmlContent = `
             <!DOCTYPE html>
@@ -306,7 +305,6 @@ export default function CashierDashboard() {
                         leagueName = item.league_name || "Soccer";
                     }
                     
-                    // 🌟 ስህተቱ የታረመበት (String Concatenation ተጠቅመን) 🌟
                     const cleanLeague = countryName ? (countryName + ' - ' + leagueName).replace(/Soccer /gi, '').trim() : leagueName;
                     
                     const pad = (n: number) => n < 10 ? '0' + n : n;
@@ -380,7 +378,6 @@ export default function CashierDashboard() {
         setReceiptHtml(htmlContent);
         setIsPrintModalOpen(true);
 
-        // Silent Print
         setTimeout(() => {
             const printFrame = document.getElementById('receipt-preview-frame') as HTMLIFrameElement;
             if (printFrame && printFrame.contentWindow) {
@@ -397,7 +394,6 @@ export default function CashierDashboard() {
         }, 1000);
     };
 
-    // 🌟 አዲሱ አሰራር: Submit ብቻ ያደርጋል (አያትምም) 🌟
     const handleConfirmTicket = async () => {
         const hasStarted = ticketData.selections.some((item: any) => item.commence_time && new Date(item.commence_time) < new Date());
         if (hasStarted) { alert("የጀመሩ ጨዋታዎች አሉ! እባክዎ ከትኬቱ ላይ ይቀንሱ።"); return; }
@@ -443,7 +439,6 @@ export default function CashierDashboard() {
                     created_at: new Date().toISOString() 
                 };
                 
-                // ትኬት ተቆርጧል, Print በተን እንዲመጣ እናደርጋለን (handleCustomPrintን እዚህ አናስነሳም)
                 setTicketData(finalTicket);
             }
         } catch (error: any) { alert(error.response?.data?.message || "ክፍያ ማረጋገጥ አልተቻለም"); } 
