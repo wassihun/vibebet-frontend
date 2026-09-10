@@ -28,10 +28,10 @@ export default function Home() {
     
     const [expandedMatchId, setExpandedMatchId] = useState<number | string | null>(null);
     
-    const [selectedLeague, setSelectedLeague] = useState<string>('All');
+    const [selectedLeague, setSelectedLeague] = useState<string>('Top Matches');
     const [isTopLeaguesOpen, setIsTopLeaguesOpen] = useState(true);
     const [isSoccerOpen, setIsSoccerOpen] = useState(true);
-    const [openCountry, setOpenCountry] = useState<string | null>('England');
+    const [openCountry, setOpenCountry] = useState<string | null>(null);
 
     const [openAccordions, setOpenAccordions] = useState<string[]>(['Match Winner', 'Double Chance', 'Goals Over/Under']);
 
@@ -121,8 +121,7 @@ export default function Home() {
                             home_team: game.home_team || "Home",
                             away_team: game.away_team || "Away",
                             match_time: game.commence_time,
-                            league: game.sport_key || "World|Soccer",
-                            league_flag: game.league_logo, 
+                            league: game.sport_key || "World|Soccer|https://media.api-sports.io/flags/un.svg",
                             odds: parsedOdds,
                             raw_markets: rawMarkets 
                         };
@@ -231,7 +230,6 @@ export default function Home() {
     const closeCheckTicketModal = () => { setIsCheckTicketModalOpen(false); setCheckInputCode(''); setCheckedTicketData(null); setCheckTicketError(null); };
 
     const handlePrintBooking = () => {
-        // (የድሮው Print Logic ነው ምንም አልተቀየረም)
         const printFrame = document.createElement('iframe');
         printFrame.style.position = 'fixed'; printFrame.style.right = '0'; printFrame.style.bottom = '0'; printFrame.style.width = '0'; printFrame.style.height = '0'; printFrame.style.border = '0';
         document.body.appendChild(printFrame);
@@ -269,6 +267,7 @@ export default function Home() {
 
     const toggleAccordion = (title: string) => { setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]); };
 
+    // 🌟 የ 50+ ማርኬቶች ማውጫ 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game?.raw_markets || [];
         const marketsObj: Record<string, any[]> = { "Main Match Result": [], "Goal Markets": [], "Handicap & Others": [] };
@@ -300,26 +299,28 @@ export default function Home() {
         return finalObj;
     };
 
-    // 🌟 አዲሱ እና ፍጹም ትክክለኛ የሀገር እና ሊግ ማንበቢያ 🌟
-    const getLeagueDetails = (key: string, flagFromApi?: string) => {
+    // 🌟 እጅግ ጥብቅ የሆነው የ ቶፕ ሊግ (Top League) መለያ 🌟
+    const getLeagueDetails = (key: string) => {
         if (!key || typeof key !== 'string') return { country: 'World', flag: 'https://media.api-sports.io/flags/un.svg', name: 'Soccer', isTop: false };
 
-        // 🌟 ቶፕ ሊጎችን በትክክል መለየት (Top Leagues Identifier) 🌟
-        const topLeaguesList = [
-            'Premier League', 'Championship', 'La Liga', 'Primera Division', 'Serie A', 'Bundesliga', 
-            'Ligue 1', 'UEFA Champions League', 'UEFA Europa League', 'Eredivisie',
-            'Primeira Liga', 'Pro League', 'Major League Soccer', 'Ethiopia Premier League'
+        // እነዚህ 6ቱ ሊጎች ብቻ ናቸው በ Top Leagues ስር የሚወጡት
+        const topLeaguesExactMatches = [
+            'England|Premier League',
+            'Spain|La Liga',
+            'Italy|Serie A',
+            'Germany|Bundesliga',
+            'France|Ligue 1',
+            'World|UEFA Champions League'
         ];
 
-        // Backend አሁን "Country|League|Flag" ፎርማት ይልካል
         if (key.includes('|')) {
             const parts = key.split('|');
             const countryName = parts[0] || 'World';
             const leagueName = parts[1] || 'League';
-            const flagUrl = parts[2] || flagFromApi || 'https://media.api-sports.io/flags/un.svg';
+            const flagUrl = parts[2] || 'https://media.api-sports.io/flags/un.svg';
             
-            // የሊጉ ስም ቶፕ ሊግ ውስጥ እንዳለ በትክክል ያጣራል
-            const isTopLeague = topLeaguesList.some(t => leagueName.toLowerCase() === t.toLowerCase() || leagueName.toLowerCase().includes(t.toLowerCase()));
+            const exactKey = `${countryName}|${leagueName}`;
+            const isTopLeague = topLeaguesExactMatches.includes(exactKey);
 
             return {
                 country: countryName,
@@ -341,7 +342,7 @@ export default function Home() {
     const activeFixtures = fixtures.filter(g => g && g.match_time && new Date(g.match_time).getTime() > currentTime);
 
     const groupedFixtures = activeFixtures.reduce((acc: any, game: any) => {
-        const details = getLeagueDetails(game.league, game.league_flag);
+        const details = getLeagueDetails(game.league);
         const uniqueKey = game.league || 'unknown';
         if (!acc[uniqueKey]) acc[uniqueKey] = { details, games: [] };
         acc[uniqueKey].games.push(game);
@@ -350,7 +351,7 @@ export default function Home() {
 
     const allLeagues: [string, any][] = Object.entries(groupedFixtures);
     
-    // 🌟 ቶፕ ሊጎችን ብቻ የሚያጣራ ክፍል 🌟
+    // የቶፕ ሊጎችን ብቻ ማውጣት
     const topLeagues = allLeagues.filter(([_, data]) => data.details.isTop);
     
     const countriesMap = new Map<string, { flag: string, leagues: {key: string, name: string, count: number}[] }>();
@@ -370,7 +371,7 @@ export default function Home() {
             const leagueKey = game.league;
             if (!currentGroup || currentGroup.leagueKey !== leagueKey) {
                 if (currentGroup) groupedArray.push([currentGroup.id, currentGroup.data]);
-                currentGroup = { leagueKey: leagueKey, id: leagueKey + '_' + game.id, data: { details: getLeagueDetails(leagueKey, game.league_flag), games: [game] } };
+                currentGroup = { leagueKey: leagueKey, id: leagueKey + '_' + game.id, data: { details: getLeagueDetails(leagueKey), games: [game] } };
             } else currentGroup.data.games.push(game);
         }
         if (currentGroup) groupedArray.push([currentGroup.id, currentGroup.data]);
@@ -667,8 +668,7 @@ export default function Home() {
                                                                                             <div key={mIdx} className="bg-[#2b3138] rounded-sm border border-[#3b4148] overflow-hidden">
                                                                                                 <button onClick={() => toggleAccordion(market.title)} className="w-full flex items-center justify-between p-2 hover:bg-[#323840] transition-colors">
                                                                                                     <div className="flex items-center gap-2">
-                                                                                                        <span className="text-slate-400 font-black text-[10px]">▶</span>
-                                                                                                        <span className="text-[10px] sm:text-[11px] font-bold text-white tracking-wide text-left">{market.title}</span>
+                                                                                                        <span className="text-slate-400 font-black text-[10px]">▶</span><span className="text-[10px] sm:text-[11px] font-bold text-white tracking-wide text-left">{market.title}</span>
                                                                                                     </div>
                                                                                                     <span className="text-slate-500 text-[10px]">{isOpen ? '▲' : '▼'}</span>
                                                                                                 </button>
