@@ -34,7 +34,7 @@ export default function Home() {
     const [isSoccerOpen, setIsSoccerOpen] = useState(true);
     const [openCountry, setOpenCountry] = useState<string | null>(null);
 
-    const [openAccordions, setOpenAccordions] = useState<string[]>(['3 Way', 'Double chance', 'Both teams to score', 'Over/Under']);
+    const [openAccordions, setOpenAccordions] = useState<string[]>(['3 Way', 'Both teams to score', 'Double chance', 'Over/Under']);
 
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [isMobileBetSlipOpen, setIsMobileBetSlipOpen] = useState(false);
@@ -282,7 +282,7 @@ export default function Home() {
         setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
     };
 
-    // 🌟 በጥብቅ የተከፋፈለው የማርኬት አመዳደብ (Strict Market Mapping based on exact rules) 🌟
+    // 🌟 በጥብቅ የተከፋፈለው የማርኬት አመዳደብ (Strict Market Categorization) 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game?.raw_markets || [];
         const marketsObj: Record<string, any[]> = {
@@ -291,8 +291,7 @@ export default function Home() {
             "Total": [],
             "Combination": [],
             "Half": [],
-            "Handicap": [],
-            "Other": []
+            "Handicap": []
         };
 
         if (!Array.isArray(raw)) return marketsObj;
@@ -300,51 +299,68 @@ export default function Home() {
         raw.forEach((market: any) => {
             if (!market || !market.outcomes || market.outcomes.length === 0) return; 
             
-            let category = "Other";
+            let category = null; 
             let title = market.title || market.key || "Market";
             const titleLower = title.toLowerCase().trim();
 
-            if (market.id === 1 || titleLower === 'match winner' || titleLower === 'home/draw/away' || titleLower === '1x2') title = "3 Way";
+            // 1. የ API-Football ስሞችን ማስተካከል
+            if (market.id === 1 || titleLower === 'match winner' || titleLower === 'home/draw/away' || titleLower === '1x2') {
+                title = "3 Way";
+            }
+            if (market.id === 5 || titleLower === 'goals over/under') {
+                title = "Over/Under";
+            }
 
-            // 1. MAIN MARKET
-            if (
-                title === '3 Way' || titleLower === 'both teams to score' || titleLower === 'double chance' || 
-                titleLower === 'over/under' || titleLower === 'halftime/fulltime' || titleLower === 'odd/even' || 
-                titleLower === 'draw no bet' || titleLower === 'highest scoring half' || titleLower === 'correct score'
-            ) {
+            const currentTitleLower = title.toLowerCase();
+
+            // 2. MAIN MARKET
+            const mainMarketsList = [
+                '3 way', 'both teams to score', 'double chance', 'over/under', 
+                'halftime/fulltime', 'odd/even', 'draw no bet', 'highest scoring half', 'correct score'
+            ];
+            
+            // 3. TOTAL MARKET
+            const totalMarketsList = [
+                '1st half - over/under', 'exact goals', 'goal range', 'corner range', 'over/under corners'
+            ];
+
+            // 4. COMBINATION MARKET
+            const comboMarketsList = [
+                '3 way & over/under', '3 way & both teams to score', '10 minutes - 3 way from 1 to 10',
+                'anytime goalscorer', 'corner 1x2', 'double chance & both teams to score', 
+                'last corner', 'last goal', 'last goalscorer', 'odd/even corners', 
+                'over/under & both teams to score', 'which team to score'
+            ];
+
+            // 5. HALF MARKET
+            const halfMarketsList = [
+                '1st half - 3 way', '1st half - correct score', '1st half - both teams to score',
+                '1st half - 1x2 & both teams to score', '1st half - 1x2 & over/under', '1st half - corner 1x2',
+                '1st half - corner range', '1st half - double chance', '1st half - draw no bet',
+                '1st half - exact goals', '1st half - last corner', '1st half - odd/even',
+                '1st half - odd/even corners', '1st half - over/under corners', '1st/2nd half both teams to score',
+                '2nd half - 3 way', '2nd half - 3 way & both teams to score', '2nd half - 3 way & over/under',
+                '2nd half - both teams to score', '2nd half - correct score', '2nd half - double chance',
+                '2nd half - draw no bet', '2nd half - exact goals', '2nd half - over/under',
+                'both halves over 1.5', 'halftime/fulltime & 1st half over/under', 'halftime/fulltime & exact goals',
+                'halftime/fulltime & over/under'
+            ];
+
+            // Category assignment logic
+            if (mainMarketsList.includes(currentTitleLower)) {
                 category = "Main Market";
-            }
-            // 2. TOTAL MARKET
-            else if (
-                titleLower === '1st half - over/under' || titleLower === 'exact goals' || titleLower === 'goal range' || 
-                titleLower === 'corner range' || titleLower === 'over/under corners' || titleLower.includes('total goals')
-            ) {
+            } else if (totalMarketsList.includes(currentTitleLower)) {
                 category = "Total";
-            }
-            // 3. COMBINATION MARKET
-            else if (
-                titleLower === '3 way & over/under' || titleLower === '3 way & both teams to score' || 
-                titleLower.includes('10 minutes - 3 way') || titleLower === 'anytime goalscorer' || 
-                titleLower === 'corner 1x2' || titleLower === 'double chance & both teams to score' || 
-                titleLower.includes('corner range') || titleLower === 'last corner' || titleLower === 'last goal' || 
-                titleLower === 'last goalscorer' || titleLower === 'odd/even corners' || 
-                titleLower === 'over/under & both teams to score' || titleLower === 'which team to score' || 
-                titleLower.includes('&') || titleLower.includes('combo')
-            ) {
-                category = "Combination";
-            }
-            // 4. HALF MARKET
-            else if (
-                titleLower.includes('half') || titleLower.includes('ht') || titleLower.includes('1st') || titleLower.includes('2nd')
-            ) {
+            } else if (comboMarketsList.includes(currentTitleLower) || (currentTitleLower.endsWith('corner range') && currentTitleLower !== '1st half - corner range' && currentTitleLower !== 'corner range')) {
+                category = "Combination"; // "Excelsior Rotterdam corner range" የመሳሰሉት
+            } else if (halfMarketsList.includes(currentTitleLower) || currentTitleLower.includes('to win either half')) {
                 category = "Half";
-            }
-            // 5. HANDICAP MARKET
-            else if (
-                titleLower.includes('handicap') || titleLower.includes('asian')
-            ) {
+            } else if (currentTitleLower.includes('handicap') || currentTitleLower.includes('asian')) {
                 category = "Handicap";
             }
+
+            // 🌟 ካልተመደበ ሙሉ በሙሉ መዝለል (Skipping unknown markets to keep it 100% clean) 🌟
+            if (!category) return;
 
             const outcomes = market.outcomes.map((o: any, idx: number) => ({
                 odd_id: `${market.key || 'unk'}_${(o?.name || '').toString().replace(/[^a-zA-Z0-9]/g, '_')}_${game.id}_${idx}`, 
@@ -358,13 +374,8 @@ export default function Home() {
                 if (outcomes.length === 1) cols = 1;
                 
                 const marketData = { title: title, cols: cols, odds: outcomes };
-                
-                if (marketsObj[category]) {
-                    marketsObj[category].push(marketData);
-                } else {
-                    marketsObj["Other"].push(marketData);
-                }
-                marketsObj["All"].push(marketData);
+                marketsObj[category].push(marketData);
+                marketsObj["All"].push(marketData); 
             }
         });
 
@@ -609,13 +620,13 @@ export default function Home() {
 
                                 return (
                                     <>
-                                        {/* 🌟 ታቦቹ (Tabs) 🌟 */}
+                                        {/* 🌟 ታቦቹ (Tabs) : Vibe Bet Yellow & Dark Gray 🌟 */}
                                         <div className="flex overflow-x-auto gap-3 p-3 bg-[#24292e] border-b border-[#3b4148] custom-scrollbar shrink-0">
                                             {availableTabs.map(tab => (
                                                 <button 
                                                     key={tab} 
                                                     onClick={() => setMarketTab(tab)} 
-                                                    className={`px-5 py-2 rounded-full text-[13px] font-bold whitespace-nowrap transition-colors ${marketTab === tab ? 'bg-[#ffcc00] text-black shadow' : 'bg-[#2a3038] text-slate-300 hover:text-white hover:bg-[#3b4148]'}`}
+                                                    className={`px-5 py-2 rounded-full text-[13px] font-black whitespace-nowrap transition-colors ${marketTab === tab ? 'bg-[#ffcc00] text-black shadow' : 'bg-[#2a3038] text-slate-300 hover:text-white hover:bg-[#3b4148]'}`}
                                                 >
                                                     {tab}
                                                 </button>
@@ -623,7 +634,6 @@ export default function Home() {
                                         </div>
 
                                         <div className="flex-1 overflow-y-auto p-2 sm:p-4 bg-[#2a3038] custom-scrollbar">
-                                            {/* 🌟 የማርኬት ዝርዝር ዲዛይን (Stacked Accordions with Star Icon) 🌟 */}
                                             <div className="max-w-5xl mx-auto w-full bg-[#485058] border border-[#3a4148] rounded-md overflow-hidden shadow-md">
                                                 {displayMarkets.map((market: any, mIdx: number) => {
                                                     const isOpen = openAccordions.includes(market.title);
@@ -746,26 +756,25 @@ export default function Home() {
 
                                                         {filteredGames.map((game: any) => {
                                                             const matchDate = new Date(game.match_time);
+                                                            const categorizedMarkets = getCategorizedMarkets(game);
+                                                            const mainMarkets = categorizedMarkets["Main Market"] || [];
                                                             
-                                                            let btn1 = { odd_id: `1_null_${game.id}`, option: "1", value: "0.00" };
-                                                            let btnX = { odd_id: `x_null_${game.id}`, option: "X", value: "0.00" };
-                                                            let btn2 = { odd_id: `2_null_${game.id}`, option: "2", value: "0.00" };
+                                                            const market1X2 = mainMarkets.find((m:any) => m?.title === "3 Way")?.odds || [];
                                                             
-                                                            if (mainMarketView === '1X2') {
-                                                                if (game.odds && game.odds.length === 3) {
-                                                                    btn1 = game.odds[0]; btnX = game.odds[1]; btn2 = game.odds[2];
-                                                                }
-                                                            } else {
-                                                                const dcMarket = game.raw_markets?.find((m:any) => m?.key === 'double_chance' || m?.title?.toLowerCase().includes('double chance'));
-                                                                if (dcMarket && dcMarket.outcomes) {
-                                                                    btn1 = { odd_id: `${dcMarket.key}_1X_${game.id}`, option: "1X", value: dcMarket.outcomes.find((o:any)=>o.name==='1X' || o.name.includes('Home/Draw'))?.price?.toFixed(2) || "0.00" };
-                                                                    btnX = { odd_id: `${dcMarket.key}_12_${game.id}`, option: "12", value: dcMarket.outcomes.find((o:any)=>o.name==='12' || o.name.includes('Home/Away'))?.price?.toFixed(2) || "0.00" };
-                                                                    btn2 = { odd_id: `${dcMarket.key}_X2_${game.id}`, option: "X2", value: dcMarket.outcomes.find((o:any)=>o.name==='X2' || o.name.includes('Draw/Away'))?.price?.toFixed(2) || "0.00" };
-                                                                }
-                                                            }
+                                                            const marketDC = mainMarkets.find((m:any) => {
+                                                                const t = (m?.title || '').toLowerCase();
+                                                                return t.includes("double chance");
+                                                            })?.odds || [];
+                                                            
+                                                            const currentDisplayOdds = mainMarketView === '1X2' ? market1X2 : marketDC;
 
+                                                            const btn1 = currentDisplayOdds[0] || { odd_id: `1_null_${game.id}`, option: "1", value: "0.00" };
+                                                            const btnX = currentDisplayOdds[1] || { odd_id: `x_null_${game.id}`, option: "X", value: "0.00" };
+                                                            const btn2 = currentDisplayOdds[2] || { odd_id: `2_null_${game.id}`, option: "2", value: "0.00" };
                                                             const hasSelectionInGame = betSlip.some((item: any) => item.fixture_id === game.id);
-                                                            const totalMarketsCount = game.raw_markets ? game.raw_markets.length : 0;
+
+                                                            // 🌟 የ ማርኬቶች ብዛት (Total Markets Count from All) 🌟
+                                                            const totalMarketsCount = categorizedMarkets["All"] ? categorizedMarkets["All"].length : 0;
 
                                                             return (
                                                                 <div key={game.id} className="flex flex-col border-b border-[#2a3038] last:border-b-0 hover:bg-[#24292e] transition-colors">
@@ -846,15 +855,15 @@ export default function Home() {
                             <div className="flex justify-between items-center mb-1.5"><span className="text-[11px] text-slate-400">Total Odds</span><span className="text-[13px] font-black text-white">{totalOdds}</span></div>
                             <div className="flex justify-between items-center mb-3"><span className="text-[11px] font-bold text-slate-300">Potential Win</span><span className="text-[14px] font-black text-[#00e700]">{grossWin.toFixed(2)} Br</span></div>
                             
+                            <div className={`flex items-center gap-2 bg-[#24292e] border rounded transition-colors mb-2 overflow-hidden h-[40px] shadow-inner ${limitWarning ? 'border-red-500' : 'border-[#3b4148] focus-within:border-[#ffcc00]'}`}>
+                                <span className="text-[10px] font-bold text-slate-400 pl-3 uppercase">Stake</span><input type="number" value={stake} onChange={(e) => setStake(Number(e.target.value))} className="flex-1 h-full bg-transparent text-white text-sm font-bold outline-none text-right pr-3" />
+                            </div>
+
                             <label className="flex items-center gap-2 mb-2 cursor-pointer w-max">
                                 <input type="checkbox" checked={acceptOddsChange} onChange={(e) => setAcceptOddsChange(e.target.checked)} className="w-3.5 h-3.5 accent-[#ffcc00]" />
                                 <span className="text-[10px] font-bold text-slate-400 select-none uppercase tracking-wider">Accept all odd changes</span>
                             </label>
 
-                            <div className={`flex items-center gap-2 bg-[#24292e] border rounded transition-colors mb-2 overflow-hidden h-[40px] shadow-inner ${limitWarning ? 'border-red-500' : 'border-[#3b4148] focus-within:border-[#ffcc00]'}`}>
-                                <span className="text-[10px] font-bold text-slate-400 pl-3 uppercase">Stake</span><input type="number" value={stake} onChange={(e) => setStake(Number(e.target.value))} className="flex-1 h-full bg-transparent text-white text-sm font-bold outline-none text-right pr-3" />
-                            </div>
-                            
                             <div className="h-[18px] mb-2 flex items-center justify-center">{limitWarning && <p className="text-[10px] text-red-500 font-bold leading-tight text-center">{limitWarning}</p>}</div>
                             <div className="flex gap-2 h-[44px]">
                                 <button onClick={() => {setBetSlip([]); setBookingCode(null)}} className="bg-[#24292e] border border-[#3b4148] text-slate-400 hover:text-red-400 hover:border-red-400 text-sm font-bold w-12 rounded flex items-center justify-center transition-colors">🗑</button>
@@ -907,6 +916,7 @@ export default function Home() {
 
                                     return (
                                         <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-3 sm:p-4 shadow-inner">
+                                            {/* Header Info */}
                                             <div className="grid grid-cols-4 text-center text-xs border-b border-[#3b4148] pb-3 mb-3">
                                                 <div><p className="text-slate-500 text-[10px] mb-1">Date</p><p className="text-white font-bold">{new Date(checkedTicketData.created_at).toLocaleDateString([], {day:'2-digit', month:'2-digit'})}</p></div>
                                                 <div><p className="text-slate-500 text-[10px] mb-1">Type</p><p className="text-white font-bold">Prematch</p></div>
@@ -914,6 +924,7 @@ export default function Home() {
                                                 <div><p className="text-slate-500 text-[10px] mb-1">Win</p><p className="text-[#00e700] font-bold">{checkedTicketData.potential_win}</p></div>
                                             </div>
 
+                                            {/* Action Buttons */}
                                             <div className="flex gap-2 mb-4">
                                                 <button onClick={() => {
                                                     navigator.clipboard.writeText(`${window.location.origin}?booking=${checkedTicketData.booking_code || checkedTicketData.ticket_number}`);
@@ -933,6 +944,7 @@ export default function Home() {
                                                 </div>
                                             </div>
 
+                                            {/* Events List */}
                                             <div className="space-y-2 mb-2">
                                                 {checkedTicketData.selections?.map((item: any, i: number) => {
                                                     const isWon = item.match_status === 'won'; 
