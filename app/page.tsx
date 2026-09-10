@@ -106,7 +106,7 @@ export default function Home() {
                             // 🌟 የደህንነት ማለፊያ (Safe Fallbacks) ተጨምሯል 🌟
                             const h2h = rawMarkets.find((m: any) => {
                                 const title = (m?.title || '').toLowerCase();
-                                return m?.key === 'h2h' || title.includes('winner') || title.includes('result');
+                                return m?.key === 'h2h' || title.includes('winner') || title.includes('result') || title.includes('match betting');
                             });
 
                             const odd1 = h2h?.outcomes?.find((o: any) => o?.name === game.home_team || o?.name === 'Home' || o?.name === '1')?.price || 0;
@@ -131,7 +131,8 @@ export default function Home() {
                             home_team: game.home_team || "Home",
                             away_team: game.away_team || "Away",
                             match_time: game.commence_time,
-                            league: game.sport_key || "world_soccer",
+                            league: game.sport_key || "World|Soccer",
+                            league_flag: game.league_logo, // የሀገሪቱን ባንዲራ በቀጥታ ከ API እንቀበላለን
                             odds: parsedOdds,
                             raw_markets: rawMarkets 
                         };
@@ -158,7 +159,7 @@ export default function Home() {
                 home_team: game.home_team,
                 away_team: game.away_team,
                 match_time: game.match_time, 
-                league_name: getLeagueDetails(game.league).name,
+                league_name: getLeagueDetails(game.league, game.league_flag).name,
                 odd_id: odd.odd_id,
                 odd_name: odd.option,
                 odd_value: parseFloat(odd.value)
@@ -402,7 +403,7 @@ export default function Home() {
             const keyLower = (market.key || "").toLowerCase();
             const titleLower = (title || "").toLowerCase();
 
-            if (['h2h', 'double_chance'].includes(keyLower) || titleLower.includes('winner') || titleLower.includes('result') || titleLower.includes('correct score')) {
+            if (['h2h', 'double_chance'].includes(keyLower) || titleLower.includes('winner') || titleLower.includes('result') || titleLower.includes('correct score') || titleLower.includes('match betting')) {
                 category = "Main Match Result";
             } else if (['totals', 'btts'].includes(keyLower) || titleLower.includes('goal') || titleLower.includes('score')) {
                 category = "Goal Markets";
@@ -436,18 +437,39 @@ export default function Home() {
         return finalObj;
     };
 
-    const getLeagueDetails = (key: string) => {
-        // 🌟 Key የሌለው ከሆነ ወይም string ካልሆነ እንዳይበላሽ መከላከያ 🌟
+    // 🌟 አዲሱ እና ትክክለኛው የሊግ ማንበቢያ (Country|League) 🌟
+    const getLeagueDetails = (key: string, flagFromApi?: string) => {
         if (!key || typeof key !== 'string') return { country: 'World', flag: 'https://flagcdn.com/w40/un.png', name: 'Soccer', isTop: false };
 
-        const topLeagueKeys = [
-            'soccer_epl', 'soccer_germany_bundesliga', 'soccer_netherlands_eredivisie',
-            'soccer_spain_la_liga', 'soccer_portugal_primeira_liga', 'soccer_france_ligue_one',
-            'soccer_belgium_first_div', 'soccer_italy_serie_a', 'soccer_switzerland_superleague',
-            'soccer_sweden_superettan', 'soccer_uefa_champs_league', 'soccer_uefa_europa_league',
-            'soccer_saudi_professional_league', 'soccer_brazil_campeonato'
-        ];
+        const topLeaguesList = ['Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1', 'UEFA Champions League', 'UEFA Europa League', 'Pro League', 'Championship'];
 
+        // አዲሱን የ Country|LeagueName ፎርማት ከተቀበለ (ከባክ-ኤንድ የመጣ)
+        if (key.includes('|')) {
+            const parts = key.split('|');
+            const countryName = parts[0] || 'World';
+            const leagueName = parts[1] || 'League';
+            
+            // የሀገር ኮዶችን ለ flagcdn ማዘጋጀት
+            const countryCodes: Record<string, string> = {
+                'england': 'gb-eng', 'spain': 'es', 'italy': 'it', 'germany': 'de', 'france': 'fr',
+                'world': 'un', 'brazil': 'br', 'scotland': 'gb-sct', 'saudi arabia': 'sa',
+                'argentina': 'ar', 'mexico': 'mx', 'usa': 'us', 'turkey': 'tr', 'greece': 'gr',
+                'portugal': 'pt', 'netherlands': 'nl', 'belgium': 'be', 'sweden': 'se',
+                'switzerland': 'ch', 'ethiopia': 'et'
+            };
+
+            const cCode = countryCodes[countryName.toLowerCase()];
+            const flagUrl = flagFromApi || (cCode ? `https://flagcdn.com/w40/${cCode}.png` : `https://flagcdn.com/w40/un.png`);
+
+            return {
+                country: countryName,
+                flag: flagUrl,
+                name: leagueName,
+                isTop: topLeaguesList.some(t => leagueName.toLowerCase().includes(t.toLowerCase()))
+            };
+        }
+
+        // ለድሮ ፎርማቶች (Fallback)
         const mapped: Record<string, { country: string, flag: string, name: string, isTop: boolean }> = {
             'soccer_epl': { country: 'England', flag: 'https://flagcdn.com/w40/gb-eng.png', name: 'Premier League', isTop: true },
             'soccer_efl_champ': { country: 'England', flag: 'https://flagcdn.com/w40/gb-eng.png', name: 'Championship', isTop: false },
@@ -457,40 +479,10 @@ export default function Home() {
             'soccer_france_ligue_one': { country: 'France', flag: 'https://flagcdn.com/w40/fr.png', name: 'Ligue 1', isTop: true },
             'soccer_uefa_champs_league': { country: 'International', flag: 'https://flagcdn.com/w40/eu.png', name: 'UEFA Champions League', isTop: true },
             'soccer_uefa_europa_league': { country: 'International', flag: 'https://flagcdn.com/w40/eu.png', name: 'UEFA Europa League', isTop: true },
-            'soccer_netherlands_eredivisie': { country: 'Netherlands', flag: 'https://flagcdn.com/w40/nl.png', name: 'Eredivisie', isTop: true },
-            'soccer_portugal_primeira_liga': { country: 'Portugal', flag: 'https://flagcdn.com/w40/pt.png', name: 'Liga Portugal', isTop: true },
-            'soccer_belgium_first_div': { country: 'Belgium', flag: 'https://flagcdn.com/w40/be.png', name: 'Pro League', isTop: true },
-            'soccer_switzerland_superleague': { country: 'Switzerland', flag: 'https://flagcdn.com/w40/ch.png', name: 'Super League', isTop: true },
-            'soccer_sweden_superettan': { country: 'Sweden', flag: 'https://flagcdn.com/w40/se.png', name: 'Superettan', isTop: true }, 
-            'soccer_saudi_professional_league': { country: 'Saudi Arabia', flag: 'https://flagcdn.com/w40/sa.png', name: 'Pro League', isTop: true },
-            'soccer_spl': { country: 'Scotland', flag: 'https://flagcdn.com/w40/gb-sct.png', name: 'Premiership', isTop: false },
-            'soccer_brazil_campeonato': { country: 'Brazil', flag: 'https://flagcdn.com/w40/br.png', name: 'Serie A', isTop: true },
         };
-        
         if (mapped[key]) return mapped[key];
-        
-        const parts = key.replace('soccer_', '').split('_');
-        let rawCountry = parts[0] || 'world';
-        
-        let countryName = rawCountry.charAt(0).toUpperCase() + rawCountry.slice(1);
-        let leagueName = parts.slice(1).join(' ').replace(/\b\w/g, l => l.toUpperCase());
 
-        const countryCodes: Record<string, string> = {
-            'england': 'gb-eng', 'spain': 'es', 'italy': 'it', 'germany': 'de', 'france': 'fr', 'europe': 'eu', 'international': 'un', 'world': 'un',
-            'brazil': 'br', 'scotland': 'gb-sct', 'saudi': 'sa', 'argentina': 'ar', 'mexico': 'mx', 'usa': 'us', 'turkey': 'tr', 'greece': 'gr', 'japan': 'jp', 'colombia': 'co'
-        };
-
-        if (!leagueName) leagueName = countryName + ' League';
-
-        const cCode = countryCodes[countryName.toLowerCase()];
-        const flagUrl = cCode ? `https://flagcdn.com/w40/${cCode}.png` : `https://flagcdn.com/w40/${rawCountry.slice(0,2)}.png`; 
-        
-        return { 
-            country: countryName,
-            flag: flagUrl, 
-            name: leagueName, 
-            isTop: topLeagueKeys.includes(key)
-        };
+        return { country: 'World', flag: 'https://flagcdn.com/w40/un.png', name: key.replace('soccer_', '').replace(/_/g, ' '), isTop: false };
     };
 
     const renderFlag = (flagObj: string) => {
@@ -498,14 +490,14 @@ export default function Home() {
         if (flagObj.includes('http') || flagObj.includes('/') || flagObj.includes('.')) {
             return <img src={flagObj} alt="flag" onError={(e: any) => e.target.src='https://flagcdn.com/w40/un.png'} className="w-full h-full object-cover" />;
         }
-        return flagObj; 
+        return <img src="https://flagcdn.com/w40/un.png" alt="flag" className="w-full h-full object-cover" />;
     };
 
     const currentTime = new Date().getTime();
     const activeFixtures = fixtures.filter(g => g && g.match_time && new Date(g.match_time).getTime() > currentTime);
 
     const groupedFixtures = activeFixtures.reduce((acc: any, game: any) => {
-        const details = getLeagueDetails(game.league);
+        const details = getLeagueDetails(game.league, game.league_flag);
         const uniqueKey = game.league || 'unknown';
         if (!acc[uniqueKey]) acc[uniqueKey] = { details, games: [] };
         acc[uniqueKey].games.push(game);
@@ -539,7 +531,7 @@ export default function Home() {
                     leagueKey: leagueKey,
                     id: leagueKey + '_' + game.id,
                     data: {
-                        details: getLeagueDetails(leagueKey),
+                        details: getLeagueDetails(leagueKey, game.league_flag),
                         games: [game]
                     }
                 };
@@ -912,7 +904,7 @@ export default function Home() {
                                     .map(([key, data]) => {
                                         let gamesToRender = data.games;
                                         if (selectedLeague === 'Upcoming' && selectedCountryFilter !== 'All Countries') {
-                                            gamesToRender = gamesToRender.filter((g: any) => getLeagueDetails(g.league).country === selectedCountryFilter);
+                                            gamesToRender = gamesToRender.filter((g: any) => getLeagueDetails(g.league, g.league_flag).country === selectedCountryFilter);
                                         }
 
                                         const filteredGames = gamesToRender.filter((g: any) => {
@@ -954,7 +946,6 @@ export default function Home() {
                                                     
                                                     const mainMarkets = categorizedMarkets["Main Match Result"] || [];
                                                     
-                                                    // 🌟 እጅግ ጥብቅ የሆነ (Crash-proof) ማርኬት ማፈላለጊያ 🌟
                                                     const market1X2 = mainMarkets.find((m:any) => {
                                                         const t = (m?.title || '').toLowerCase();
                                                         return t.includes("winner") || t.includes("h2h") || t.includes("result") || t.includes("match betting");
@@ -967,7 +958,6 @@ export default function Home() {
                                                     
                                                     const currentDisplayOdds = mainMarketView === '1X2' ? market1X2 : marketDC;
 
-                                                    // Safe fallback rendering for odds
                                                     const btn1 = currentDisplayOdds[0] || { odd_id: `1_null_${game.id}`, option: "1", value: "0.00" };
                                                     const btnX = currentDisplayOdds[1] || { odd_id: `x_null_${game.id}`, option: "X", value: "0.00" };
                                                     const btn2 = currentDisplayOdds[2] || { odd_id: `2_null_${game.id}`, option: "2", value: "0.00" };
