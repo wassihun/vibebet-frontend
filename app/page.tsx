@@ -284,7 +284,7 @@ export default function Home() {
         setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
     };
 
-    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ፣ ማጣሪያ እና ሎጂክ (Strict Market Mapping & Deduplication) 🌟
+    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ፣ ማጣሪያ እና ሎጂክ 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game?.raw_markets || [];
         const marketsObj: Record<string, any[]> = {
@@ -369,13 +369,13 @@ export default function Home() {
                 if(titleLower.includes('corner range')) title = "Corner range";
                 if(titleLower.includes('over/under corners') || titleLower.includes('corners over/under')) title = "Over/Under corners";
             }
-            // --- MAIN MARKET ---
-            else if (mId === 1 || mId === 8 || mId === 12 || mId === 5 || mId === 17 || mId === 24 || mId === 21 || mId === 40 || mId === 10 || titleLower === 'match winner' || titleLower === '1x2' || titleLower === '3 way' || titleLower === 'both teams to score' || titleLower === 'double chance' || titleLower === 'goals over/under' || titleLower === 'over/under' || titleLower === 'odd/even' || titleLower === 'draw no bet' || titleLower === 'correct score' || titleLower === 'halftime/fulltime') {
+            // --- MAIN MARKET (STRICT MATCHING) ---
+            else if (mId === 1 || mId === 8 || mId === 12 || mId === 5 || mId === 17 || mId === 24 || mId === 21 || mId === 40 || mId === 10 || titleLower === 'match winner' || titleLower === '1x2' || titleLower === '3 way' || titleLower.includes('both teams to score') || titleLower.includes('both teams score') || titleLower === 'double chance' || titleLower === 'goals over/under' || titleLower === 'over/under' || titleLower === 'odd/even' || titleLower === 'draw no bet' || titleLower === 'correct score' || titleLower === 'halftime/fulltime') {
                 category = "Main Market";
                 
                 // Very strict renaming so we don't mess up combinations that slipped through
                 if(mId === 1 || titleLower === 'match winner' || titleLower === '1x2' || titleLower === '3 way') title = "3 Way";
-                else if(mId === 8 || titleLower === 'both teams to score' || titleLower === 'both teams score') title = "Both teams to score";
+                else if(mId === 8 || titleLower.includes('both teams to score') || titleLower.includes('both teams score')) title = "Both teams to score";
                 else if(mId === 12 || titleLower === 'double chance') title = "Double chance";
                 else if(mId === 5 || titleLower === 'goals over/under' || titleLower === 'over/under') title = "Over/Under";
                 else if(mId === 17 || titleLower === 'halftime/fulltime' || titleLower.includes('halftime/fulltime')) title = "Halftime/Fulltime";
@@ -388,9 +388,9 @@ export default function Home() {
             if (category === "All") return;
 
             // 🌟 3. የውጤት ጥብቅ ማጣሪያ (Sanitize outcomes to prevent junk from entering main markets) 🌟
-            if (title === "3 Way") outcomes = outcomes.filter((o: any) => ['1', 'X', '2'].includes(o.option));
-            else if (title === "Double chance") outcomes = outcomes.filter((o: any) => ['1X', '12', 'X2'].includes(o.option));
-            else if (title === "Both teams to score") outcomes = outcomes.filter((o: any) => ['yes', 'no'].includes(o.option.toLowerCase()));
+            if (title === "3 Way") outcomes = outcomes.filter((o: any) => ['1', 'X', '2'].includes(o.option.trim().toUpperCase()));
+            else if (title === "Double chance") outcomes = outcomes.filter((o: any) => ['1X', '12', 'X2'].includes(o.option.trim().toUpperCase()));
+            else if (title === "Both teams to score") outcomes = outcomes.filter((o: any) => ['yes', 'no'].includes(o.option.trim().toLowerCase()));
 
             if (outcomes.length === 0) return;
 
