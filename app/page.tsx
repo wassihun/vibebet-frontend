@@ -283,7 +283,7 @@ export default function Home() {
         setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
     };
 
-    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ (Strict Categorization according to User's List) 🌟
+    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ (Strict Market Mapping API-Football to UI) 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game?.raw_markets || [];
         const marketsObj: Record<string, any[]> = {
@@ -305,66 +305,105 @@ export default function Home() {
             const titleLower = title.toLowerCase().trim();
             const mId = market.id;
 
-            // API Standardization to match user's requested names
-            if (mId === 1 || titleLower === 'match winner' || titleLower === 'home/draw/away' || titleLower === '1x2') {
-                title = "3 Way";
+            // --- 1. MAIN MARKET ---
+            if (mId === 1 || titleLower.includes('match winner') || titleLower === '1x2') {
+                title = "3 Way"; category = "Main Market";
             }
-            if (mId === 5 || titleLower === 'goals over/under') {
-                title = "Over/Under";
+            else if (mId === 8 || titleLower.includes('both teams score') || titleLower === 'both teams to score') {
+                title = "Both teams to score"; category = "Main Market";
+            }
+            else if (mId === 12 || titleLower.includes('double chance')) {
+                title = "Double chance"; category = "Main Market";
+            }
+            else if (mId === 5 || titleLower === 'goals over/under' || (titleLower.includes('over/under') && !titleLower.includes('half') && !titleLower.includes('corner') && !titleLower.includes('&') && !titleLower.includes('and'))) {
+                title = "Over/Under"; category = "Main Market";
+            }
+            else if (mId === 17 || (titleLower.includes('halftime/fulltime') && !titleLower.includes('&'))) {
+                title = "Halftime/Fulltime"; category = "Main Market";
+            }
+            else if (mId === 24 || (titleLower.includes('odd/even') && !titleLower.includes('half') && !titleLower.includes('corner'))) {
+                title = "Odd/even"; category = "Main Market";
+            }
+            else if (mId === 21 || titleLower.includes('draw no bet')) {
+                title = "Draw no bet"; category = "Main Market";
+            }
+            else if (mId === 40 || titleLower.includes('highest scoring half')) {
+                title = "Highest scoring half"; category = "Main Market";
+            }
+            else if (mId === 10 || (titleLower.includes('correct score') && !titleLower.includes('half'))) {
+                title = "Correct score"; category = "Main Market";
             }
 
-            const currentTitleLower = title.toLowerCase();
+            // --- 2. TOTAL MARKET ---
+            else if (mId === 6 || titleLower === 'first half winner' || (titleLower.includes('1st half') && titleLower.includes('over/under') && !titleLower.includes('&') && !titleLower.includes('corner'))) {
+                title = "1st half - Over/Under"; category = "Total";
+            }
+            else if (mId === 11 || (titleLower.includes('exact goals') && !titleLower.includes('half') && !titleLower.includes('&'))) {
+                title = "Exact goals"; category = "Total";
+            }
+            else if (titleLower.includes('goal range') || titleLower.includes('goals range')) {
+                title = "Goal range"; category = "Total";
+            }
+            else if (titleLower.includes('corner range') && !titleLower.includes('half') && !titleLower.includes(game.home_team?.toLowerCase())) {
+                title = "Corner range"; category = "Total";
+            }
+            else if (titleLower.includes('over/under corners') || titleLower.includes('corners over/under')) {
+                title = "Over/Under corners"; category = "Total";
+            }
 
-            // 1. MAIN MARKET List
-            const mainMarketsList = [
-                '3 way', 'both teams to score', 'double chance', 'over/under', 
-                'halftime/fulltime', 'odd/even', 'draw no bet', 'highest scoring half', 'correct score'
-            ];
-            
-            // 2. TOTAL MARKET List
-            const totalMarketsList = [
-                '1st half - over/under', 'exact goals', 'goal range', 'corner range', 'over/under corners'
-            ];
+            // --- 3. COMBINATION MARKET ---
+            else if (titleLower.includes('3 way & over/under') || titleLower.includes('match winner and over/under')) {
+                title = "3 Way & Over/Under"; category = "Combination";
+            }
+            else if (titleLower.includes('3 way & both teams to score') || titleLower.includes('match winner and both teams')) {
+                title = "3 Way & both teams to score"; category = "Combination";
+            }
+            else if (titleLower.includes('10 minutes')) {
+                title = "10 minutes - 3 Way from 1 to 10"; category = "Combination";
+            }
+            else if (titleLower.includes('anytime goalscorer')) {
+                title = "Anytime goalscorer"; category = "Combination";
+            }
+            else if (titleLower.includes('corner 1x2') && !titleLower.includes('half')) {
+                title = "Corner 1x2"; category = "Combination";
+            }
+            else if (titleLower.includes('double chance & both teams') || titleLower.includes('double chance and both teams')) {
+                title = "Double chance & both teams to score"; category = "Combination";
+            }
+            else if (titleLower.includes('last corner') && !titleLower.includes('half')) {
+                title = "Last corner"; category = "Combination";
+            }
+            else if (titleLower.includes('last goal') && !titleLower.includes('scorer')) {
+                title = "Last goal"; category = "Combination";
+            }
+            else if (titleLower.includes('last goalscorer')) {
+                title = "Last goalscorer"; category = "Combination";
+            }
+            else if (titleLower.includes('odd/even corners') && !titleLower.includes('half')) {
+                title = "Odd/even corners"; category = "Combination";
+            }
+            else if (titleLower.includes('over/under & both teams') || titleLower.includes('goals over/under and both teams')) {
+                title = "Over/Under & both teams to score"; category = "Combination";
+            }
+            else if (titleLower.includes('which team to score')) {
+                title = "Which team to score"; category = "Combination";
+            }
+            else if (titleLower.includes('corner range') && (titleLower.includes(game.home_team?.toLowerCase()) || titleLower.includes(game.away_team?.toLowerCase()))) {
+                title = `${game.home_team} corner range`; category = "Combination";
+            }
 
-            // 3. COMBINATION MARKET List
-            const comboMarketsList = [
-                '3 way & over/under', '3 way & both teams to score', '10 minutes - 3 way from 1 to 10',
-                'anytime goalscorer', 'corner 1x2', 'double chance & both teams to score', 
-                'last corner', 'last goal', 'last goalscorer', 'odd/even corners', 
-                'over/under & both teams to score', 'which team to score'
-            ];
-
-            // 4. HALF MARKET List
-            const halfMarketsList = [
-                '1st half - 3 way', '1st half - correct score', '1st half - both teams to score',
-                '1st half - 1x2 & both teams to score', '1st half - 1x2 & over/under', '1st half - corner 1x2',
-                '1st half - corner range', '1st half - double chance', '1st half - draw no bet',
-                '1st half - exact goals', '1st half - last corner', '1st half - odd/even',
-                '1st half - odd/even corners', '1st half - over/under corners', '1st/2nd half both teams to score',
-                '2nd half - 3 way', '2nd half - 3 way & both teams to score', '2nd half - 3 way & over/under',
-                '2nd half - both teams to score', '2nd half - correct score', '2nd half - double chance',
-                '2nd half - draw no bet', '2nd half - exact goals', '2nd half - over/under',
-                'both halves over 1.5', 'halftime/fulltime & 1st half over/under', 'halftime/fulltime & exact goals',
-                'halftime/fulltime & over/under'
-            ];
-
-            // Matching Logic based strictly on the user's provided rules
-            if (mainMarketsList.includes(currentTitleLower)) {
-                category = "Main Market";
-            } else if (totalMarketsList.includes(currentTitleLower)) {
-                category = "Total";
-            } else if (comboMarketsList.includes(currentTitleLower) || (currentTitleLower.includes('corner range') && !currentTitleLower.includes('1st half') && currentTitleLower !== 'corner range')) {
-                // Catches dynamic names like "Excelsior Rotterdam corner range"
-                category = "Combination"; 
-            } else if (halfMarketsList.includes(currentTitleLower) || currentTitleLower.includes('to win either half')) {
-                // Catches dynamic names like "NEC Nijmegen to win either half"
+            // --- 4. HALF MARKET ---
+            else if (titleLower.includes('half') || titleLower.includes('ht') || titleLower.includes('1st') || titleLower.includes('2nd') || titleLower.includes('first half') || titleLower.includes('second half') || titleLower.includes('both halves') || titleLower.includes('halftime/fulltime &') || titleLower.includes('to win either half')) {
                 category = "Half";
-            } else if (currentTitleLower.includes('handicap') || currentTitleLower.includes('asian')) {
-                // Catches "Handicap 0:1", "1st half - handicap 1:0", etc.
+                title = title.replace(/first half/i, '1st Half').replace(/second half/i, '2nd Half').replace(/match winner/i, '3 Way');
+            }
+
+            // --- 5. HANDICAP MARKET ---
+            else if (titleLower.includes('handicap') || titleLower.includes('asian')) {
                 category = "Handicap";
             }
 
-            // 🚫 ካልተመደበ ሙሉ በሙሉ መዝለል (Skipping unknown markets to keep it 100% strictly matched) 🚫
+            // 🚫 ካልተመደበ ሙሉ በሙሉ መዝለል (Skipping unknown markets to keep it 100% clean) 🚫
             if (!category) return;
 
             const outcomes = market.outcomes.map((o: any, idx: number) => ({
@@ -380,7 +419,7 @@ export default function Home() {
                 
                 const marketData = { title: title, cols: cols, odds: outcomes };
                 marketsObj[category].push(marketData);
-                marketsObj["All"].push(marketData); 
+                marketsObj["All"].push(marketData);
             }
         });
 
@@ -604,7 +643,7 @@ export default function Home() {
                 
                 <main className="flex-1 flex flex-col min-w-0 bg-[#16191c] overflow-hidden relative">
                     {selectedMatch ? (
-                        // 🌟 አዲሱ Dedicated Market Page ዲዛይን (በምስሉ መሰረት) 🌟
+                        // 🌟 አዲሱ Dedicated Market Page 🌟
                         <div className="flex flex-col h-full bg-[#16191c] animate-fade-in">
                             <div className="bg-[#1e2328] px-4 py-3 flex items-center justify-between border-b border-[#2a3038]">
                                 <button onClick={() => setSelectedMatch(null)} className="text-[#ffcc00] font-bold hover:text-white flex items-center gap-1 transition text-xs sm:text-sm">
@@ -620,12 +659,11 @@ export default function Home() {
                                 const tabs = ['All', 'Main Market', 'Total', 'Combination', 'Half', 'Handicap'];
                                 const availableTabs = tabs.filter(t => t === 'All' || (allCats[t] && allCats[t].length > 0));
 
-                                // "All" ታብ ሲመረጥ ሁሉንም ያሳያል፣ አለበለዚያ የተመረጠውን ብቻ
                                 const displayMarkets = marketTab === 'All' ? allCats['All'] : (allCats[marketTab] || []);
 
                                 return (
                                     <>
-                                        {/* 🌟 ታቦቹ (Tabs) : Vibe Bet Yellow & Dark Gray 🌟 */}
+                                        {/* 🌟 ታቦቹ: Vibe Bet Yellow & Dark Gray 🌟 */}
                                         <div className="flex overflow-x-auto gap-3 p-3 bg-[#24292e] border-b border-[#3b4148] custom-scrollbar shrink-0">
                                             {availableTabs.map(tab => (
                                                 <button 
@@ -766,7 +804,10 @@ export default function Home() {
                                                             const categorizedMarkets = getCategorizedMarkets(game);
                                                             const mainMarkets = categorizedMarkets["Main Market"] || [];
                                                             
-                                                            const market1X2 = mainMarkets.find((m:any) => m?.title === "3 Way")?.odds || [];
+                                                            const market1X2 = mainMarkets.find((m:any) => {
+                                                                const t = (m?.title || '').toLowerCase();
+                                                                return t.includes("winner") || t.includes("h2h") || t.includes("result") || t.includes("match betting") || t.includes("3 way");
+                                                            })?.odds || [];
                                                             
                                                             const marketDC = mainMarkets.find((m:any) => {
                                                                 const t = (m?.title || '').toLowerCase();
@@ -780,7 +821,7 @@ export default function Home() {
                                                             const btn2 = currentDisplayOdds[2] || { odd_id: `2_null_${game.id}`, option: "2", value: "0.00" };
                                                             const hasSelectionInGame = betSlip.some((item: any) => item.fixture_id === game.id);
 
-                                                            // 🌟 የማርኬቶች ብዛት (Total Markets Count from All) 🌟
+                                                            // 🌟 የ ማርኬቶች ብዛት (Total Markets Count from All) 🌟
                                                             const totalMarketsCount = categorizedMarkets["All"] ? categorizedMarkets["All"].length : 0;
 
                                                             return (
