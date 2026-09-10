@@ -29,7 +29,6 @@ export default function Home() {
     const [expandedMatchId, setExpandedMatchId] = useState<number | string | null>(null);
     
     const [selectedLeague, setSelectedLeague] = useState<string>('All');
-    
     const [isTopLeaguesOpen, setIsTopLeaguesOpen] = useState(true);
     const [isSoccerOpen, setIsSoccerOpen] = useState(true);
     const [openCountry, setOpenCountry] = useState<string | null>('England');
@@ -62,20 +61,16 @@ export default function Home() {
     const dayAfterTmwLabel = dayAfterTmw.toLocaleDateString('en-US', { weekday: 'short' });
 
     const [selectedDateFilter, setSelectedDateFilter] = useState<string>('All');
-    
     const dateInputRef = useRef<HTMLInputElement>(null);
-
     const [isOnline, setIsOnline] = useState<boolean>(true);
 
     useEffect(() => {
         document.title = "vibebet.et";
-
         setIsOnline(navigator.onLine);
         const handleOnline = () => setIsOnline(true);
         const handleOffline = () => setIsOnline(false);
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
-        
         return () => {
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
@@ -103,7 +98,6 @@ export default function Home() {
                             const bookmakers = typeof game.odds_data === 'string' ? JSON.parse(game.odds_data) : game.odds_data;
                             rawMarkets = bookmakers[0]?.markets || [];
                             
-                            // 🌟 የደህንነት ማለፊያ (Safe Fallbacks) ተጨምሯል 🌟
                             const h2h = rawMarkets.find((m: any) => {
                                 const title = (m?.title || '').toLowerCase();
                                 return m?.key === 'h2h' || title.includes('winner') || title.includes('result') || title.includes('match betting');
@@ -119,11 +113,7 @@ export default function Home() {
                                 { odd_id: `2_${game.id}`, option: "2", value: odd2 ? odd2.toFixed(2) : "0.00" }
                             ];
                         } catch (e) {
-                            parsedOdds = [
-                                { odd_id: `1_${game.id}`, option: "1", value: "0.00" },
-                                { odd_id: `x_${game.id}`, option: "X", value: "0.00" },
-                                { odd_id: `2_${game.id}`, option: "2", value: "0.00" }
-                            ];
+                            parsedOdds = [{ odd_id: `1_${game.id}`, option: "1", value: "0.00" }, { odd_id: `x_${game.id}`, option: "X", value: "0.00" }, { odd_id: `2_${game.id}`, option: "2", value: "0.00" }];
                         }
 
                         return {
@@ -132,7 +122,6 @@ export default function Home() {
                             away_team: game.away_team || "Away",
                             match_time: game.commence_time,
                             league: game.sport_key || "World|Soccer",
-                            league_flag: game.league_logo, // የሀገሪቱን ባንዲራ በቀጥታ ከ API እንቀበላለን
                             odds: parsedOdds,
                             raw_markets: rawMarkets 
                         };
@@ -151,21 +140,13 @@ export default function Home() {
         setErrorMessage(null);
         setBetSlip(prev => {
             const exists = prev.find(item => item.fixture_id === game.id);
-            if (exists && exists.odd_id === odd.odd_id) {
-                return prev.filter(item => item.fixture_id !== game.id);
-            }
+            if (exists && exists.odd_id === odd.odd_id) return prev.filter(item => item.fixture_id !== game.id);
             const newItem = {
-                fixture_id: game.id,
-                home_team: game.home_team,
-                away_team: game.away_team,
-                match_time: game.match_time, 
-                league_name: getLeagueDetails(game.league, game.league_flag).name,
-                odd_id: odd.odd_id,
-                odd_name: odd.option,
-                odd_value: parseFloat(odd.value)
+                fixture_id: game.id, home_team: game.home_team, away_team: game.away_team,
+                match_time: game.match_time, league_name: getLeagueDetails(game.league).name,
+                odd_id: odd.odd_id, odd_name: odd.option, odd_value: parseFloat(odd.value)
             };
-            const filtered = prev.filter(item => item.fixture_id !== game.id);
-            return [...filtered, newItem];
+            return [...prev.filter(item => item.fixture_id !== game.id), newItem];
         });
     };
 
@@ -186,21 +167,18 @@ export default function Home() {
 
     const handlePlaceBet = async () => {
         if (betSlip.length === 0 || stake < MIN_STAKE || limitWarning) return;
-        
         setIsLoading(true);
         try {
             const payload = {
-                stake_amount: stake,
-                is_guest: !user,
+                stake_amount: stake, is_guest: !user,
                 selections: betSlip.map(item => ({ fixture_id: item.fixture_id, odd_id: item.odd_id, odd_value: item.odd_value, match_info: `${item.home_team} vs ${item.away_team}`, odd_name: item.odd_name }))
             };
             const headers = user ? { Authorization: `Bearer ${token}` } : {};
             const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/place`, payload, { headers });
             
             if (response.data.success) {
-                if (!user) {
-                    setBookingCode(response.data.data.booking_code);
-                } else {
+                if (!user) setBookingCode(response.data.data.booking_code);
+                else {
                     alert(`ትኬትዎ በተሳካ ሁኔታ ተቆርጧል!`);
                     setUser({ ...user, current_balance: (user.current_balance || 0) - stake });
                     setBetSlip([]); 
@@ -208,11 +186,7 @@ export default function Home() {
                 setPlacedBetSignatures(prev => [...prev, currentBetSignature]);
                 if(window.innerWidth < 1024 && user) setIsMobileBetSlipOpen(false); 
             }
-        } catch (error: any) {
-            setErrorMessage("ስህተት ተፈጥሯል");
-        } finally {
-            setIsLoading(false);
-        }
+        } catch (error: any) { setErrorMessage("ስህተት ተፈጥሯል"); } finally { setIsLoading(false); }
     };
 
     const loadTicketByCode = async (code: string) => {
@@ -222,28 +196,13 @@ export default function Home() {
             const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/load/${code}`);
             if (response.data.success && response.data.data.selections) {
                 const loadedSelections = response.data.data.selections.map((s: any) => ({
-                    fixture_id: s.fixture_id,
-                    home_team: s.match_info ? s.match_info.split(' vs ')[0] : 'Home',
-                    away_team: s.match_info ? s.match_info.split(' vs ')[1] : 'Away',
-                    odd_id: s.odd_id,
-                    odd_name: s.odd_name,
-                    odd_value: parseFloat(s.odd_value || 0),
-                    match_time: new Date().toISOString(), 
-                    league_name: 'Loaded Match'
+                    fixture_id: s.fixture_id, home_team: s.match_info ? s.match_info.split(' vs ')[0] : 'Home', away_team: s.match_info ? s.match_info.split(' vs ')[1] : 'Away',
+                    odd_id: s.odd_id, odd_name: s.odd_name, odd_value: parseFloat(s.odd_value || 0),
+                    match_time: new Date().toISOString(), league_name: 'Loaded Match'
                 }));
-                setBetSlip(loadedSelections);
-                setBookingCode(null);
-                return true;
-            } else {
-                alert("ትኬቱ አልተገኘም! እባክዎ ትክክለኛ Booking Code ያስገቡ።");
-                return false;
-            }
-        } catch (err) {
-            alert("ትኬት ማምጣት አልተቻለም!");
-            return false;
-        } finally {
-            setIsLoading(false);
-        }
+                setBetSlip(loadedSelections); setBookingCode(null); return true;
+            } else { alert("ትኬቱ አልተገኘም!"); return false; }
+        } catch (err) { alert("ትኬት ማምጣት አልተቻለም!"); return false; } finally { setIsLoading(false); }
     };
 
     const handleLoadTicket = async () => {
@@ -255,50 +214,25 @@ export default function Home() {
         e.preventDefault();
         const cleanCode = checkInputCode.trim().toUpperCase();
         if (!cleanCode) return;
-        
-        setIsCheckingTicket(true); 
-        setCheckTicketError(null); 
-        setCheckedTicketData(null);
-        
+        setIsCheckingTicket(true); setCheckTicketError(null); setCheckedTicketData(null);
         try {
             const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/check/${cleanCode}`);
-            if (response.data.success) {
-                setCheckedTicketData(response.data.data);
-            }
-        } catch (err: any) {
-            setCheckTicketError(err.response?.data?.message || 'ይህ ትኬት ወይም ቡኪንግ ኮድ አልተገኘም!');
-        } finally {
-            setIsCheckingTicket(false);
-        }
+            if (response.data.success) setCheckedTicketData(response.data.data);
+        } catch (err: any) { setCheckTicketError(err.response?.data?.message || 'ይህ ትኬት አልተገኘም!'); } finally { setIsCheckingTicket(false); }
     };
 
     const handleBetAgain = async () => {
         if (!checkedTicketData) return;
-        const codeToLoad = checkedTicketData.booking_code || checkedTicketData.ticket_number;
-        const success = await loadTicketByCode(codeToLoad);
-        if (success) {
-            closeCheckTicketModal();
-            if(window.innerWidth < 1024) setIsMobileBetSlipOpen(true);
-        }
+        const success = await loadTicketByCode(checkedTicketData.booking_code || checkedTicketData.ticket_number);
+        if (success) { closeCheckTicketModal(); if(window.innerWidth < 1024) setIsMobileBetSlipOpen(true); }
     };
 
-    const closeCheckTicketModal = () => {
-        setIsCheckTicketModalOpen(false);
-        setCheckInputCode('');
-        setCheckedTicketData(null);
-        setCheckTicketError(null);
-    };
+    const closeCheckTicketModal = () => { setIsCheckTicketModalOpen(false); setCheckInputCode(''); setCheckedTicketData(null); setCheckTicketError(null); };
 
     const handlePrintBooking = () => {
         const printFrame = document.createElement('iframe');
-        printFrame.style.position = 'fixed';
-        printFrame.style.right = '0';
-        printFrame.style.bottom = '0';
-        printFrame.style.width = '0';
-        printFrame.style.height = '0';
-        printFrame.style.border = '0';
+        printFrame.style.position = 'fixed'; printFrame.style.right = '0'; printFrame.style.bottom = '0'; printFrame.style.width = '0'; printFrame.style.height = '0'; printFrame.style.border = '0';
         document.body.appendChild(printFrame);
-
         const doc = printFrame.contentWindow?.document;
         if (!doc) return;
 
@@ -309,21 +243,8 @@ export default function Home() {
                 <meta charset="utf-8">
                 <style>
                     @page { margin: 0; size: 80mm auto; }
-                    body {
-                        margin: 0; padding: 5mm;
-                        font-family: Arial, sans-serif;
-                        text-align: center; color: #000;
-                        position: relative;
-                        background: #fff;
-                    }
-                    .watermark {
-                        position: absolute; top: 50%; left: 50%;
-                        transform: translate(-50%, -50%) rotate(-45deg);
-                        font-size: 26px; color: rgba(255, 0, 0, 0.15);
-                        white-space: nowrap; font-weight: 900;
-                        pointer-events: none; z-index: 0; text-align: center;
-                        line-height: 1.2;
-                    }
+                    body { margin: 0; padding: 5mm; font-family: Arial, sans-serif; text-align: center; color: #000; position: relative; background: #fff; }
+                    .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 26px; color: rgba(255, 0, 0, 0.15); white-space: nowrap; font-weight: 900; pointer-events: none; z-index: 0; }
                     .content { position: relative; z-index: 1; }
                     h2 { margin: 0 0 5px 0; font-size: 16px; font-weight: 900;}
                     .code { font-size: 28px; font-weight: 900; margin: 10px 0; letter-spacing: 2px; }
@@ -346,121 +267,72 @@ export default function Home() {
                     ${betSlip.map(item => `
                         <div class="match">
                             <div class="match-teams">${item.home_team} vs ${item.away_team}</div>
-                            <div class="match-pick">
-                                <span>Pick: ${item.odd_name}</span>
-                                <span style="font-weight: 900;">@${item.odd_value}</span>
-                            </div>
+                            <div class="match-pick"><span>Pick: ${item.odd_name}</span><span style="font-weight: 900;">@${item.odd_value}</span></div>
                         </div>
                     `).join('')}
-                    <div style="text-align: center; font-size: 10px; margin-top: 15px; font-weight: bold;">
-                        This is a booking slip.<br>Please visit a branch to confirm your bet.
-                    </div>
+                    <div style="text-align: center; font-size: 10px; margin-top: 15px; font-weight: bold;">This is a booking slip.<br>Please visit a branch to confirm your bet.</div>
                 </div>
             </body>
             </html>
         `;
         doc.open(); doc.write(htmlContent); doc.close();
-        setTimeout(() => {
-            printFrame.contentWindow?.focus();
-            printFrame.contentWindow?.print();
-            setTimeout(() => document.body.removeChild(printFrame), 1000);
-        }, 500);
+        setTimeout(() => { printFrame.contentWindow?.focus(); printFrame.contentWindow?.print(); setTimeout(() => document.body.removeChild(printFrame), 1000); }, 500);
     };
 
     const handleAuthSuccess = (userData: any, userToken: string) => {
-        setUser(userData);
-        setToken(userToken);
-        localStorage.setItem('user', JSON.stringify(userData));
-        localStorage.setItem('token', userToken);
+        setUser(userData); setToken(userToken);
+        localStorage.setItem('user', JSON.stringify(userData)); localStorage.setItem('token', userToken);
         setIsAuthModalOpen(false);
     };
 
-    const handleLogout = () => {
-        setUser(null); setToken(null);
-        localStorage.removeItem('user'); localStorage.removeItem('token');
-    };
+    const handleLogout = () => { setUser(null); setToken(null); localStorage.removeItem('user'); localStorage.removeItem('token'); };
 
-    const toggleAccordion = (title: string) => {
-        setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
-    };
+    const toggleAccordion = (title: string) => { setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]); };
 
-    // 🌟 አዲሱ እጅግ አስተማማኝ (Crash-proof) ማርኬት ማውጫ 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game?.raw_markets || [];
-        const marketsObj: Record<string, any[]> = {
-            "Main Match Result": [],
-            "Goal Markets": [],
-            "Handicap & Others": []
-        };
-
+        const marketsObj: Record<string, any[]> = { "Main Match Result": [], "Goal Markets": [], "Handicap & Others": [] };
         if (!Array.isArray(raw)) return marketsObj;
 
         raw.forEach((market: any) => {
             if (!market) return; 
-            
             let category = "Handicap & Others";
             let title = market.title || market.key || "Market";
             const keyLower = (market.key || "").toLowerCase();
             const titleLower = (title || "").toLowerCase();
 
-            if (['h2h', 'double_chance'].includes(keyLower) || titleLower.includes('winner') || titleLower.includes('result') || titleLower.includes('correct score') || titleLower.includes('match betting')) {
-                category = "Main Match Result";
-            } else if (['totals', 'btts'].includes(keyLower) || titleLower.includes('goal') || titleLower.includes('score')) {
-                category = "Goal Markets";
-            }
+            if (['h2h', 'double_chance'].includes(keyLower) || titleLower.includes('winner') || titleLower.includes('result') || titleLower.includes('correct score') || titleLower.includes('match betting')) category = "Main Match Result";
+            else if (['totals', 'btts'].includes(keyLower) || titleLower.includes('goal') || titleLower.includes('score')) category = "Goal Markets";
 
             const outcomes = Array.isArray(market.outcomes) ? market.outcomes.map((o: any, idx: number) => ({
                 odd_id: `${market.key || 'unk'}_${(o?.name || '').toString().replace(/[^a-zA-Z0-9]/g, '_')}_${game.id}_${idx}`, 
-                option: o?.name || 'Opt', 
-                value: parseFloat(o?.price || 0).toFixed(2)
+                option: o?.name || 'Opt', value: parseFloat(o?.price || 0).toFixed(2)
             })) : [];
 
             if (outcomes.length > 0) {
-                let cols = 2; 
-                if (outcomes.length === 3 || outcomes.length > 6) cols = 3;
-                
-                marketsObj[category].push({
-                    title: title,
-                    cols: cols, 
-                    odds: outcomes
-                });
+                let cols = outcomes.length === 3 || outcomes.length > 6 ? 3 : 2;
+                marketsObj[category].push({ title: title, cols: cols, odds: outcomes });
             }
         });
 
         const finalObj: Record<string, any[]> = {};
-        Object.keys(marketsObj).forEach(key => {
-            if (marketsObj[key].length > 0) {
-                finalObj[key] = marketsObj[key];
-            }
-        });
-
+        Object.keys(marketsObj).forEach(key => { if (marketsObj[key].length > 0) finalObj[key] = marketsObj[key]; });
         return finalObj;
     };
 
-    // 🌟 አዲሱ እና ትክክለኛው የሊግ ማንበቢያ (Country|League) 🌟
-    const getLeagueDetails = (key: string, flagFromApi?: string) => {
-        if (!key || typeof key !== 'string') return { country: 'World', flag: 'https://flagcdn.com/w40/un.png', name: 'Soccer', isTop: false };
+    // 🌟 አዲሱ እና ፍጹም ትክክለኛ የሀገር እና ሊግ ማንበቢያ 🌟
+    const getLeagueDetails = (key: string) => {
+        if (!key || typeof key !== 'string') return { country: 'World', flag: 'https://media.api-sports.io/flags/un.svg', name: 'Soccer', isTop: false };
 
         const topLeaguesList = ['Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1', 'UEFA Champions League', 'UEFA Europa League', 'Pro League', 'Championship'];
 
-        // አዲሱን የ Country|LeagueName ፎርማት ከተቀበለ (ከባክ-ኤንድ የመጣ)
+        // Backend አሁን Country|League|Flag ፎርማት ይልካል
         if (key.includes('|')) {
             const parts = key.split('|');
             const countryName = parts[0] || 'World';
             const leagueName = parts[1] || 'League';
+            const flagUrl = parts[2] || 'https://media.api-sports.io/flags/un.svg';
             
-            // የሀገር ኮዶችን ለ flagcdn ማዘጋጀት
-            const countryCodes: Record<string, string> = {
-                'england': 'gb-eng', 'spain': 'es', 'italy': 'it', 'germany': 'de', 'france': 'fr',
-                'world': 'un', 'brazil': 'br', 'scotland': 'gb-sct', 'saudi arabia': 'sa',
-                'argentina': 'ar', 'mexico': 'mx', 'usa': 'us', 'turkey': 'tr', 'greece': 'gr',
-                'portugal': 'pt', 'netherlands': 'nl', 'belgium': 'be', 'sweden': 'se',
-                'switzerland': 'ch', 'ethiopia': 'et'
-            };
-
-            const cCode = countryCodes[countryName.toLowerCase()];
-            const flagUrl = flagFromApi || (cCode ? `https://flagcdn.com/w40/${cCode}.png` : `https://flagcdn.com/w40/un.png`);
-
             return {
                 country: countryName,
                 flag: flagUrl,
@@ -469,35 +341,20 @@ export default function Home() {
             };
         }
 
-        // ለድሮ ፎርማቶች (Fallback)
-        const mapped: Record<string, { country: string, flag: string, name: string, isTop: boolean }> = {
-            'soccer_epl': { country: 'England', flag: 'https://flagcdn.com/w40/gb-eng.png', name: 'Premier League', isTop: true },
-            'soccer_efl_champ': { country: 'England', flag: 'https://flagcdn.com/w40/gb-eng.png', name: 'Championship', isTop: false },
-            'soccer_spain_la_liga': { country: 'Spain', flag: 'https://flagcdn.com/w40/es.png', name: 'LaLiga', isTop: true },
-            'soccer_italy_serie_a': { country: 'Italy', flag: 'https://flagcdn.com/w40/it.png', name: 'Serie A', isTop: true },
-            'soccer_germany_bundesliga': { country: 'Germany', flag: 'https://flagcdn.com/w40/de.png', name: 'Bundesliga', isTop: true },
-            'soccer_france_ligue_one': { country: 'France', flag: 'https://flagcdn.com/w40/fr.png', name: 'Ligue 1', isTop: true },
-            'soccer_uefa_champs_league': { country: 'International', flag: 'https://flagcdn.com/w40/eu.png', name: 'UEFA Champions League', isTop: true },
-            'soccer_uefa_europa_league': { country: 'International', flag: 'https://flagcdn.com/w40/eu.png', name: 'UEFA Europa League', isTop: true },
-        };
-        if (mapped[key]) return mapped[key];
-
-        return { country: 'World', flag: 'https://flagcdn.com/w40/un.png', name: key.replace('soccer_', '').replace(/_/g, ' '), isTop: false };
+        // ለድሮ ዳታ (Fallback)
+        return { country: 'World', flag: 'https://media.api-sports.io/flags/un.svg', name: key.replace('soccer_', '').replace(/_/g, ' '), isTop: false };
     };
 
     const renderFlag = (flagObj: string) => {
-        if (!flagObj) return <img src="https://flagcdn.com/w40/un.png" alt="flag" className="w-full h-full object-cover" />;
-        if (flagObj.includes('http') || flagObj.includes('/') || flagObj.includes('.')) {
-            return <img src={flagObj} alt="flag" onError={(e: any) => e.target.src='https://flagcdn.com/w40/un.png'} className="w-full h-full object-cover" />;
-        }
-        return <img src="https://flagcdn.com/w40/un.png" alt="flag" className="w-full h-full object-cover" />;
+        if (!flagObj) return <img src="https://media.api-sports.io/flags/un.svg" alt="flag" className="w-full h-full object-cover" />;
+        return <img src={flagObj} alt="flag" onError={(e: any) => e.target.src='https://media.api-sports.io/flags/un.svg'} className="w-full h-full object-cover" />;
     };
 
     const currentTime = new Date().getTime();
     const activeFixtures = fixtures.filter(g => g && g.match_time && new Date(g.match_time).getTime() > currentTime);
 
     const groupedFixtures = activeFixtures.reduce((acc: any, game: any) => {
-        const details = getLeagueDetails(game.league, game.league_flag);
+        const details = getLeagueDetails(game.league);
         const uniqueKey = game.league || 'unknown';
         if (!acc[uniqueKey]) acc[uniqueKey] = { details, games: [] };
         acc[uniqueKey].games.push(game);
@@ -510,9 +367,7 @@ export default function Home() {
     const countriesMap = new Map<string, { flag: string, leagues: {key: string, name: string, count: number}[] }>();
     allLeagues.forEach(([key, data]) => {
         const country = data.details.country;
-        if (!countriesMap.has(country)) {
-            countriesMap.set(country, { flag: data.details.flag, leagues: [] });
-        }
+        if (!countriesMap.has(country)) countriesMap.set(country, { flag: data.details.flag, leagues: [] });
         countriesMap.get(country)!.leagues.push({ key: key, name: data.details.name, count: data.games.length });
     });
     const sortedCountries = Array.from(countriesMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
@@ -522,25 +377,14 @@ export default function Home() {
         const sortedUpcoming = [...activeFixtures].sort((a, b) => new Date(a.match_time).getTime() - new Date(b.match_time).getTime());
         const groupedArray: any[] = [];
         let currentGroup: any = null;
-        
         for (const game of sortedUpcoming) {
             const leagueKey = game.league;
             if (!currentGroup || currentGroup.leagueKey !== leagueKey) {
                 if (currentGroup) groupedArray.push([currentGroup.id, currentGroup.data]);
-                currentGroup = {
-                    leagueKey: leagueKey,
-                    id: leagueKey + '_' + game.id,
-                    data: {
-                        details: getLeagueDetails(leagueKey, game.league_flag),
-                        games: [game]
-                    }
-                };
-            } else {
-                currentGroup.data.games.push(game);
-            }
+                currentGroup = { leagueKey: leagueKey, id: leagueKey + '_' + game.id, data: { details: getLeagueDetails(leagueKey), games: [game] } };
+            } else currentGroup.data.games.push(game);
         }
         if (currentGroup) groupedArray.push([currentGroup.id, currentGroup.data]);
-        
         displayLeagues = groupedArray;
     } else if (selectedLeague === 'Top Matches') {
         displayLeagues = allLeagues.filter(([_, data]) => data.details.isTop);
@@ -550,49 +394,31 @@ export default function Home() {
 
     return (
         <div className="min-h-screen bg-[#1c2024] text-slate-300 font-sans text-sm relative">
-            
             <header className="bg-[#ffcc00] border-b border-[#e6b800] sticky top-0 z-30 h-[60px] flex items-center justify-between px-4 shadow-md">
                 <button onClick={() => window.location.reload()} className="flex items-center gap-3 cursor-pointer hover:opacity-90 transition text-left">
-                    
                     <div className="w-11 h-11 shrink-0 rounded-[10px] overflow-hidden shadow-lg border border-[#3b4148]/50 bg-[#1c2024] p-1 flex items-center justify-center">
                         <img src="/icon.svg" alt="Vibe Bet" className="w-full h-full object-contain" />
                     </div>
-                    
                     <div className="hidden sm:flex flex-col justify-center">
-                        <h1 className="text-[22px] font-black text-black leading-none tracking-tight italic mb-1">
-                            VIBE BET
-                        </h1>
+                        <h1 className="text-[22px] font-black text-black leading-none tracking-tight italic mb-1">VIBE BET</h1>
                         <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-black/80 font-black uppercase tracking-[0.1em]">
-                                Premium Sportsbook
-                            </span>
+                            <span className="text-[10px] text-black/80 font-black uppercase tracking-[0.1em]">Premium Sportsbook</span>
                             {isOnline ? (
-                                <span className="bg-[#ffe566] text-black text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider flex items-center gap-1 shadow-sm">
-                                    <span className="text-[8px]">●</span> ONLINE
-                                </span>
+                                <span className="bg-[#ffe566] text-black text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider flex items-center gap-1 shadow-sm"><span className="text-[8px]">●</span> ONLINE</span>
                             ) : (
-                                <span className="bg-red-500/20 text-red-700 border border-red-500/30 text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider flex items-center gap-1">
-                                    <span className="text-[8px] animate-pulse">●</span> OFFLINE
-                                </span>
+                                <span className="bg-red-500/20 text-red-700 border border-red-500/30 text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider flex items-center gap-1"><span className="text-[8px] animate-pulse">●</span> OFFLINE</span>
                             )}
                         </div>
                     </div>
                 </button>
-                
                 <div className="flex gap-2 sm:gap-4 items-center">
-                    <button 
-                        onClick={() => setIsCheckTicketModalOpen(true)}
-                        className="bg-[#0a0a0a] text-[#ffcc00] hover:bg-[#1a1a1a] px-4 py-1.5 rounded-md font-black text-xs flex items-center gap-1.5 transition-colors shadow-md border border-black"
-                    >
+                    <button onClick={() => setIsCheckTicketModalOpen(true)} className="bg-[#0a0a0a] text-[#ffcc00] hover:bg-[#1a1a1a] px-4 py-1.5 rounded-md font-black text-xs flex items-center gap-1.5 transition-colors shadow-md border border-black">
                         <span className="text-sm">🔍</span> <span className="hidden sm:inline">ትኬት አረጋግጥ</span>
                     </button>
-
                     {user && (
                         <div className="flex items-center gap-3 bg-black/10 border border-black/20 px-3 py-1.5 rounded-full">
                             <span className="hidden sm:inline text-xs font-bold text-black">{user.username}</span>
-                            <span className="text-xs font-black text-black sm:border-l border-black/30 sm:pl-2">
-                                {(user.current_balance || 0).toFixed(2)} Br
-                            </span>
+                            <span className="text-xs font-black text-black sm:border-l border-black/30 sm:pl-2">{(user.current_balance || 0).toFixed(2)} Br</span>
                             <button onClick={handleLogout} className="text-xs font-bold text-black hover:underline ml-2">Logout</button>
                         </div>
                     )}
@@ -600,28 +426,12 @@ export default function Home() {
             </header>
 
             <div className="lg:hidden fixed bottom-0 left-0 right-0 h-[60px] bg-[#1e2328] border-t border-[#3b4148] flex justify-around items-center z-40 shadow-[0_-4px_10px_rgba(0,0,0,0.5)]">
-                <button onClick={() => setIsMobileMenuOpen(true)} className="flex flex-col items-center gap-1 text-slate-400 hover:text-[#ffcc00]">
-                    <span className="text-xl">☰</span>
-                    <span className="text-[10px] font-bold uppercase">Menu</span>
-                </button>
-                
-                <button onClick={() => setIsCheckTicketModalOpen(true)} className="flex flex-col items-center gap-1 text-slate-400 hover:text-[#ffcc00]">
-                    <span className="text-xl">🔍</span>
-                    <span className="text-[10px] font-bold uppercase">Check</span>
-                </button>
-
-                <button onClick={() => {setIsMobileMenuOpen(false); setIsMobileBetSlipOpen(false);}} className="flex flex-col items-center gap-1 text-[#ffcc00]">
-                    <span className="text-xl">🏠</span>
-                    <span className="text-[10px] font-bold uppercase">Home</span>
-                </button>
+                <button onClick={() => setIsMobileMenuOpen(true)} className="flex flex-col items-center gap-1 text-slate-400 hover:text-[#ffcc00]"><span className="text-xl">☰</span><span className="text-[10px] font-bold uppercase">Menu</span></button>
+                <button onClick={() => setIsCheckTicketModalOpen(true)} className="flex flex-col items-center gap-1 text-slate-400 hover:text-[#ffcc00]"><span className="text-xl">🔍</span><span className="text-[10px] font-bold uppercase">Check</span></button>
+                <button onClick={() => {setIsMobileMenuOpen(false); setIsMobileBetSlipOpen(false);}} className="flex flex-col items-center gap-1 text-[#ffcc00]"><span className="text-xl">🏠</span><span className="text-[10px] font-bold uppercase">Home</span></button>
                 <button onClick={() => setIsMobileBetSlipOpen(true)} className="flex flex-col items-center gap-1 text-slate-400 hover:text-[#ffcc00] relative">
-                    <span className="text-xl">🧾</span>
-                    <span className="text-[10px] font-bold uppercase">BetSlip</span>
-                    {betSlip.length > 0 && (
-                        <span className="absolute -top-1.5 -right-2 bg-[#00e700] text-black text-[10px] font-black w-4 h-4 flex items-center justify-center rounded-full border border-black shadow">
-                            {betSlip.length}
-                        </span>
-                    )}
+                    <span className="text-xl">🧾</span><span className="text-[10px] font-bold uppercase">BetSlip</span>
+                    {betSlip.length > 0 && <span className="absolute -top-1.5 -right-2 bg-[#00e700] text-black text-[10px] font-black w-4 h-4 flex items-center justify-center rounded-full border border-black shadow">{betSlip.length}</span>}
                 </button>
             </div>
 
@@ -629,86 +439,44 @@ export default function Home() {
             {isMobileBetSlipOpen && <div className="fixed inset-0 bg-black/70 z-40 lg:hidden animate-fade-in" onClick={() => setIsMobileBetSlipOpen(false)} />}
 
             <div className="flex w-full h-[calc(100vh-60px)] overflow-hidden pb-[60px] lg:pb-0">
-                
-                <aside className={`
-                    fixed inset-y-0 left-0 z-50 w-[260px] bg-[#1e2328] border-r border-[#2a3038] overflow-y-auto custom-scrollbar transform transition-transform duration-300
-                    ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
-                    xl:relative xl:translate-x-0 xl:flex flex-col shrink-0
-                `}>
+                <aside className={`fixed inset-y-0 left-0 z-50 w-[260px] bg-[#1e2328] border-r border-[#2a3038] overflow-y-auto custom-scrollbar transform transition-transform duration-300 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} xl:relative xl:translate-x-0 xl:flex flex-col shrink-0`}>
                     <div className="xl:hidden flex justify-between items-center p-3 bg-[#24292e] border-b border-[#3b4148]">
-                        <span className="font-bold text-[#ffcc00] uppercase text-sm">Menu</span>
-                        <button onClick={() => setIsMobileMenuOpen(false)} className="text-slate-400 hover:text-white text-2xl leading-none">×</button>
+                        <span className="font-bold text-[#ffcc00] uppercase text-sm">Menu</span><button onClick={() => setIsMobileMenuOpen(false)} className="text-slate-400 hover:text-white text-2xl leading-none">×</button>
                     </div>
 
                     <div className="p-3 border-b border-[#2a3038]">
                         <div className="flex bg-[#2a3038] rounded overflow-hidden border border-[#3b4148] focus-within:border-[#ffcc00] transition-colors">
-                            <input 
-                                type="text" 
-                                placeholder="Search matches..." 
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="bg-transparent text-xs text-white p-2.5 flex-1 outline-none placeholder-slate-500" 
-                            />
-                            <button className="bg-[#ffcc00] hover:bg-[#e6b800] px-3 flex items-center justify-center transition-colors">
-                                <span className="text-black text-sm">🔍</span>
-                            </button>
+                            <input type="text" placeholder="Search matches..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="bg-transparent text-xs text-white p-2.5 flex-1 outline-none placeholder-slate-500" />
+                            <button className="bg-[#ffcc00] hover:bg-[#e6b800] px-3 flex items-center justify-center transition-colors"><span className="text-black text-sm">🔍</span></button>
                         </div>
                     </div>
 
                     <div className="flex gap-2 p-3 border-b border-[#2a3038]">
-                        <button 
-                            onClick={() => {setSelectedLeague('Top Matches'); if(window.innerWidth < 1280) setIsMobileMenuOpen(false);}}
-                            className={`flex-1 border text-[11px] font-bold py-2 rounded transition-colors flex items-center justify-center gap-1.5 ${
-                                selectedLeague === 'Top Matches' ? 'bg-[#ffcc00] border-[#ffcc00] text-black' : 'bg-[#2a3038] hover:bg-[#3b4148] border-[#3b4148] text-white'
-                            }`}
-                        >
+                        <button onClick={() => {setSelectedLeague('Top Matches'); if(window.innerWidth < 1280) setIsMobileMenuOpen(false);}} className={`flex-1 border text-[11px] font-bold py-2 rounded transition-colors flex items-center justify-center gap-1.5 ${selectedLeague === 'Top Matches' ? 'bg-[#ffcc00] border-[#ffcc00] text-black' : 'bg-[#2a3038] hover:bg-[#3b4148] border-[#3b4148] text-white'}`}>
                             <span className={selectedLeague === 'Top Matches' ? 'text-black' : 'text-[#ffcc00]'}>🏆</span> Top
                         </button>
-                        <button 
-                            onClick={() => {setSelectedLeague('Upcoming'); if(window.innerWidth < 1280) setIsMobileMenuOpen(false);}}
-                            className={`flex-1 border text-[11px] font-bold py-2 rounded transition-colors flex items-center justify-center gap-1.5 ${
-                                selectedLeague === 'Upcoming' ? 'bg-[#ffcc00] border-[#ffcc00] text-black' : 'bg-[#2a3038] hover:bg-[#3b4148] border-[#3b4148] text-white'
-                            }`}
-                        >
+                        <button onClick={() => {setSelectedLeague('Upcoming'); if(window.innerWidth < 1280) setIsMobileMenuOpen(false);}} className={`flex-1 border text-[11px] font-bold py-2 rounded transition-colors flex items-center justify-center gap-1.5 ${selectedLeague === 'Upcoming' ? 'bg-[#ffcc00] border-[#ffcc00] text-black' : 'bg-[#2a3038] hover:bg-[#3b4148] border-[#3b4148] text-white'}`}>
                             <span className={selectedLeague === 'Upcoming' ? 'text-black' : 'text-[#ffcc00]'}>🕒</span> Upcoming
                         </button>
                     </div>
 
                     {topLeagues.length > 0 && (
                         <div className="border-b border-[#2a3038]">
-                            <button 
-                                onClick={() => setIsTopLeaguesOpen(!isTopLeaguesOpen)} 
-                                className="w-full flex items-center justify-between p-3 hover:bg-[#24292e] transition-colors"
-                            >
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[#ffcc00]">🔥</span>
-                                    <span className="text-[13px] font-bold text-white">Top Leagues</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="bg-[#2a3038] text-slate-400 text-[10px] px-1.5 py-0.5 rounded-sm">{topLeagues.length}</span>
-                                    <span className="text-slate-500 text-[10px]">{isTopLeaguesOpen ? '▲' : '▼'}</span>
-                                </div>
+                            <button onClick={() => setIsTopLeaguesOpen(!isTopLeaguesOpen)} className="w-full flex items-center justify-between p-3 hover:bg-[#24292e] transition-colors">
+                                <div className="flex items-center gap-2"><span className="text-[#ffcc00]">🔥</span><span className="text-[13px] font-bold text-white">Top Leagues</span></div>
+                                <div className="flex items-center gap-2"><span className="bg-[#2a3038] text-slate-400 text-[10px] px-1.5 py-0.5 rounded-sm">{topLeagues.length}</span><span className="text-slate-500 text-[10px]">{isTopLeaguesOpen ? '▲' : '▼'}</span></div>
                             </button>
-
                             {isTopLeaguesOpen && (
                                 <ul className="text-xs text-slate-300 pb-2">
                                     {topLeagues.map(([key, data]) => (
                                         <li key={key}>
-                                            <button 
-                                                onClick={() => {setSelectedLeague(key); if(window.innerWidth < 1280) setIsMobileMenuOpen(false);}}
-                                                className={`w-full flex items-center justify-between px-3 py-1.5 transition-colors ${
-                                                    selectedLeague === key ? 'bg-[#2a3038] border-l-2 border-[#ffcc00] text-white' : 'border-l-2 border-transparent hover:bg-[#2a3038] hover:text-white'
-                                                }`}
-                                            >
+                                            <button onClick={() => {setSelectedLeague(key); if(window.innerWidth < 1280) setIsMobileMenuOpen(false);}} className={`w-full flex items-center justify-between px-3 py-1.5 transition-colors ${selectedLeague === key ? 'bg-[#2a3038] border-l-2 border-[#ffcc00] text-white' : 'border-l-2 border-transparent hover:bg-[#2a3038] hover:text-white'}`}>
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-5 h-5 bg-[#2a3038] rounded-full flex items-center justify-center text-xs overflow-hidden border border-[#3b4148]">
-                                                        {renderFlag(data.details.flag)}
-                                                    </div>
+                                                    <div className="w-5 h-5 bg-[#2a3038] rounded-full flex items-center justify-center text-xs overflow-hidden border border-[#3b4148]">{renderFlag(data.details.flag)}</div>
                                                     <span className="font-semibold">{data.details.name}</span>
                                                 </div>
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-slate-500 text-[11px]">{data.games.length}</span>
-                                                    <span className="text-slate-600 hover:text-[#ffcc00] transition-colors text-sm">☆</span>
+                                                    <span className="text-slate-500 text-[11px]">{data.games.length}</span><span className="text-slate-600 hover:text-[#ffcc00] transition-colors text-sm">☆</span>
                                                 </div>
                                             </button>
                                         </li>
@@ -719,21 +487,10 @@ export default function Home() {
                     )}
 
                     <div>
-                        <div className="px-3 pt-4 pb-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                            Sports
-                        </div>
-                        <button 
-                            onClick={() => setIsSoccerOpen(!isSoccerOpen)} 
-                            className="w-full flex items-center justify-between p-3 hover:bg-[#24292e] transition-colors"
-                        >
-                            <div className="flex items-center gap-2">
-                                <span className="text-[#3b82f6]">⚽</span>
-                                <span className="text-[13px] font-bold text-white">Soccer</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <span className="bg-[#2a3038] text-slate-400 text-[10px] px-1.5 py-0.5 rounded-sm">{activeFixtures.length}</span>
-                                <span className="text-slate-500 text-[10px]">{isSoccerOpen ? '▲' : '▼'}</span>
-                            </div>
+                        <div className="px-3 pt-4 pb-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Sports</div>
+                        <button onClick={() => setIsSoccerOpen(!isSoccerOpen)} className="w-full flex items-center justify-between p-3 hover:bg-[#24292e] transition-colors">
+                            <div className="flex items-center gap-2"><span className="text-[#3b82f6]">⚽</span><span className="text-[13px] font-bold text-white">Soccer</span></div>
+                            <div className="flex items-center gap-2"><span className="bg-[#2a3038] text-slate-400 text-[10px] px-1.5 py-0.5 rounded-sm">{activeFixtures.length}</span><span className="text-slate-500 text-[10px]">{isSoccerOpen ? '▲' : '▼'}</span></div>
                         </button>
 
                         {isSoccerOpen && (
@@ -741,39 +498,23 @@ export default function Home() {
                                 {sortedCountries.map(([countryName, countryData]) => {
                                     const isCountryOpen = openCountry === countryName;
                                     const totalGames = countryData.leagues.reduce((sum, l) => sum + l.count, 0);
-                                    
                                     return (
                                         <div key={countryName}>
-                                            <button 
-                                                onClick={() => setOpenCountry(isCountryOpen ? null : countryName)}
-                                                className={`w-full flex items-center justify-between px-4 py-2 transition-colors ${
-                                                    isCountryOpen ? 'bg-[#2a3038] text-white' : 'hover:bg-[#2a3038] hover:text-white'
-                                                }`}
-                                            >
+                                            <button onClick={() => setOpenCountry(isCountryOpen ? null : countryName)} className={`w-full flex items-center justify-between px-4 py-2 transition-colors ${isCountryOpen ? 'bg-[#2a3038] text-white' : 'hover:bg-[#2a3038] hover:text-white'}`}>
                                                 <div className="flex items-center gap-3">
-                                                    <span className="text-sm w-5 h-5 flex items-center justify-center rounded-full overflow-hidden border border-[#3b4148]">
-                                                        {renderFlag(countryData.flag)}
-                                                    </span>
+                                                    <span className="text-sm w-5 h-5 flex items-center justify-center rounded-full overflow-hidden border border-[#3b4148]">{renderFlag(countryData.flag)}</span>
                                                     <span className="font-semibold">{countryName}</span>
                                                 </div>
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-slate-500 text-[11px]">{totalGames}</span>
-                                                    <span className="text-slate-600 text-[10px]">{isCountryOpen ? '▼' : '❯'}</span>
+                                                    <span className="text-slate-500 text-[11px]">{totalGames}</span><span className="text-slate-600 text-[10px]">{isCountryOpen ? '▼' : '❯'}</span>
                                                 </div>
                                             </button>
-                                            
                                             {isCountryOpen && (
                                                 <ul className="bg-[#1a1f24] py-1 border-b border-[#2a3038]">
                                                     {countryData.leagues.map((league) => (
                                                         <li key={league.key}>
-                                                            <button 
-                                                                onClick={() => {setSelectedLeague(league.key); if(window.innerWidth < 1280) setIsMobileMenuOpen(false);}}
-                                                                className={`w-full flex items-center justify-between pl-12 pr-4 py-2 transition-colors ${
-                                                                    selectedLeague === league.key ? 'text-[#ffcc00] font-bold' : 'text-slate-400 hover:text-white hover:bg-[#24292e]'
-                                                                }`}
-                                                            >
-                                                                <span>{league.name}</span>
-                                                                <span className="text-[10px] opacity-60">{league.count}</span>
+                                                            <button onClick={() => {setSelectedLeague(league.key); if(window.innerWidth < 1280) setIsMobileMenuOpen(false);}} className={`w-full flex items-center justify-between pl-12 pr-4 py-2 transition-colors ${selectedLeague === league.key ? 'text-[#ffcc00] font-bold' : 'text-slate-400 hover:text-white hover:bg-[#24292e]'}`}>
+                                                                <span>{league.name}</span><span className="text-[10px] opacity-60">{league.count}</span>
                                                             </button>
                                                         </li>
                                                     ))}
@@ -788,39 +529,23 @@ export default function Home() {
                 </aside>
                 
                 <main className="flex-1 flex flex-col min-w-0 bg-[#16191c] overflow-hidden relative">
-                    
                     <div className="bg-[#24292e] border-b border-[#3b4148] p-2 sm:p-3 shrink-0 flex flex-col gap-3 shadow-sm z-20 relative">
                         <div className="flex gap-2 sm:gap-4">
                             <div className="flex-1 relative">
                                 <button className="w-full bg-[#1a1f24] hover:bg-[#1e2328] border border-[#3b4148] rounded-lg p-2.5 flex items-center justify-between text-slate-300 transition shadow-inner">
-                                    <div className="flex items-center gap-2">
-                                        <span className="bg-slate-200 text-black rounded-full w-5 h-5 flex items-center justify-center text-[10px] sm:text-xs">⚽</span>
-                                        <span className="font-bold text-xs sm:text-sm">Soccer</span>
-                                    </div>
-                                    <span className="text-[10px] text-slate-500">▼</span>
+                                    <div className="flex items-center gap-2"><span className="bg-slate-200 text-black rounded-full w-5 h-5 flex items-center justify-center text-[10px] sm:text-xs">⚽</span><span className="font-bold text-xs sm:text-sm">Soccer</span></div><span className="text-[10px] text-slate-500">▼</span>
                                 </button>
                             </div>
-                            
                             <div className="flex-1 relative">
                                 <button onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)} className="w-full bg-[#1a1f24] hover:bg-[#1e2328] border border-[#3b4148] rounded-lg p-2.5 flex items-center justify-between text-slate-300 transition shadow-inner truncate">
-                                    <div className="flex items-center gap-2 truncate">
-                                        <span className="bg-slate-200 text-black rounded-full w-5 h-5 flex items-center justify-center text-[10px] sm:text-xs shrink-0">🌐</span>
-                                        <span className="font-bold text-xs sm:text-sm truncate">
-                                            {selectedCountryFilter}
-                                        </span>
-                                    </div>
-                                    <span className="text-[10px] text-slate-500 ml-2 shrink-0">{isCountryDropdownOpen ? '▲' : '▼'}</span>
+                                    <div className="flex items-center gap-2 truncate"><span className="bg-slate-200 text-black rounded-full w-5 h-5 flex items-center justify-center text-[10px] sm:text-xs shrink-0">🌐</span><span className="font-bold text-xs sm:text-sm truncate">{selectedCountryFilter}</span></div><span className="text-[10px] text-slate-500 ml-2 shrink-0">{isCountryDropdownOpen ? '▲' : '▼'}</span>
                                 </button>
-
                                 {isCountryDropdownOpen && (
                                     <div className="absolute top-full left-0 mt-1 w-full bg-[#1e2328] border border-[#3b4148] rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto custom-scrollbar">
-                                        <button onClick={() => { setSelectedCountryFilter('All Countries'); setIsCountryDropdownOpen(false); }} className="w-full text-left px-4 py-3 hover:bg-[#2a3038] text-sm font-bold text-white border-b border-[#3b4148] transition-colors">
-                                            🌐 ሁሉም ሀገራት (All)
-                                        </button>
+                                        <button onClick={() => { setSelectedCountryFilter('All Countries'); setIsCountryDropdownOpen(false); }} className="w-full text-left px-4 py-3 hover:bg-[#2a3038] text-sm font-bold text-white border-b border-[#3b4148] transition-colors">🌐 ሁሉም ሀገራት (All)</button>
                                         {sortedCountries.map(([cName, cData]) => (
                                             <button key={cName} onClick={() => { setSelectedCountryFilter(cName); setIsCountryDropdownOpen(false); }} className="w-full text-left px-4 py-2.5 hover:bg-[#2a3038] flex items-center gap-3 border-b border-[#3b4148] last:border-0 transition-colors">
-                                                <span className="w-5 h-5 flex items-center justify-center rounded-full overflow-hidden border border-[#3b4148]">{renderFlag(cData.flag)}</span>
-                                                <span className="text-sm font-semibold text-slate-300">{cName}</span>
+                                                <span className="w-5 h-5 flex items-center justify-center rounded-full overflow-hidden border border-[#3b4148]">{renderFlag(cData.flag)}</span><span className="text-sm font-semibold text-slate-300">{cName}</span>
                                             </button>
                                         ))}
                                     </div>
@@ -830,55 +555,17 @@ export default function Home() {
 
                         <div className="flex justify-between items-center overflow-x-auto custom-scrollbar pb-1">
                             <div className="flex items-center gap-1 bg-[#1a1f24] p-1 rounded-full border border-[#3b4148] shrink-0 shadow-inner relative">
-                                <button
-                                    onClick={() => setSelectedDateFilter(todayStr)}
-                                    className={`px-3 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors ${selectedDateFilter === todayStr ? 'bg-[#ffcc00] text-black shadow' : 'text-slate-400 hover:text-white'}`}
-                                >Tdy</button>
-                                <button
-                                    onClick={() => setSelectedDateFilter(tomorrowStr)}
-                                    className={`px-3 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors ${selectedDateFilter === tomorrowStr ? 'bg-[#ffcc00] text-black shadow' : 'text-slate-400 hover:text-white'}`}
-                                >Tmw</button>
-                                <button
-                                    onClick={() => setSelectedDateFilter(dayAfterTmwStr)}
-                                    className={`px-3 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors ${selectedDateFilter === dayAfterTmwStr ? 'bg-[#ffcc00] text-black shadow' : 'text-slate-400 hover:text-white'}`}
-                                >{dayAfterTmwLabel}</button>
-                                
+                                <button onClick={() => setSelectedDateFilter(todayStr)} className={`px-3 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors ${selectedDateFilter === todayStr ? 'bg-[#ffcc00] text-black shadow' : 'text-slate-400 hover:text-white'}`}>Tdy</button>
+                                <button onClick={() => setSelectedDateFilter(tomorrowStr)} className={`px-3 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors ${selectedDateFilter === tomorrowStr ? 'bg-[#ffcc00] text-black shadow' : 'text-slate-400 hover:text-white'}`}>Tmw</button>
+                                <button onClick={() => setSelectedDateFilter(dayAfterTmwStr)} className={`px-3 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors ${selectedDateFilter === dayAfterTmwStr ? 'bg-[#ffcc00] text-black shadow' : 'text-slate-400 hover:text-white'}`}>{dayAfterTmwLabel}</button>
                                 <div className="relative flex items-center justify-center px-2">
-                                    <input 
-                                        ref={dateInputRef}
-                                        type="date" 
-                                        className="absolute w-0 h-0 opacity-0 overflow-hidden"
-                                        onChange={(e) => {
-                                            if(e.target.value) {
-                                                const dateObj = new Date(e.target.value);
-                                                const dateStr = new Date(dateObj.getTime() + Math.abs(dateObj.getTimezoneOffset() * 60000)).toDateString();
-                                                setSelectedDateFilter(dateStr);
-                                            } else {
-                                                setSelectedDateFilter('All');
-                                            }
-                                        }}
-                                    />
-                                    <button
-                                        onClick={() => {
-                                            if(dateInputRef.current) {
-                                                try { dateInputRef.current.showPicker(); } 
-                                                catch(e) { dateInputRef.current.focus(); }
-                                            }
-                                        }}
-                                        className={`w-8 h-8 rounded-full text-xs sm:text-sm transition-colors relative z-0 flex items-center justify-center ${!['All', todayStr, tomorrowStr, dayAfterTmwStr].includes(selectedDateFilter) && selectedDateFilter !== 'All' ? 'bg-[#ffcc00] text-black shadow' : 'text-slate-400 hover:text-white'}`}
-                                    >📅</button>
+                                    <input ref={dateInputRef} type="date" className="absolute w-0 h-0 opacity-0 overflow-hidden" onChange={(e) => { e.target.value ? setSelectedDateFilter(new Date(new Date(e.target.value).getTime() + Math.abs(new Date(e.target.value).getTimezoneOffset() * 60000)).toDateString()) : setSelectedDateFilter('All'); }} />
+                                    <button onClick={() => { if(dateInputRef.current) { try { dateInputRef.current.showPicker(); } catch(e) { dateInputRef.current.focus(); } } }} className={`w-8 h-8 rounded-full text-xs sm:text-sm transition-colors relative z-0 flex items-center justify-center ${!['All', todayStr, tomorrowStr, dayAfterTmwStr].includes(selectedDateFilter) && selectedDateFilter !== 'All' ? 'bg-[#ffcc00] text-black shadow' : 'text-slate-400 hover:text-white'}`}>📅</button>
                                 </div>
                             </div>
-
                             <div className="flex items-center bg-[#1a1f24] p-1 rounded-full border border-[#3b4148] shrink-0 ml-4 shadow-inner">
-                                <button
-                                    onClick={() => setMainMarketView('1X2')}
-                                    className={`px-3 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors ${mainMarketView === '1X2' ? 'bg-[#ffcc00] text-black shadow' : 'text-slate-400 hover:text-white'}`}
-                                >3 Way</button>
-                                <button
-                                    onClick={() => setMainMarketView('DC')}
-                                    className={`px-3 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors ${mainMarketView === 'DC' ? 'bg-[#ffcc00] text-black shadow' : 'text-slate-400 hover:text-white'}`}
-                                >Double Chance</button>
+                                <button onClick={() => setMainMarketView('1X2')} className={`px-3 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors ${mainMarketView === '1X2' ? 'bg-[#ffcc00] text-black shadow' : 'text-slate-400 hover:text-white'}`}>3 Way</button>
+                                <button onClick={() => setMainMarketView('DC')} className={`px-3 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors ${mainMarketView === 'DC' ? 'bg-[#ffcc00] text-black shadow' : 'text-slate-400 hover:text-white'}`}>Double Chance</button>
                             </div>
                         </div>
                     </div>
@@ -886,26 +573,17 @@ export default function Home() {
                     <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
                         {isFetchingFixtures ? (
                             <div className="py-32 text-center flex flex-col items-center justify-center">
-                                <div className="w-8 h-8 border-4 border-[#3b4148] border-t-[#ffcc00] rounded-full animate-spin mb-4"></div>
-                                <p className="text-slate-400 font-bold text-xs uppercase tracking-wider">ጨዋታዎችን በማምጣት ላይ...</p>
+                                <div className="w-8 h-8 border-4 border-[#3b4148] border-t-[#ffcc00] rounded-full animate-spin mb-4"></div><p className="text-slate-400 font-bold text-xs uppercase tracking-wider">ጨዋታዎችን በማምጣት ላይ...</p>
                             </div>
                         ) : activeFixtures.length === 0 ? (
                             <div className="py-20 text-center text-slate-500 text-xs font-bold">አሁን ላይ ምንም አይነት ጨዋታ አልተገኘም!</div>
                         ) : (
                             <div>
-                                {displayLeagues
-                                    .filter(([key, data]) => {
-                                        let passCountry = true;
-                                        if (selectedCountryFilter !== 'All Countries' && selectedLeague !== 'Upcoming') {
-                                            passCountry = data.details.country === selectedCountryFilter;
-                                        }
-                                        return passCountry;
-                                    })
-                                    .map(([key, data]) => {
+                                {displayLeagues.filter(([key, data]) => {
+                                        return (selectedCountryFilter !== 'All Countries' && selectedLeague !== 'Upcoming') ? data.details.country === selectedCountryFilter : true;
+                                    }).map(([key, data]) => {
                                         let gamesToRender = data.games;
-                                        if (selectedLeague === 'Upcoming' && selectedCountryFilter !== 'All Countries') {
-                                            gamesToRender = gamesToRender.filter((g: any) => getLeagueDetails(g.league, g.league_flag).country === selectedCountryFilter);
-                                        }
+                                        if (selectedLeague === 'Upcoming' && selectedCountryFilter !== 'All Countries') gamesToRender = gamesToRender.filter((g: any) => getLeagueDetails(g.league).country === selectedCountryFilter);
 
                                         const filteredGames = gamesToRender.filter((g: any) => {
                                             const matchesSearch = (g.home_team || '').toLowerCase().includes(searchTerm.toLowerCase()) || (g.away_team || '').toLowerCase().includes(searchTerm.toLowerCase());
@@ -918,23 +596,15 @@ export default function Home() {
                                         return (
                                         <div key={key} className="mb-6 rounded-lg overflow-hidden border border-[#2a3038] shadow-sm">
                                             <div className="bg-[#24292e] px-4 py-3 flex items-center gap-3 border-b border-[#3b4148] sticky top-0 z-10">
-                                                <div className="w-6 h-6 bg-[#1e2328] rounded-full flex items-center justify-center text-sm shadow-inner border border-[#3b4148] overflow-hidden">
-                                                    {renderFlag(data.details.flag)}
-                                                </div>
-                                                <span className="text-[13px] font-black text-white tracking-wide">
-                                                    {data.details.country}: {data.details.name}
-                                                </span>
+                                                <div className="w-6 h-6 bg-[#1e2328] rounded-full flex items-center justify-center text-sm shadow-inner border border-[#3b4148] overflow-hidden">{renderFlag(data.details.flag)}</div>
+                                                <span className="text-[13px] font-black text-white tracking-wide">{data.details.country}: {data.details.name}</span>
                                             </div>
 
                                             <div className="flex flex-col bg-[#1e2328]">
                                                 <div className="flex text-[10px] font-bold text-slate-500 px-1 sm:px-2 py-2 border-b border-[#2a3038] bg-[#1a1f24]">
                                                     <div className="w-12 sm:w-16"></div>
                                                     <div className="flex-1 flex justify-around">
-                                                        {mainMarketView === '1X2' ? (
-                                                            <><span>1</span><span>X</span><span>2</span></>
-                                                        ) : (
-                                                            <><span>1X</span><span>12</span><span>X2</span></>
-                                                        )}
+                                                        {mainMarketView === '1X2' ? (<><span>1</span><span>X</span><span>2</span></>) : (<><span>1X</span><span>12</span><span>X2</span></>)}
                                                     </div>
                                                     <div className="w-10 sm:w-14"></div>
                                                 </div>
@@ -943,7 +613,6 @@ export default function Home() {
                                                     const matchDate = new Date(game.match_time);
                                                     const isExpanded = expandedMatchId === game.id;
                                                     const categorizedMarkets = getCategorizedMarkets(game);
-                                                    
                                                     const mainMarkets = categorizedMarkets["Main Match Result"] || [];
                                                     
                                                     const market1X2 = mainMarkets.find((m:any) => {
@@ -961,7 +630,6 @@ export default function Home() {
                                                     const btn1 = currentDisplayOdds[0] || { odd_id: `1_null_${game.id}`, option: "1", value: "0.00" };
                                                     const btnX = currentDisplayOdds[1] || { odd_id: `x_null_${game.id}`, option: "X", value: "0.00" };
                                                     const btn2 = currentDisplayOdds[2] || { odd_id: `2_null_${game.id}`, option: "2", value: "0.00" };
-                                                    
                                                     const hasSelectionInGame = betSlip.some((item: any) => item.fixture_id === game.id);
 
                                                     return (
@@ -1010,8 +678,7 @@ export default function Home() {
                                                                                             <div key={mIdx} className="bg-[#2b3138] rounded-sm border border-[#3b4148] overflow-hidden">
                                                                                                 <button onClick={() => toggleAccordion(market.title)} className="w-full flex items-center justify-between p-2 hover:bg-[#323840] transition-colors">
                                                                                                     <div className="flex items-center gap-2">
-                                                                                                        <span className="text-slate-400 font-black text-[10px]">▶</span>
-                                                                                                        <span className="text-[10px] sm:text-[11px] font-bold text-white tracking-wide text-left">{market.title}</span>
+                                                                                                        <span className="text-slate-400 font-black text-[10px]">▶</span><span className="text-[10px] sm:text-[11px] font-bold text-white tracking-wide text-left">{market.title}</span>
                                                                                                     </div>
                                                                                                     <span className="text-slate-500 text-[10px]">{isOpen ? '▲' : '▼'}</span>
                                                                                                 </button>
@@ -1051,64 +718,30 @@ export default function Home() {
                     </div>
                 </main>
 
-                <aside className={`
-                    fixed inset-y-0 right-0 z-50 w-full sm:w-[320px] bg-[#1e2328] border-l border-[#2a3038] overflow-hidden flex flex-col transform transition-transform duration-300
-                    ${isMobileBetSlipOpen ? 'translate-x-0' : 'translate-x-full'}
-                    lg:relative lg:translate-x-0 lg:w-[300px] shrink-0 shadow-[-4px_0_15px_rgba(0,0,0,0.3)] lg:shadow-none
-                `}>
-                    
+                <aside className={`fixed inset-y-0 right-0 z-50 w-full sm:w-[320px] bg-[#1e2328] border-l border-[#2a3038] overflow-hidden flex flex-col transform transition-transform duration-300 ${isMobileBetSlipOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:translate-x-0 lg:w-[300px] shrink-0 shadow-[-4px_0_15px_rgba(0,0,0,0.3)] lg:shadow-none`}>
                     <div className="bg-[#1e2328] p-3 border-b border-[#3b4148] z-20">
                         <div className="flex bg-[#24292e] rounded border border-[#3b4148] focus-within:border-[#ffcc00] overflow-hidden shadow-inner">
-                            <input
-                                type="text"
-                                placeholder="Booking Code ያስገቡ..."
-                                value={ticketCodeInput}
-                                onChange={(e) => setTicketCodeInput(e.target.value)}
-                                className="bg-transparent text-xs text-white p-2.5 flex-1 outline-none uppercase tracking-wider"
-                            />
-                            <button 
-                                onClick={handleLoadTicket} 
-                                disabled={isLoading || !ticketCodeInput.trim()}
-                                className="bg-[#3b4148] hover:bg-[#ffcc00] hover:text-black text-slate-300 text-xs px-4 font-black transition-colors disabled:opacity-50"
-                            >
-                                ጫን
-                            </button>
+                            <input type="text" placeholder="Booking Code ያስገቡ..." value={ticketCodeInput} onChange={(e) => setTicketCodeInput(e.target.value)} className="bg-transparent text-xs text-white p-2.5 flex-1 outline-none uppercase tracking-wider" />
+                            <button onClick={handleLoadTicket} disabled={isLoading || !ticketCodeInput.trim()} className="bg-[#3b4148] hover:bg-[#ffcc00] hover:text-black text-slate-300 text-xs px-4 font-black transition-colors disabled:opacity-50">ጫን</button>
                         </div>
                     </div>
 
                     <div className="bg-[#24292e] p-3 border-b border-[#3b4148] shadow-sm z-10 flex justify-between items-center">
-                        <h2 className="text-sm font-black text-white uppercase tracking-wide flex items-center">
-                            Bet Slip
-                            <span className="bg-[#ffcc00] text-black font-bold text-[10px] px-2 py-0.5 rounded-full ml-2">{betSlip.length}</span>
-                        </h2>
+                        <h2 className="text-sm font-black text-white uppercase tracking-wide flex items-center">Bet Slip<span className="bg-[#ffcc00] text-black font-bold text-[10px] px-2 py-0.5 rounded-full ml-2">{betSlip.length}</span></h2>
                         <button onClick={() => setIsMobileBetSlipOpen(false)} className="lg:hidden text-slate-400 hover:text-white text-2xl leading-none">×</button>
                     </div>
 
                     <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#16191c]">
                         {betSlip.length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-60">
-                                <span className="text-4xl mb-2">📋</span>
-                                <p className="text-xs font-bold text-white mb-1">ምንም አልመረጡም</p>
-                            </div>
+                            <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-60"><span className="text-4xl mb-2">📋</span><p className="text-xs font-bold text-white mb-1">ምንም አልመረጡም</p></div>
                         ) : (
                             <div className="flex flex-col p-2 space-y-2">
                                 {betSlip.map((item, idx) => (
                                     <div key={idx} className="bg-[#1e2328] border border-[#2a3038] rounded-md p-3 relative group hover:border-[#3b4148] transition-colors shadow-sm">
                                         <button onClick={() => toggleSelection({id: item.fixture_id}, {odd_id: item.odd_id})} className="absolute top-2 right-2 text-slate-500 hover:text-red-500 text-lg leading-none transition-colors">✕</button>
-                                        
-                                        <div className="flex justify-between items-center mb-1.5 pr-4">
-                                            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider truncate mr-2">{item.league_name}</span>
-                                            <span className="text-[10px] text-[#ffcc00] font-black shrink-0">{new Date(item.match_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                                        </div>
-
-                                        <div className="pr-5 mb-2">
-                                            <p className="text-[11px] font-bold text-white leading-snug">{item.home_team} <span className="text-slate-500 font-normal px-1">vs</span> {item.away_team}</p>
-                                        </div>
-                                        
-                                        <div className="flex justify-between items-center bg-[#1a1f24] p-1.5 rounded border border-[#2a3038]">
-                                            <span className="text-[11px] text-[#ffcc00] font-bold">{item.odd_name}</span>
-                                            <span className="text-[13px] font-black text-white">{item.odd_value}</span>
-                                        </div>
+                                        <div className="flex justify-between items-center mb-1.5 pr-4"><span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider truncate mr-2">{item.league_name}</span><span className="text-[10px] text-[#ffcc00] font-black shrink-0">{new Date(item.match_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></div>
+                                        <div className="pr-5 mb-2"><p className="text-[11px] font-bold text-white leading-snug">{item.home_team} <span className="text-slate-500 font-normal px-1">vs</span> {item.away_team}</p></div>
+                                        <div className="flex justify-between items-center bg-[#1a1f24] p-1.5 rounded border border-[#2a3038]"><span className="text-[11px] text-[#ffcc00] font-bold">{item.odd_name}</span><span className="text-[13px] font-black text-white">{item.odd_value}</span></div>
                                     </div>
                                 ))}
                             </div>
@@ -1117,31 +750,15 @@ export default function Home() {
 
                     {betSlip.length > 0 && (
                         <div className="bg-[#1a1f24] p-4 border-t border-[#3b4148] shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.3)] z-10">
-                            <div className="flex justify-between items-center mb-1.5">
-                                <span className="text-[11px] text-slate-400">Total Odds</span>
-                                <span className="text-[13px] font-black text-white">{totalOdds}</span>
-                            </div>
-                            <div className="flex justify-between items-center mb-3">
-                                <span className="text-[11px] font-bold text-slate-300">Potential Win</span>
-                                <span className="text-[14px] font-black text-[#00e700]">{grossWin.toFixed(2)} Br</span>
-                            </div>
-                            
+                            <div className="flex justify-between items-center mb-1.5"><span className="text-[11px] text-slate-400">Total Odds</span><span className="text-[13px] font-black text-white">{totalOdds}</span></div>
+                            <div className="flex justify-between items-center mb-3"><span className="text-[11px] font-bold text-slate-300">Potential Win</span><span className="text-[14px] font-black text-[#00e700]">{grossWin.toFixed(2)} Br</span></div>
                             <div className={`flex items-center gap-2 bg-[#24292e] border rounded transition-colors mb-1 overflow-hidden h-[40px] shadow-inner ${limitWarning ? 'border-red-500' : 'border-[#3b4148] focus-within:border-[#ffcc00]'}`}>
-                                <span className="text-[10px] font-bold text-slate-400 pl-3 uppercase">Stake</span>
-                                <input type="number" value={stake} onChange={(e) => setStake(Number(e.target.value))} className="flex-1 h-full bg-transparent text-white text-sm font-bold outline-none text-right pr-3" />
+                                <span className="text-[10px] font-bold text-slate-400 pl-3 uppercase">Stake</span><input type="number" value={stake} onChange={(e) => setStake(Number(e.target.value))} className="flex-1 h-full bg-transparent text-white text-sm font-bold outline-none text-right pr-3" />
                             </div>
-
-                            <div className="h-[18px] mb-2 flex items-center justify-center">
-                                {limitWarning && <p className="text-[10px] text-red-500 font-bold leading-tight text-center">{limitWarning}</p>}
-                            </div>
-
+                            <div className="h-[18px] mb-2 flex items-center justify-center">{limitWarning && <p className="text-[10px] text-red-500 font-bold leading-tight text-center">{limitWarning}</p>}</div>
                             <div className="flex gap-2 h-[44px]">
                                 <button onClick={() => {setBetSlip([]); setBookingCode(null)}} className="bg-[#24292e] border border-[#3b4148] text-slate-400 hover:text-red-400 hover:border-red-400 text-sm font-bold w-12 rounded flex items-center justify-center transition-colors">🗑</button>
-                                <button 
-                                    onClick={handlePlaceBet} 
-                                    disabled={isLoading || !!limitWarning} 
-                                    className="flex-1 bg-[#ffcc00] hover:bg-[#e6b800] text-black font-black text-sm rounded flex items-center justify-center transition-transform active:scale-[0.98] disabled:opacity-50 disabled:bg-slate-600 disabled:text-slate-400 disabled:cursor-not-allowed shadow-md"
-                                >
+                                <button onClick={handlePlaceBet} disabled={isLoading || !!limitWarning} className="flex-1 bg-[#ffcc00] hover:bg-[#e6b800] text-black font-black text-sm rounded flex items-center justify-center transition-transform active:scale-[0.98] disabled:opacity-50 disabled:bg-slate-600 disabled:text-slate-400 disabled:cursor-not-allowed shadow-md">
                                     {isLoading ? '...' : 'Place Bet'}
                                 </button>
                             </div>
