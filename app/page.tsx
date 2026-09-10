@@ -284,6 +284,7 @@ export default function Home() {
         setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
     };
 
+    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ (Strict Market Mapping API-Football to UI) 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game?.raw_markets || [];
         const marketsObj: Record<string, any[]> = {
@@ -436,7 +437,7 @@ export default function Home() {
 
             let outcomes = market.outcomes.map((o: any, idx: number) => ({
                 odd_id: `${market.key || 'unk'}_${String(o?.name || '').replace(/[^a-zA-Z0-9]/g, '_')}_${game.id}_${idx}`, 
-                option: String(o?.name ?? 'Opt'), // 🌟 FIX: Data into strict String
+                option: String(o?.name ?? 'Opt'), 
                 value: parseFloat(o?.price || o?.odd || 0).toFixed(2)
             }));
 
