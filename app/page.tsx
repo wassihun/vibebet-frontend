@@ -284,7 +284,7 @@ export default function Home() {
         setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
     };
 
-    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ እና ሎጂክ (Strict Market Mapping & Smart Sorting) 🌟
+    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ፣ ማጣሪያ እና ሎጂክ (Strict Market Mapping & Deduplication) 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game?.raw_markets || [];
         const marketsObj: Record<string, any[]> = {
@@ -293,132 +293,101 @@ export default function Home() {
 
         if (!Array.isArray(raw)) return marketsObj;
 
-        // 🌟 Smart Sorting Logic 🌟
-        const sortOutcomes = (oddsArray: any[]) => {
-            return oddsArray.sort((a, b) => {
-                const optA = String(a.option || '');
-                const optB = String(b.option || '');
-                
-                const matchA = optA.match(/-?\d+(\.\d+)?/);
-                const matchB = optB.match(/-?\d+(\.\d+)?/);
-                const numA = matchA ? parseFloat(matchA[0]) : NaN;
-                const numB = matchB ? parseFloat(matchB[0]) : NaN;
-                
-                if (!isNaN(numA) && !isNaN(numB)) {
-                    if (numA !== numB) return numA - numB;
-                    
-                    const strA = optA.toLowerCase();
-                    const strB = optB.toLowerCase();
-                    
-                    if (strA.includes('over') && strB.includes('under')) return -1;
-                    if (strA.includes('under') && strB.includes('over')) return 1;
-                    if (strA.includes('home') && strB.includes('away')) return -1;
-                    if (strA.includes('away') && strB.includes('home')) return 1;
-                    if (strA.includes('yes') && strB.includes('no')) return -1;
-                    if (strA.includes('no') && strB.includes('yes')) return 1;
-                }
-                
-                const sortOrder: Record<string, number> = { '1': 1, 'x': 2, '2': 3, '1x': 4, '12': 5, 'x2': 6 };
-                const keyA = optA.toLowerCase().trim();
-                const keyB = optB.toLowerCase().trim();
-                if (sortOrder[keyA] && sortOrder[keyB]) return sortOrder[keyA] - sortOrder[keyB];
-                
-                return optA.localeCompare(optB);
-            });
-        };
-
         raw.forEach((market: any) => {
             if (!market || !market.outcomes || market.outcomes.length === 0) return; 
             
-            let category = null; 
-            let title = market.title || market.name || market.key || "Market";
-            const titleLower = String(title).toLowerCase().trim();
+            let category = "All"; 
+            let title = String(market.title || market.name || market.key || "Market").trim();
+            const titleLower = title.toLowerCase();
             const mId = market.id;
 
             // --- 1. COMBINATION MARKET ---
-            if (titleLower.includes('&') || titleLower.includes(' and ') || titleLower.includes('10 minutes') || titleLower.includes('anytime goalscorer') || (titleLower.includes('corner 1x2') && !titleLower.includes('half')) || titleLower.includes('last corner') || titleLower.includes('last goal') || titleLower.includes('which team to score') || titleLower.includes('odd/even corners') || (titleLower.includes('corner range') && (titleLower.includes((game.home_team || '').toLowerCase()) || titleLower.includes((game.away_team || '').toLowerCase())))) {
+            if (titleLower.includes('&') || titleLower.includes(' and ') || titleLower.includes('10 minutes') || titleLower.includes('scorer') || titleLower.includes('last goal') || titleLower.includes('last corner') || (titleLower.includes('corner 1x2') && !titleLower.includes('half')) || titleLower.includes('which team to score') || (titleLower.includes('odd/even corners') && !titleLower.includes('half')) || (titleLower.includes('corner range') && (titleLower.includes((game.home_team||'').toLowerCase()) || titleLower.includes((game.away_team||'').toLowerCase())))) {
                 category = "Combination";
                 if(titleLower.includes('corner range')) title = `${game.home_team} corner range`;
-                if (titleLower.includes('3 way & over/under')) title = "3 Way & Over/Under";
-                if (titleLower.includes('3 way & both teams to score')) title = "3 Way & both teams to score";
+                if(titleLower.includes('3 way & over/under')) title = "3 Way & Over/Under";
+                if(titleLower.includes('3 way & both teams to score')) title = "3 Way & both teams to score";
             }
-            // --- 2. HALF MARKET ---
-            else if ((titleLower.includes('half') || titleLower.includes('ht') || titleLower.includes('1st') || titleLower.includes('2nd') || titleLower.includes('halves')) && !titleLower.includes('halftime/fulltime')) {
-                category = "Half";
-                title = String(title).replace(/first half/i, '1st Half').replace(/second half/i, '2nd Half').replace(/match winner/i, '3 Way');
-            }
-            // --- 3. HANDICAP MARKET ---
+            // --- 2. HANDICAP MARKET ---
             else if (titleLower.includes('handicap') || titleLower.includes('asian')) {
                 category = "Handicap";
             }
+            // --- 3. HALF MARKET ---
+            else if (titleLower.includes('half') || titleLower.includes('ht') || titleLower.includes('1st') || titleLower.includes('2nd') || titleLower.includes('halves')) {
+                if (titleLower === 'halftime/fulltime' || titleLower === 'highest scoring half') {
+                    category = "Main Market";
+                    title = titleLower === 'halftime/fulltime' ? "Halftime/Fulltime" : "Highest scoring half";
+                } else if(titleLower.includes('1st half') && titleLower.includes('over/under') && !titleLower.includes('corners') && !titleLower.includes('&')) {
+                    category = "Total";
+                    title = "1st half - Over/Under";
+                } else {
+                    category = "Half";
+                    title = title.replace(/first half/i, '1st Half').replace(/second half/i, '2nd Half').replace(/match winner/i, '3 Way');
+                }
+            }
             // --- 4. TOTAL MARKET ---
-            else if (titleLower.includes('exact goals') || titleLower.includes('goal range') || titleLower.includes('goals range') || titleLower.includes('corner range') || titleLower.includes('over/under corners') || titleLower.includes('corners over/under')) {
+            else if (mId === 11 || titleLower.includes('exact goals') || titleLower.includes('goal range') || titleLower.includes('goals range') || titleLower.includes('corner range') || titleLower.includes('over/under corners') || titleLower.includes('corners over/under')) {
                 category = "Total";
-                if (mId === 11) title = "Exact goals";
-                if (titleLower.includes('over/under corners') || titleLower.includes('corners over/under')) title = "Over/Under corners";
-                if (titleLower.includes('corner range')) title = "Corner range";
+                if(mId === 11 || titleLower.includes('exact goals')) title = "Exact goals";
+                if(titleLower.includes('goal range') || titleLower.includes('goals range')) title = "Goal range";
+                if(titleLower.includes('corner range')) title = "Corner range";
+                if(titleLower.includes('over/under corners') || titleLower.includes('corners over/under')) title = "Over/Under corners";
             }
             // --- 5. MAIN MARKET ---
-            else if (mId === 1 || titleLower.includes('match winner') || titleLower === '1x2' || titleLower === '3 way') {
-                title = "3 Way"; category = "Main Market";
-            }
-            else if (mId === 8 || titleLower.includes('both teams score') || titleLower === 'both teams to score') {
-                title = "Both teams to score"; category = "Main Market";
-            }
-            else if (mId === 12 || titleLower.includes('double chance')) {
-                title = "Double chance"; category = "Main Market";
-            }
-            else if (mId === 5 || titleLower === 'goals over/under' || titleLower.includes('over/under')) {
-                title = "Over/Under"; category = "Main Market";
-            }
-            else if (mId === 17 || titleLower === 'halftime/fulltime' || titleLower.includes('halftime/fulltime')) {
-                title = "Halftime/Fulltime"; category = "Main Market";
-            }
-            else if (mId === 24 || titleLower === 'odd/even') {
-                title = "Odd/even"; category = "Main Market";
-            }
-            else if (mId === 21 || titleLower.includes('draw no bet')) {
-                title = "Draw no bet"; category = "Main Market";
-            }
-            else if (mId === 40 || titleLower.includes('highest scoring half')) {
-                title = "Highest scoring half"; category = "Main Market";
-            }
-            else if (mId === 10 || titleLower === 'correct score' || titleLower.includes('correct score')) {
-                title = "Correct score"; category = "Main Market";
-            }
-            else {
-                category = "All"; // Fallback to All if unknown
+            else if (mId === 1 || mId === 8 || mId === 12 || mId === 5 || mId === 17 || mId === 24 || mId === 21 || mId === 40 || mId === 10 || titleLower.includes('match winner') || titleLower === '1x2' || titleLower.includes('3 way') || titleLower.includes('both teams to score') || titleLower.includes('double chance') || titleLower === 'goals over/under' || (titleLower.includes('over/under') && !titleLower.includes('corners')) || titleLower.includes('odd/even') || titleLower.includes('draw no bet') || titleLower.includes('correct score')) {
+                category = "Main Market";
+                if(mId === 1 || titleLower.includes('match winner') || titleLower === '1x2' || titleLower.includes('3 way')) title = "3 Way";
+                if(mId === 8 || titleLower.includes('both teams to score')) title = "Both teams to score";
+                if(mId === 12 || titleLower.includes('double chance')) title = "Double chance";
+                if(mId === 5 || titleLower === 'goals over/under' || titleLower.includes('over/under')) title = "Over/Under";
+                if(mId === 17 || titleLower === 'halftime/fulltime') title = "Halftime/Fulltime";
+                if(mId === 24 || titleLower === 'odd/even') title = "Odd/even";
+                if(mId === 21 || titleLower.includes('draw no bet')) title = "Draw no bet";
+                if(mId === 40 || titleLower.includes('highest scoring half')) title = "Highest scoring half";
+                if(mId === 10 || titleLower.includes('correct score')) title = "Correct score";
             }
 
-            if (!category) return;
+            if (category === "All") return;
 
-            let outcomes = market.outcomes.map((o: any, idx: number) => ({
-                odd_id: `${market.key || 'unk'}_${String(o?.name || '').replace(/[^a-zA-Z0-9]/g, '_')}_${game.id}_${idx}`, 
-                option: String(o?.name ?? 'Opt'), 
-                value: parseFloat(o?.price || o?.odd || 0).toFixed(2)
-            }));
-
-            // 🌟 1. የተደገሙ አማራጮችን በአንድ Market ውስጥ ማጥራት 🌟
-            const uniqueOutcomes: any[] = [];
-            const seenOptions = new Set();
-            outcomes.forEach((o: any) => {
-                const cleanOpt = String(o.option).trim().toLowerCase();
-                if (!seenOptions.has(cleanOpt)) {
-                    seenOptions.add(cleanOpt);
-                    uniqueOutcomes.push(o);
+            // 🌟 የተደገሙ አማራጮችን ማጥራት (Deep Deduplication using Map) 🌟
+            const uniqueOptions = new Map();
+            market.outcomes.forEach((o: any, idx: number) => {
+                const rawName = String(o.name || 'Opt').trim();
+                const cleanName = rawName.toLowerCase().replace(/\s+/g, ''); 
+                
+                if (!uniqueOptions.has(cleanName)) {
+                    uniqueOptions.set(cleanName, {
+                        odd_id: `${market.key || 'unk'}_${rawName.replace(/[^a-zA-Z0-9]/g, '_')}_${game.id}_${idx}`, 
+                        option: rawName,
+                        value: parseFloat(o.price || o.odd || 0).toFixed(2)
+                    });
                 }
             });
-            outcomes = uniqueOutcomes;
 
-            // 🌟 2. ቁጥሮቹን በቅደም ተከተል ማሰለፍ 🌟
-            outcomes = sortOutcomes(outcomes);
+            let outcomes = Array.from(uniqueOptions.values());
+
+            // 🌟 አሰላለፍ (Smart Sorting) 🌟
+            outcomes.sort((a, b) => {
+                const numA = parseFloat(a.option.match(/-?\d+(\.\d+)?/)?.[0] || "NaN");
+                const numB = parseFloat(b.option.match(/-?\d+(\.\d+)?/)?.[0] || "NaN");
+                
+                if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB;
+                
+                const strA = a.option.toLowerCase();
+                const strB = b.option.toLowerCase();
+                if (strA.includes('over') && strB.includes('under')) return -1;
+                if (strA.includes('under') && strB.includes('over')) return 1;
+                
+                const sortOrder: Record<string, number> = { '1': 1, 'x': 2, '2': 3, '1x': 4, '12': 5, 'x2': 6, 'yes': 7, 'no': 8 };
+                if (sortOrder[strA] && sortOrder[strB]) return sortOrder[strA] - sortOrder[strB];
+                
+                return strA.localeCompare(strB);
+            });
 
             if (outcomes.length > 0) {
                 let cols = 2; 
-                if (outcomes.length === 3) cols = 3;
-                else if (titleLower.includes('correct score') || titleLower.includes('halftime/fulltime')) cols = 3;
-                else if (outcomes.length >= 6 && !titleLower.includes('over/under') && !titleLower.includes('handicap') && !titleLower.includes('goals')) cols = 3;
-                
+                if (outcomes.length === 3 || titleLower.includes('correct score') || titleLower.includes('halftime')) cols = 3;
+                if (outcomes.length >= 6 && !titleLower.includes('over/under') && !titleLower.includes('handicap') && !titleLower.includes('goals')) cols = 3;
                 if (outcomes.length === 1) cols = 1;
                 
                 const marketData = { title: title, cols: cols, odds: outcomes };
@@ -429,21 +398,33 @@ export default function Home() {
                         catArray.push(JSON.parse(JSON.stringify(marketData)));
                     } else {
                         const existingMarket = catArray[existingIdx];
-                        const existingOpts = new Set(existingMarket.odds.map((o:any) => String(o.option).trim().toLowerCase()));
+                        const existingOpts = new Set(existingMarket.odds.map((o:any) => String(o.option).trim().replace(/\s+/g, '').toLowerCase()));
                         outcomes.forEach((o: any) => {
-                            const optStr = String(o.option).trim().toLowerCase();
+                            const optStr = String(o.option).trim().replace(/\s+/g, '').toLowerCase();
                             if (!existingOpts.has(optStr)) {
                                 existingMarket.odds.push({...o});
                                 existingOpts.add(optStr);
                             }
                         });
-                        existingMarket.odds = sortOutcomes(existingMarket.odds);
+                        
+                        existingMarket.odds.sort((a: any, b: any) => {
+                            const oa = a.option.toLowerCase();
+                            const ob = b.option.toLowerCase();
+                            const na = parseFloat(oa.match(/-?\d+(\.\d+)?/)?.[0] || "NaN");
+                            const nb = parseFloat(ob.match(/-?\d+(\.\d+)?/)?.[0] || "NaN");
+                            if (!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
+                            if (oa.includes('over') && ob.includes('under')) return -1;
+                            if (oa.includes('under') && ob.includes('over')) return 1;
+                            if (oa.includes('yes') && ob.includes('no')) return -1;
+                            if (oa.includes('no') && ob.includes('yes')) return 1;
+                            const smap: Record<string, number> = { '1': 1, 'x': 2, '2': 3, '1x': 4, '12': 5, 'x2': 6 };
+                            if (smap[oa] && smap[ob]) return smap[oa] - smap[ob];
+                            return oa.localeCompare(ob);
+                        });
                     }
                 };
 
-                if (category !== "All") {
-                    mergeIntoCategory(marketsObj[category]);
-                }
+                mergeIntoCategory(marketsObj[category]);
                 mergeIntoCategory(marketsObj["All"]);
             }
         });
@@ -833,7 +814,7 @@ export default function Home() {
                                                             
                                                             const market1X2 = mainMarkets.find((m:any) => {
                                                                 const t = (m?.title || '').toLowerCase();
-                                                                return t.includes("winner") || t.includes("h2h") || t.includes("result") || t.includes("match betting") || t.includes("3 way");
+                                                                return t.includes("winner") || t.includes("h2h") || t.includes("result") || t.includes("match betting") || t === "3 way" || t.includes("3 way");
                                                             })?.odds || [];
                                                             
                                                             const marketDC = mainMarkets.find((m:any) => {
