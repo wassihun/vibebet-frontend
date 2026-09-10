@@ -122,6 +122,7 @@ export default function Home() {
                             away_team: game.away_team || "Away",
                             match_time: game.commence_time,
                             league: game.sport_key || "World|Soccer",
+                            league_flag: game.league_logo, 
                             odds: parsedOdds,
                             raw_markets: rawMarkets 
                         };
@@ -230,6 +231,7 @@ export default function Home() {
     const closeCheckTicketModal = () => { setIsCheckTicketModalOpen(false); setCheckInputCode(''); setCheckedTicketData(null); setCheckTicketError(null); };
 
     const handlePrintBooking = () => {
+        // (የድሮው Print Logic ነው ምንም አልተቀየረም)
         const printFrame = document.createElement('iframe');
         printFrame.style.position = 'fixed'; printFrame.style.right = '0'; printFrame.style.bottom = '0'; printFrame.style.width = '0'; printFrame.style.height = '0'; printFrame.style.border = '0';
         document.body.appendChild(printFrame);
@@ -239,37 +241,15 @@ export default function Home() {
         const htmlContent = `
             <!DOCTYPE html>
             <html>
-            <head>
-                <meta charset="utf-8">
-                <style>
-                    @page { margin: 0; size: 80mm auto; }
-                    body { margin: 0; padding: 5mm; font-family: Arial, sans-serif; text-align: center; color: #000; position: relative; background: #fff; }
-                    .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 26px; color: rgba(255, 0, 0, 0.15); white-space: nowrap; font-weight: 900; pointer-events: none; z-index: 0; }
-                    .content { position: relative; z-index: 1; }
-                    h2 { margin: 0 0 5px 0; font-size: 16px; font-weight: 900;}
-                    .code { font-size: 28px; font-weight: 900; margin: 10px 0; letter-spacing: 2px; }
-                    .details { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 10px; border-bottom: 2px dashed #000; padding-bottom: 8px;}
-                    .match { text-align: left; font-size: 11px; margin-bottom: 8px; border-bottom: 1px dotted #888; padding-bottom: 6px; }
-                    .match-teams { font-weight: 900; margin-bottom: 2px;}
-                    .match-pick { display: flex; justify-content: space-between; margin-top: 2px; }
-                </style>
-            </head>
+            <head><meta charset="utf-8"><style>@page { margin: 0; size: 80mm auto; } body { margin: 0; padding: 5mm; font-family: Arial, sans-serif; text-align: center; color: #000; position: relative; background: #fff; } .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 26px; color: rgba(255, 0, 0, 0.15); white-space: nowrap; font-weight: 900; pointer-events: none; z-index: 0; text-align: center; line-height: 1.2; } .content { position: relative; z-index: 1; } h2 { margin: 0 0 5px 0; font-size: 16px; font-weight: 900;} .code { font-size: 28px; font-weight: 900; margin: 10px 0; letter-spacing: 2px; } .details { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 10px; border-bottom: 2px dashed #000; padding-bottom: 8px;} .match { text-align: left; font-size: 11px; margin-bottom: 8px; border-bottom: 1px dotted #888; padding-bottom: 6px; } .match-teams { font-weight: 900; margin-bottom: 2px;} .match-pick { display: flex; justify-content: space-between; margin-top: 2px; }</style></head>
             <body>
                 <div class="watermark">NOT FOR PAYOUT<br>BOOKING ONLY</div>
                 <div class="content">
                     <h2>VIBE BET - BOOKING</h2>
                     <div class="code">*${bookingCode}*</div>
-                    <div class="details">
-                        <div>Date: ${new Date().toLocaleDateString()}</div>
-                        <div style="text-align: right;">Stake: ${stake.toFixed(2)} Br<br>Potential Win: ${grossWin.toFixed(2)} Br</div>
-                    </div>
+                    <div class="details"><div>Date: ${new Date().toLocaleDateString()}</div><div style="text-align: right;">Stake: ${stake.toFixed(2)} Br<br>Potential Win: ${grossWin.toFixed(2)} Br</div></div>
                     <div style="text-align: left; margin-bottom: 5px; font-size: 12px; font-weight: 900;">EVENTS PLAYED:</div>
-                    ${betSlip.map(item => `
-                        <div class="match">
-                            <div class="match-teams">${item.home_team} vs ${item.away_team}</div>
-                            <div class="match-pick"><span>Pick: ${item.odd_name}</span><span style="font-weight: 900;">@${item.odd_value}</span></div>
-                        </div>
-                    `).join('')}
+                    ${betSlip.map(item => `<div class="match"><div class="match-teams">${item.home_team} vs ${item.away_team}</div><div class="match-pick"><span>Pick: ${item.odd_name}</span><span style="font-weight: 900;">@${item.odd_value}</span></div></div>`).join('')}
                     <div style="text-align: center; font-size: 10px; margin-top: 15px; font-weight: bold;">This is a booking slip.<br>Please visit a branch to confirm your bet.</div>
                 </div>
             </body>
@@ -321,27 +301,34 @@ export default function Home() {
     };
 
     // 🌟 አዲሱ እና ፍጹም ትክክለኛ የሀገር እና ሊግ ማንበቢያ 🌟
-    const getLeagueDetails = (key: string) => {
+    const getLeagueDetails = (key: string, flagFromApi?: string) => {
         if (!key || typeof key !== 'string') return { country: 'World', flag: 'https://media.api-sports.io/flags/un.svg', name: 'Soccer', isTop: false };
 
-        const topLeaguesList = ['Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1', 'UEFA Champions League', 'UEFA Europa League', 'Pro League', 'Championship'];
+        // 🌟 ቶፕ ሊጎችን በትክክል መለየት (Top Leagues Identifier) 🌟
+        const topLeaguesList = [
+            'Premier League', 'Championship', 'La Liga', 'Primera Division', 'Serie A', 'Bundesliga', 
+            'Ligue 1', 'UEFA Champions League', 'UEFA Europa League', 'Eredivisie',
+            'Primeira Liga', 'Pro League', 'Major League Soccer', 'Ethiopia Premier League'
+        ];
 
-        // Backend አሁን Country|League|Flag ፎርማት ይልካል
+        // Backend አሁን "Country|League|Flag" ፎርማት ይልካል
         if (key.includes('|')) {
             const parts = key.split('|');
             const countryName = parts[0] || 'World';
             const leagueName = parts[1] || 'League';
-            const flagUrl = parts[2] || 'https://media.api-sports.io/flags/un.svg';
+            const flagUrl = parts[2] || flagFromApi || 'https://media.api-sports.io/flags/un.svg';
             
+            // የሊጉ ስም ቶፕ ሊግ ውስጥ እንዳለ በትክክል ያጣራል
+            const isTopLeague = topLeaguesList.some(t => leagueName.toLowerCase() === t.toLowerCase() || leagueName.toLowerCase().includes(t.toLowerCase()));
+
             return {
                 country: countryName,
                 flag: flagUrl,
                 name: leagueName,
-                isTop: topLeaguesList.some(t => leagueName.toLowerCase().includes(t.toLowerCase()))
+                isTop: isTopLeague
             };
         }
 
-        // ለድሮ ዳታ (Fallback)
         return { country: 'World', flag: 'https://media.api-sports.io/flags/un.svg', name: key.replace('soccer_', '').replace(/_/g, ' '), isTop: false };
     };
 
@@ -354,7 +341,7 @@ export default function Home() {
     const activeFixtures = fixtures.filter(g => g && g.match_time && new Date(g.match_time).getTime() > currentTime);
 
     const groupedFixtures = activeFixtures.reduce((acc: any, game: any) => {
-        const details = getLeagueDetails(game.league);
+        const details = getLeagueDetails(game.league, game.league_flag);
         const uniqueKey = game.league || 'unknown';
         if (!acc[uniqueKey]) acc[uniqueKey] = { details, games: [] };
         acc[uniqueKey].games.push(game);
@@ -362,6 +349,8 @@ export default function Home() {
     }, {});
 
     const allLeagues: [string, any][] = Object.entries(groupedFixtures);
+    
+    // 🌟 ቶፕ ሊጎችን ብቻ የሚያጣራ ክፍል 🌟
     const topLeagues = allLeagues.filter(([_, data]) => data.details.isTop);
     
     const countriesMap = new Map<string, { flag: string, leagues: {key: string, name: string, count: number}[] }>();
@@ -381,13 +370,13 @@ export default function Home() {
             const leagueKey = game.league;
             if (!currentGroup || currentGroup.leagueKey !== leagueKey) {
                 if (currentGroup) groupedArray.push([currentGroup.id, currentGroup.data]);
-                currentGroup = { leagueKey: leagueKey, id: leagueKey + '_' + game.id, data: { details: getLeagueDetails(leagueKey), games: [game] } };
+                currentGroup = { leagueKey: leagueKey, id: leagueKey + '_' + game.id, data: { details: getLeagueDetails(leagueKey, game.league_flag), games: [game] } };
             } else currentGroup.data.games.push(game);
         }
         if (currentGroup) groupedArray.push([currentGroup.id, currentGroup.data]);
         displayLeagues = groupedArray;
     } else if (selectedLeague === 'Top Matches') {
-        displayLeagues = allLeagues.filter(([_, data]) => data.details.isTop);
+        displayLeagues = topLeagues;
     } else if (selectedLeague !== 'All') {
         displayLeagues = allLeagues.filter(([key, _]) => key === selectedLeague);
     }
@@ -678,7 +667,8 @@ export default function Home() {
                                                                                             <div key={mIdx} className="bg-[#2b3138] rounded-sm border border-[#3b4148] overflow-hidden">
                                                                                                 <button onClick={() => toggleAccordion(market.title)} className="w-full flex items-center justify-between p-2 hover:bg-[#323840] transition-colors">
                                                                                                     <div className="flex items-center gap-2">
-                                                                                                        <span className="text-slate-400 font-black text-[10px]">▶</span><span className="text-[10px] sm:text-[11px] font-bold text-white tracking-wide text-left">{market.title}</span>
+                                                                                                        <span className="text-slate-400 font-black text-[10px]">▶</span>
+                                                                                                        <span className="text-[10px] sm:text-[11px] font-bold text-white tracking-wide text-left">{market.title}</span>
                                                                                                     </div>
                                                                                                     <span className="text-slate-500 text-[10px]">{isOpen ? '▲' : '▼'}</span>
                                                                                                 </button>
@@ -766,213 +756,6 @@ export default function Home() {
                     )}
                 </aside>
             </div>
-
-            {/* 🌟 ቲኬት ማረጋገጫ (Check Ticket Modal) 🌟 */}
-            {isCheckTicketModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-2 sm:p-4 overflow-y-auto">
-                    <div className="bg-[#1e2328] border border-[#3b4148] rounded-xl w-full max-w-lg shadow-2xl relative my-auto animate-fade-in-down flex flex-col max-h-full">
-                        
-                        <div className="p-4 border-b border-[#3b4148] flex justify-between items-center bg-[#24292e] rounded-t-xl shrink-0">
-                            <h2 className="text-[#ffcc00] font-black text-lg flex items-center gap-2"><span>🔍</span> ትኬት ማረጋገጫ</h2>
-                            <button onClick={closeCheckTicketModal} className="text-slate-400 hover:text-white text-2xl leading-none">✕</button>
-                        </div>
-
-                        <div className="p-4 shrink-0">
-                            <form onSubmit={handleCheckCustomerTicket} className="flex gap-2">
-                                <input 
-                                    type="text" 
-                                    value={checkInputCode} 
-                                    onChange={(e) => setCheckInputCode(e.target.value.trim().toUpperCase())}
-                                    placeholder="የትኬት ቁጥር ወይም Booking Code..." 
-                                    className="flex-1 bg-[#0d1117] border border-[#3b4148] text-white px-4 py-3 rounded-lg outline-none focus:border-[#ffcc00] text-sm font-black uppercase tracking-widest transition shadow-inner"
-                                />
-                                <button type="submit" disabled={isCheckingTicket || !checkInputCode} className="bg-[#ffcc00] hover:bg-[#e6b800] disabled:bg-[#3b4148] disabled:text-slate-500 text-black font-black px-6 rounded-lg transition active:scale-95 text-sm shadow-md">
-                                    {isCheckingTicket ? '...' : 'ፈልግ'}
-                                </button>
-                            </form>
-                            {checkTicketError && <p className="text-red-400 text-xs font-bold mt-3 bg-red-500/10 p-2 rounded border border-red-500/20">{checkTicketError}</p>}
-                        </div>
-
-                        {checkedTicketData && (
-                            <div className="p-3 sm:p-4 pt-0 overflow-y-auto custom-scrollbar flex-1">
-                                {(() => {
-                                    let displayStatus = checkedTicketData.status;
-                                    const allItemsWon = checkedTicketData.selections?.length > 0 && checkedTicketData.selections.every((item: any) => item.match_status === 'won');
-                                    const anyItemLost = checkedTicketData.selections?.some((item: any) => item.match_status === 'lost');
-                                    
-                                    if (displayStatus === 'active') {
-                                        if (anyItemLost) displayStatus = 'lost';
-                                        else if (allItemsWon) displayStatus = 'won';
-                                    }
-
-                                    return (
-                                        <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-3 sm:p-4 shadow-inner">
-                                            {/* Header Info */}
-                                            <div className="grid grid-cols-4 text-center text-xs border-b border-[#3b4148] pb-3 mb-3">
-                                                <div><p className="text-slate-500 text-[10px] mb-1">Date</p><p className="text-white font-bold">{new Date(checkedTicketData.created_at).toLocaleDateString([], {day:'2-digit', month:'2-digit'})}</p></div>
-                                                <div><p className="text-slate-500 text-[10px] mb-1">Type</p><p className="text-white font-bold">Prematch</p></div>
-                                                <div><p className="text-slate-500 text-[10px] mb-1">Amount</p><p className="text-white font-bold">{checkedTicketData.stake_amount}</p></div>
-                                                <div><p className="text-slate-500 text-[10px] mb-1">Win</p><p className="text-[#00e700] font-bold">{checkedTicketData.potential_win}</p></div>
-                                            </div>
-
-                                            {/* Action Buttons */}
-                                            <div className="flex gap-2 mb-4">
-                                                <button onClick={() => {
-                                                    navigator.clipboard.writeText(`${window.location.origin}?booking=${checkedTicketData.booking_code || checkedTicketData.ticket_number}`);
-                                                    alert("Link Copied!");
-                                                }} className="flex-1 bg-[#24292e] hover:bg-[#2a3038] text-slate-300 font-bold text-xs py-2.5 rounded transition-colors flex items-center justify-center gap-2 border border-[#3b4148]">
-                                                    🔗 SHARE BET
-                                                </button>
-                                                <button onClick={handleBetAgain} className="flex-1 bg-[#24292e] hover:bg-[#3b4148] text-[#ffcc00] font-bold text-xs py-2.5 rounded transition-colors flex items-center justify-center gap-2 border border-[#ffcc00]/30">
-                                                    🔄 BET AGAIN
-                                                </button>
-                                            </div>
-
-                                            <div className="flex justify-between items-center mb-2">
-                                                <p className="text-xs font-bold text-slate-400">Events</p>
-                                                <div className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest ${displayStatus === 'won' ? 'bg-[#00e700]/20 text-[#00e700]' : displayStatus === 'paid' ? 'bg-blue-500/20 text-blue-400' : displayStatus === 'void' ? 'bg-slate-500/20 text-slate-400' : displayStatus === 'expired' ? 'bg-red-500/20 text-red-500' : displayStatus === 'lost' ? 'bg-red-500/20 text-red-500' : 'bg-[#1e2328] border border-[#30363d] text-slate-300'}`}>
-                                                    {displayStatus === 'won' ? '🎉 Won' : displayStatus === 'paid' ? '✅ Paid' : displayStatus === 'void' ? '🚫 Void' : displayStatus === 'expired' ? '⏳ Expired' : displayStatus === 'lost' ? '❌ Lost' : '⏳ Pending'}
-                                                </div>
-                                            </div>
-
-                                            {/* Events List */}
-                                            <div className="space-y-2 mb-2">
-                                                {checkedTicketData.selections?.map((item: any, i: number) => {
-                                                    const isWon = item.match_status === 'won'; 
-                                                    const isLost = item.match_status === 'lost'; 
-                                                    const icon = isWon ? '✅' : isLost ? '❌' : '⏳';
-                                                    
-                                                    const teams = (item.match_info || "Home vs Away").split(' vs ');
-                                                    const homeTeam = teams[0] || 'Home';
-                                                    const awayTeam = teams[1] || 'Away';
-
-                                                    return (
-                                                        <div key={i} className={`bg-[#161b22] border ${isWon ? 'border-[#00e700]/30' : isLost ? 'border-red-500/30' : 'border-[#30363d]'} rounded-lg overflow-hidden`}>
-                                                            <div className="flex items-center justify-between p-3 border-b border-[#30363d]">
-                                                                <span className="w-5 text-center text-sm">{icon}</span>
-                                                                <div className="flex-1 flex justify-between items-center px-2 sm:px-3">
-                                                                    <span className="text-[11px] sm:text-xs font-bold text-white text-right flex-1 truncate">{homeTeam}</span>
-                                                                    <span className="mx-2 text-[10px] bg-[#24292e] px-2 py-0.5 rounded text-slate-400 shrink-0 font-black border border-[#3b4148]">vs</span>
-                                                                    <span className="text-[11px] sm:text-xs font-bold text-white text-left flex-1 truncate">{awayTeam}</span>
-                                                                </div>
-                                                                <span className="text-slate-500 text-xs">❯</span>
-                                                            </div>
-                                                            <div className="bg-[#0d1117] p-2 flex justify-between items-center text-[10px] text-slate-400">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="bg-[#1e2328] px-1.5 py-0.5 rounded border border-[#3b4148]">Pick: <span className="font-bold text-white ml-1">{item.odd_name} <span className="text-[#ffcc00]">({item.odd_value})</span></span></span>
-                                                                </div>
-                                                                <div>Outcome: <span className={`font-bold ml-1 uppercase ${isWon ? 'text-[#00e700]' : isLost ? 'text-red-500' : 'text-slate-300'}`}>{item.match_status || 'Pending'}</span></div>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* 🌟 አዲሱ የቡኪንግ ሞዳል (Booking Modal) 🌟 */}
-            {bookingCode && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4 overflow-y-auto">
-                    <div className="bg-[#dfdfdf] w-full max-w-4xl shadow-2xl relative my-auto flex flex-col animate-fade-in-down rounded-sm overflow-hidden">
-                        
-                        <div className="w-full bg-[#dfdfdf] p-4 pb-2 relative">
-                            <button onClick={() => setBookingCode(null)} className="absolute top-2 right-3 text-gray-500 hover:text-black text-xl leading-none">✕</button>
-                            
-                            <div className="flex flex-col md:flex-row justify-between items-center md:items-end gap-4 mb-2">
-                                <div className="text-center md:text-left">
-                                    <p className="text-gray-700 italic text-xs mb-0.5">Your bet has been booked</p>
-                                    <div className="flex items-center justify-center md:justify-start gap-1">
-                                        <p className="text-2xl font-medium text-black tracking-wider">*{bookingCode}*</p>
-                                        <button onClick={() => { navigator.clipboard.writeText(bookingCode); alert("Copied!"); }} className="text-gray-700 hover:text-black transition">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1h-3a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-6 text-center text-xs">
-                                    <div>
-                                        <p className="text-[#1c2024] font-bold mb-0.5 uppercase tracking-wide">BETING DATE</p>
-                                        <p className="text-gray-700 font-medium text-[13px]">{new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-[#1c2024] font-bold mb-0.5 uppercase tracking-wide">TOTAL STAKE</p>
-                                        <p className="text-gray-700 font-medium text-[13px]">{stake.toFixed(2)}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-[#1c2024] font-bold mb-0.5 uppercase tracking-wide">WIN AMOUNT</p>
-                                        <p className="text-gray-700 font-medium text-[13px]">{grossWin.toFixed(2)}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="w-full px-3 md:px-5">
-                            <div className="w-full border border-gray-300 bg-white">
-                                <div className="grid grid-cols-12 bg-[#1c2024] text-white text-[10px] font-bold text-center border-b border-gray-300">
-                                    <div className="col-span-3 py-1.5 border-r border-[#3b4148]">Event Date</div>
-                                    <div className="col-span-3 py-1.5 border-r border-[#3b4148]">Tournament</div>
-                                    <div className="col-span-3 py-1.5 border-r border-[#3b4148]">Event</div>
-                                    <div className="col-span-2 py-1.5 border-r border-[#3b4148]">Market</div>
-                                    <div className="col-span-1 py-1.5 text-[#ffcc00]">Odd</div>
-                                </div>
-
-                                <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
-                                    {betSlip.map((item, idx) => {
-                                        const matchDate = new Date(item.match_time);
-                                        const dateStr = `${matchDate.getFullYear()}-${String(matchDate.getMonth()+1).padStart(2,'0')}-${String(matchDate.getDate()).padStart(2,'0')}T${String(matchDate.getHours()).padStart(2,'0')}:${String(matchDate.getMinutes()).padStart(2,'0')}:00`;
-                                        
-                                        let marketText = item.odd_name;
-                                        if (['1', 'X', '2'].includes(item.odd_name)) {
-                                            marketText = `Match Result: ${item.odd_name === '1' ? 'W1' : item.odd_name === '2' ? 'W2' : 'Draw'}`;
-                                        } else if (['1X', '12', 'X2'].includes(item.odd_name)) {
-                                            marketText = `Double Chance: ${item.odd_name}`;
-                                        }
-
-                                        return (
-                                            <div key={idx} className="grid grid-cols-12 text-center text-[11px] text-gray-800 border-b border-gray-200 hover:bg-gray-50 transition-colors">
-                                                <div className="col-span-3 py-1.5 px-1.5 border-r border-gray-200 truncate">{dateStr}</div>
-                                                <div className="col-span-3 py-1.5 px-1.5 border-r border-gray-200 truncate" title={item.league_name}>{item.league_name}</div>
-                                                <div className="col-span-3 py-1.5 px-1.5 border-r border-gray-200 truncate" title={`${item.home_team} - ${item.away_team}`}>{item.home_team} - {item.away_team}</div>
-                                                <div className="col-span-2 py-1.5 px-1.5 border-r border-gray-200 truncate">{marketText}</div>
-                                                <div className="col-span-1 py-1.5 px-1.5 font-medium">{(item.odd_value || 0).toFixed(2)}</div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="w-full bg-[#dfdfdf] flex p-3 md:px-5 md:py-3 gap-3 mt-1">
-                            <button onClick={() => setBookingCode(null)} className="bg-[#d2d2d2] hover:bg-[#c2c2c2] text-black text-[11px] font-bold px-4 py-2 transition shadow-sm border border-gray-300">
-                                REPEAT BET
-                            </button>
-                            <button onClick={handlePrintBooking} className="bg-[#d2d2d2] hover:bg-[#c2c2c2] text-black text-[11px] font-bold px-4 py-2 transition shadow-sm border border-gray-300 flex items-center justify-center gap-1.5">
-                                PRINT 🖨️
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} initialMode={authMode} onSuccess={handleAuthSuccess} />
-
-            <style jsx global>{`
-                .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
-                .custom-scrollbar::-webkit-scrollbar-thumb { background: #3b4148; border-radius: 10px; }
-                input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-                input[type=number] { -moz-appearance: textfield; }
-                input[type=date]::-webkit-calendar-picker-indicator { width: 100%; height: 100%; margin: 0; padding: 0; cursor: pointer; }
-                @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
-                .animate-fade-in-down { animation: fadeInDown 0.2s ease-out forwards; }
-                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-                .animate-fade-in { animation: fadeIn 0.2s ease-out forwards; }
-            `}</style>
         </div>
     );
 }
