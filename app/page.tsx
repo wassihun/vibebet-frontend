@@ -9,7 +9,7 @@ const MAX_WIN = 10000;
 const MIN_STAKE = 20; 
 
 export default function Home() {
-    const [isMounted, setIsMounted] = useState(false); // 🌟 Hydration Error ለመከላከል
+    const [isMounted, setIsMounted] = useState(false);
     const [fixtures, setFixtures] = useState<any[]>([]);
     const [betSlip, setBetSlip] = useState<any[]>([]);
     const [stake, setStake] = useState<number>(20);
@@ -35,7 +35,6 @@ export default function Home() {
     const [isSoccerOpen, setIsSoccerOpen] = useState(true);
     const [openCountry, setOpenCountry] = useState<string | null>(null);
 
-    // 🌟 ዋና ማርኬቶች በነባሪነት ክፍት እንዲሆኑ 🌟
     const [openAccordions, setOpenAccordions] = useState<string[]>(['3 Way', 'Both teams to score', 'Double chance', 'Over/Under']);
 
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -70,7 +69,7 @@ export default function Home() {
     const [isOnline, setIsOnline] = useState<boolean>(true);
 
     useEffect(() => {
-        setIsMounted(true); // 🌟 Client-side rendering ብቻ እንዲሰራ
+        setIsMounted(true);
         document.title = "vibebet.et";
         setIsOnline(navigator.onLine);
         const handleOnline = () => setIsOnline(true);
@@ -289,15 +288,41 @@ export default function Home() {
     const getCategorizedMarkets = (game: any) => {
         const raw = game?.raw_markets || [];
         const marketsObj: Record<string, any[]> = {
-            "All": [],
-            "Main Market": [],
-            "Total": [],
-            "Combination": [],
-            "Half": [],
-            "Handicap": []
+            "All": [], "Main Market": [], "Total": [], "Combination": [], "Half": [], "Handicap": []
         };
 
         if (!Array.isArray(raw)) return marketsObj;
+
+        // 🌟 Smart Sorting Logic 🌟
+        const sortOutcomes = (oddsArray: any[]) => {
+            return oddsArray.sort((a, b) => {
+                const matchA = a.option.match(/-?\d+(\.\d+)?/);
+                const matchB = b.option.match(/-?\d+(\.\d+)?/);
+                const numA = matchA ? parseFloat(matchA[0]) : NaN;
+                const numB = matchB ? parseFloat(matchB[0]) : NaN;
+                
+                if (!isNaN(numA) && !isNaN(numB)) {
+                    if (numA !== numB) return numA - numB; // ቁጥሮቹን በቅደም-ተከተል ያሰልፋል (0.5, 1.0, 1.5...)
+                    
+                    const strA = a.option.toLowerCase();
+                    const strB = b.option.toLowerCase();
+                    // "Over" ሁልጊዜም ከ "Under" በፊት እንዲመጣ ያደርጋል
+                    if (strA.includes('over') && strB.includes('under')) return -1;
+                    if (strA.includes('under') && strB.includes('over')) return 1;
+                    if (strA.includes('home') && strB.includes('away')) return -1;
+                    if (strA.includes('away') && strB.includes('home')) return 1;
+                    if (strA.includes('yes') && strB.includes('no')) return -1;
+                    if (strA.includes('no') && strB.includes('yes')) return 1;
+                }
+                
+                const sortOrder: Record<string, number> = { '1': 1, 'x': 2, '2': 3, '1x': 4, '12': 5, 'x2': 6 };
+                const keyA = a.option.toLowerCase().trim();
+                const keyB = b.option.toLowerCase().trim();
+                if (sortOrder[keyA] && sortOrder[keyB]) return sortOrder[keyA] - sortOrder[keyB];
+                
+                return a.option.localeCompare(b.option);
+            });
+        };
 
         raw.forEach((market: any) => {
             if (!market || !market.outcomes || market.outcomes.length === 0) return; 
@@ -408,27 +433,60 @@ export default function Home() {
             // 🚫 ካልተመደበ ሙሉ በሙሉ መዝለል 🚫
             if (!category) return;
 
-            const outcomes = market.outcomes.map((o: any, idx: number) => ({
+            let outcomes = market.outcomes.map((o: any, idx: number) => ({
                 odd_id: `${market.key || 'unk'}_${(o?.name || '').toString().replace(/[^a-zA-Z0-9]/g, '_')}_${game.id}_${idx}`, 
                 option: o?.name || 'Opt', 
                 value: parseFloat(o?.price || o?.odd || 0).toFixed(2)
             }));
 
+            // 🌟 1. የተደገሙ አማራጮችን በአንድ Market ውስጥ ማጥራት (Deduplicate options) 🌟
+            const uniqueOutcomes: any[] = [];
+            const seenOptions = new Set();
+            outcomes.forEach((o: any) => {
+                const cleanOpt = o.option.trim().toLowerCase();
+                if (!seenOptions.has(cleanOpt)) {
+                    seenOptions.add(cleanOpt);
+                    uniqueOutcomes.push(o);
+                }
+            });
+            outcomes = uniqueOutcomes;
+
+            // 🌟 2. ቁጥሮቹን በቅደም ተከተል ማሰለፍ (Sort arrays logically) 🌟
+            outcomes = sortOutcomes(outcomes);
+
             if (outcomes.length > 0) {
+                // 🌟 3. Over/Under ሁልጊዜም 2 Column እንዲሆን ማዘዝ (Force 2-columns for totals) 🌟
                 let cols = 2; 
-                if (outcomes.length === 3 || outcomes.length >= 6) cols = 3;
+                if (outcomes.length === 3) cols = 3;
+                else if (titleLower.includes('correct score') || titleLower.includes('halftime/fulltime')) cols = 3;
+                // Over/Under እና Handicap ብዙ ቢሆኑም በ2 አምድ ብቻ እንዲታዩ መገደብ
+                else if (outcomes.length >= 6 && !titleLower.includes('over/under') && !titleLower.includes('handicap') && !titleLower.includes('goals')) cols = 3;
+                
                 if (outcomes.length === 1) cols = 1;
                 
                 const marketData = { title: title, cols: cols, odds: outcomes };
                 
-                // 🌟 የተደገሙትን ለማስወገድ የሚደረግ ማጣሪያ (Deduplication Check) 🌟
-                if (!marketsObj[category].some((m: any) => m.title === title)) {
-                    marketsObj[category].push(marketData);
-                }
-                
-                if (!marketsObj["All"].some((m: any) => m.title === title)) {
-                    marketsObj["All"].push(marketData);
-                }
+                // 🌟 4. የተደገሙ ማርኬቶችን ማዋሃድ (Merge duplicate market titles like Asian vs Normal Over/Under) 🌟
+                const mergeIntoCategory = (catArray: any[]) => {
+                    const existingIdx = catArray.findIndex(m => m.title === title);
+                    if (existingIdx === -1) {
+                        catArray.push(JSON.parse(JSON.stringify(marketData)));
+                    } else {
+                        const existingMarket = catArray[existingIdx];
+                        const existingOpts = new Set(existingMarket.odds.map((o:any) => o.option.trim().toLowerCase()));
+                        outcomes.forEach(o => {
+                            if (!existingOpts.has(o.option.trim().toLowerCase())) {
+                                existingMarket.odds.push({...o});
+                                existingOpts.add(o.option.trim().toLowerCase());
+                            }
+                        });
+                        // ከተዋሃደ በኋላ ድጋሚ በቅደም ተከተል ማሰለፍ
+                        existingMarket.odds = sortOutcomes(existingMarket.odds);
+                    }
+                };
+
+                mergeIntoCategory(marketsObj[category]);
+                mergeIntoCategory(marketsObj["All"]);
             }
         });
 
@@ -472,7 +530,6 @@ export default function Home() {
         return <img src={flagObj} alt="flag" onError={(e: any) => e.target.src='https://media.api-sports.io/flags/un.svg'} className="w-full h-full object-cover" />;
     };
 
-    // Hydration fix: delay UI render until mounted
     if (!isMounted) return <div className="min-h-screen bg-[#1c2024]"></div>;
 
     const currentTime = new Date().getTime();
@@ -833,7 +890,6 @@ export default function Home() {
                                                             const btn2 = currentDisplayOdds[2] || { odd_id: `2_null_${game.id}`, option: "2", value: "0.00" };
                                                             const hasSelectionInGame = betSlip.some((item: any) => item.fixture_id === game.id);
 
-                                                            // 🌟 የ ማርኬቶች ብዛት (Total Markets Count from All) 🌟
                                                             const totalMarketsCount = categorizedMarkets["All"] ? categorizedMarkets["All"].length : 0;
 
                                                             return (
