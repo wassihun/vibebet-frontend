@@ -374,49 +374,52 @@ export default function Home() {
             const titleLower = title.toLowerCase();
             const mId = market.id;
 
+            // 1. 🌟 COMBINATION MARKET 🌟
             if (isComboBttsOU) {
                 category = "Combination";
                 title = "Over/Under & both teams to score";
             }
-            // --- 1. COMBINATION MARKET ---
             else if (titleLower.includes('&') || titleLower.includes(' and ') || titleLower.includes('+') || titleLower.includes('10 minutes') || titleLower.includes('scorer') || titleLower.includes('last goal') || titleLower.includes('last corner') || (titleLower.includes('corner 1x2') && !titleLower.includes('half')) || titleLower.includes('which team to score') || (titleLower.includes('odd/even corners') && !titleLower.includes('half')) || (titleLower.includes('corner range') && (titleLower.includes((game.home_team || '').toLowerCase()) || titleLower.includes((game.away_team || '').toLowerCase())))) {
                 category = "Combination";
                 if(titleLower.includes('corner range')) title = `${game.home_team} corner range`;
                 if(titleLower.includes('3 way') && titleLower.includes('over/under')) title = "3 Way & Over/Under";
                 if(titleLower.includes('3 way') && titleLower.includes('both teams')) title = "3 Way & both teams to score";
             }
-            // --- 2. HANDICAP MARKET ---
-            else if (titleLower.includes('handicap') || titleLower.includes('asian')) {
-                category = "Handicap";
-            }
-            // --- 3. STRICT TOTAL MARKET LOCKING 🌟 ---
+            
+            // 2. 🌟 STRICT TOTAL MARKET LOCKING 🌟
             else if (
                 mId === 11 || titleLower.includes('exact goals') || 
-                titleLower.includes('goal range') || titleLower.includes('goals range') || 
-                titleLower.includes('corner range') || 
+                titleLower === 'goal range' || titleLower === 'goals range' || 
+                titleLower === 'corner range' || 
                 titleLower.includes('over/under corners') || titleLower.includes('corners over/under') ||
-                (titleLower.includes('1st half') && titleLower.includes('over/under') && !titleLower.includes('corners') && !titleLower.includes('&'))
+                ((titleLower.includes('1st half') || titleLower.includes('first half')) && titleLower.includes('over/under') && !titleLower.includes('corners') && !titleLower.includes('&'))
             ) {
                 category = "Total";
                 
                 if (mId === 11 || titleLower.includes('exact goals')) title = "Exact goals";
-                else if (titleLower.includes('goal range') || titleLower.includes('goals range')) title = "Goal range";
-                else if (titleLower.includes('corner range')) title = "Corner range";
+                else if (titleLower === 'goal range' || titleLower === 'goals range') title = "Goal range";
+                else if (titleLower === 'corner range') title = "Corner range";
                 else if (titleLower.includes('over/under corners') || titleLower.includes('corners over/under')) title = "Over/Under corners";
-                else if (titleLower.includes('1st half') && titleLower.includes('over/under')) title = "1st half - Over/Under";
+                else if ((titleLower.includes('1st half') || titleLower.includes('first half')) && titleLower.includes('over/under')) title = "1st half - Over/Under";
 
                 // 🔒 Lock Outcomes strictly for Total Market
                 outcomes = outcomes.filter((o: any) => {
-                    const optTrim = o.option.trim().toLowerCase();
+                    const optTrim = o.option.replace(/\s+/g, '').toLowerCase(); // ክፍተት (spaces) በማጥፋት በጥብቅ ማጣራት
                     if (title === "1st half - Over/Under") return optTrim.includes('over') || optTrim.includes('under');
-                    if (title === "Exact goals") return /^\d+$/.test(optTrim) || optTrim === '9+';
-                    if (title === "Goal range") return /^\d+-\d+$/.test(optTrim) || optTrim.includes('+');
-                    if (title === "Corner range") return /^\d+-\d+$/.test(optTrim) || optTrim.includes('+');
+                    if (title === "Exact goals") return /^\d+$/.test(optTrim) || optTrim.includes('+') || optTrim.includes('more');
+                    if (title === "Goal range") return optTrim.includes('-') || optTrim.includes('+');
+                    if (title === "Corner range") return optTrim.includes('-') || optTrim.includes('+');
                     if (title === "Over/Under corners") return optTrim.includes('over') || optTrim.includes('under');
                     return true;
                 });
             }
-            // --- 4. STRICT MAIN MARKET LOCKING 🌟 ---
+
+            // 3. 🌟 HANDICAP MARKET 🌟
+            else if (titleLower.includes('handicap') || titleLower.includes('asian')) {
+                category = "Handicap";
+            }
+
+            // 4. 🌟 STRICT MAIN MARKET LOCKING 🌟
             else if (
                 mId === 1 || mId === 8 || mId === 12 || mId === 5 || mId === 17 || mId === 24 || mId === 21 || mId === 40 || mId === 10 || 
                 titleLower === 'match winner' || titleLower === '1x2' || titleLower === '3 way' || 
@@ -480,7 +483,7 @@ export default function Home() {
                 else if (title === "Halftime/Fulltime") outcomes = outcomes.filter((o: any) => /^[1X2]\/[1X2]$/.test(o.option.toUpperCase()));
                 else if (title === "Correct score") outcomes = outcomes.filter((o: any) => /^\d+:\d+$/.test(o.option));
             }
-            // --- 5. HALF MARKET ---
+            // 5. 🌟 HALF MARKET 🌟
             else if ((titleLower.includes('half') || titleLower.includes('ht') || titleLower.includes('1st') || titleLower.includes('2nd') || titleLower.includes('halves')) && !titleLower.includes('halftime/fulltime')) {
                 category = "Half";
                 title = title.replace(/first half/i, '1st Half').replace(/second half/i, '2nd Half').replace(/match winner/i, '3 Way');
