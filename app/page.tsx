@@ -378,7 +378,45 @@ export default function Home() {
                 category = "Combination";
                 title = "Over/Under & both teams to score";
             }
-            // 🌟 STRICT MAIN MARKET LOCKING 🌟
+            // --- 1. COMBINATION MARKET ---
+            else if (titleLower.includes('&') || titleLower.includes(' and ') || titleLower.includes('+') || titleLower.includes('10 minutes') || titleLower.includes('scorer') || titleLower.includes('last goal') || titleLower.includes('last corner') || (titleLower.includes('corner 1x2') && !titleLower.includes('half')) || titleLower.includes('which team to score') || (titleLower.includes('odd/even corners') && !titleLower.includes('half')) || (titleLower.includes('corner range') && (titleLower.includes((game.home_team || '').toLowerCase()) || titleLower.includes((game.away_team || '').toLowerCase())))) {
+                category = "Combination";
+                if(titleLower.includes('corner range')) title = `${game.home_team} corner range`;
+                if(titleLower.includes('3 way') && titleLower.includes('over/under')) title = "3 Way & Over/Under";
+                if(titleLower.includes('3 way') && titleLower.includes('both teams')) title = "3 Way & both teams to score";
+            }
+            // --- 2. HANDICAP MARKET ---
+            else if (titleLower.includes('handicap') || titleLower.includes('asian')) {
+                category = "Handicap";
+            }
+            // --- 3. STRICT TOTAL MARKET LOCKING 🌟 ---
+            else if (
+                mId === 11 || titleLower.includes('exact goals') || 
+                titleLower.includes('goal range') || titleLower.includes('goals range') || 
+                titleLower.includes('corner range') || 
+                titleLower.includes('over/under corners') || titleLower.includes('corners over/under') ||
+                (titleLower.includes('1st half') && titleLower.includes('over/under') && !titleLower.includes('corners') && !titleLower.includes('&'))
+            ) {
+                category = "Total";
+                
+                if (mId === 11 || titleLower.includes('exact goals')) title = "Exact goals";
+                else if (titleLower.includes('goal range') || titleLower.includes('goals range')) title = "Goal range";
+                else if (titleLower.includes('corner range')) title = "Corner range";
+                else if (titleLower.includes('over/under corners') || titleLower.includes('corners over/under')) title = "Over/Under corners";
+                else if (titleLower.includes('1st half') && titleLower.includes('over/under')) title = "1st half - Over/Under";
+
+                // 🔒 Lock Outcomes strictly for Total Market
+                outcomes = outcomes.filter((o: any) => {
+                    const optTrim = o.option.trim().toLowerCase();
+                    if (title === "1st half - Over/Under") return optTrim.includes('over') || optTrim.includes('under');
+                    if (title === "Exact goals") return /^\d+$/.test(optTrim) || optTrim === '9+';
+                    if (title === "Goal range") return /^\d+-\d+$/.test(optTrim) || optTrim.includes('+');
+                    if (title === "Corner range") return /^\d+-\d+$/.test(optTrim) || optTrim.includes('+');
+                    if (title === "Over/Under corners") return optTrim.includes('over') || optTrim.includes('under');
+                    return true;
+                });
+            }
+            // --- 4. STRICT MAIN MARKET LOCKING 🌟 ---
             else if (
                 mId === 1 || mId === 8 || mId === 12 || mId === 5 || mId === 17 || mId === 24 || mId === 21 || mId === 40 || mId === 10 || 
                 titleLower === 'match winner' || titleLower === '1x2' || titleLower === '3 way' || 
@@ -431,6 +469,7 @@ export default function Home() {
                     return { ...o, option: n };
                 });
 
+                // 🔒 Lock Outcomes strictly for Main Market
                 if (title === "3 Way") outcomes = outcomes.filter((o: any) => ['1', 'X', '2'].includes(o.option.toUpperCase()));
                 else if (title === "Both teams to score") outcomes = outcomes.filter((o: any) => ['yes', 'no'].includes(o.option.toLowerCase()));
                 else if (title === "Double chance") outcomes = outcomes.filter((o: any) => ['1X', '12', 'X2'].includes(o.option.toUpperCase()));
@@ -441,43 +480,15 @@ export default function Home() {
                 else if (title === "Halftime/Fulltime") outcomes = outcomes.filter((o: any) => /^[1X2]\/[1X2]$/.test(o.option.toUpperCase()));
                 else if (title === "Correct score") outcomes = outcomes.filter((o: any) => /^\d+:\d+$/.test(o.option));
             }
-            // 🌟 STRICT TOTAL MARKET LOCKING 🌟
-            else if (
-                mId === 11 || titleLower === 'exact goals' || 
-                titleLower === 'goal range' || titleLower === 'goals range' || 
-                titleLower === 'corner range' || 
-                titleLower === 'over/under corners' || titleLower === 'corners over/under' ||
-                (titleLower.includes('1st half') && titleLower.includes('over/under') && !titleLower.includes('corners') && !titleLower.includes('&'))
-            ) {
-                category = "Total";
-                
-                if (mId === 11 || titleLower === 'exact goals') title = "Exact goals";
-                else if (titleLower === 'goal range' || titleLower === 'goals range') title = "Goal range";
-                else if (titleLower === 'corner range') title = "Corner range";
-                else if (titleLower === 'over/under corners' || titleLower === 'corners over/under') title = "Over/Under corners";
-                else if (titleLower.includes('1st half') && titleLower.includes('over/under')) title = "1st half - Over/Under";
-
-                // 🔒 Lock Outcomes strictly for Total Market
-                if (title === "1st half - Over/Under") outcomes = outcomes.filter((o: any) => o.option.toLowerCase().includes('over') || o.option.toLowerCase().includes('under'));
-                else if (title === "Exact goals") outcomes = outcomes.filter((o: any) => /^\d+$/.test(o.option) || o.option === '9+');
-                else if (title === "Goal range") outcomes = outcomes.filter((o: any) => /^\d+-\d+$/.test(o.option) || o.option.includes('+'));
-                else if (title === "Corner range") outcomes = outcomes.filter((o: any) => /^\d+-\d+$/.test(o.option) || o.option.includes('+'));
-                else if (title === "Over/Under corners") outcomes = outcomes.filter((o: any) => o.option.toLowerCase().includes('over') || o.option.toLowerCase().includes('under'));
-            }
-            else {
-                if (titleLower.includes('&') || titleLower.includes(' and ') || titleLower.includes('+') || titleLower.includes('10 minutes') || titleLower.includes('scorer') || titleLower.includes('last goal') || titleLower.includes('last corner') || (titleLower.includes('corner 1x2') && !titleLower.includes('half')) || titleLower.includes('which team to score') || (titleLower.includes('odd/even corners') && !titleLower.includes('half')) || (titleLower.includes('corner range') && (titleLower.includes((game.home_team || '').toLowerCase()) || titleLower.includes((game.away_team || '').toLowerCase())))) {
-                    category = "Combination";
-                }
-                else if (titleLower.includes('handicap') || titleLower.includes('asian')) {
-                    category = "Handicap";
-                }
-                else if ((titleLower.includes('half') || titleLower.includes('ht') || titleLower.includes('1st') || titleLower.includes('2nd') || titleLower.includes('halves')) && !titleLower.includes('halftime/fulltime')) {
-                    category = "Half";
-                }
+            // --- 5. HALF MARKET ---
+            else if ((titleLower.includes('half') || titleLower.includes('ht') || titleLower.includes('1st') || titleLower.includes('2nd') || titleLower.includes('halves')) && !titleLower.includes('halftime/fulltime')) {
+                category = "Half";
+                title = title.replace(/first half/i, '1st Half').replace(/second half/i, '2nd Half').replace(/match winner/i, '3 Way');
             }
 
             if (category === "All" || outcomes.length === 0) return;
 
+            // 🌟 የተደገሙ አማራጮችን በአንድ Market ውስጥ ማጥራት 🌟
             const uniqueOutcomes: any[] = [];
             const seenOptions = new Set();
             outcomes.forEach((o: any) => {
