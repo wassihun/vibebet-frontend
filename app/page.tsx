@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import AuthModal from './components/AuthModal';
 
@@ -52,6 +52,9 @@ export default function Home() {
 
     const [acceptOddsChange, setAcceptOddsChange] = useState<boolean>(true);
 
+    // 🌟 የኦድ መቀያየሪያ ቀለማትን (Flashing) መቆጣጠሪያ 🌟
+    const [flashingOdds, setFlashingOdds] = useState<Record<string, 'up' | 'down'>>({});
+
     const today = new Date();
     const todayStr = today.toDateString();
     
@@ -91,54 +94,117 @@ export default function Home() {
         }
     }, []);
 
+    // 🌟 ዳታ ከ API አምጥቶ ፎርማት የሚያደርግ ፈንክሽን 🌟
+    const formatFixturesData = useCallback((data: any[]) => {
+        return data.map((game: any) => {
+            let parsedOdds = [];
+            let rawMarkets = [];
+            try {
+                const bookmakers = typeof game.odds_data === 'string' ? JSON.parse(game.odds_data) : game.odds_data;
+                rawMarkets = bookmakers[0]?.markets || [];
+                
+                const h2h = rawMarkets.find((m: any) => {
+                    const title = (m?.title || m?.name || '').toLowerCase();
+                    return m.id === 1 || m?.key === 'h2h' || title === 'match winner' || title === '3 way' || title.includes('result') || title.includes('match betting');
+                });
+
+                const odd1 = h2h?.outcomes?.find((o: any) => o?.name === game.home_team || o?.name === 'Home' || o?.name === '1')?.price || 0;
+                const oddX = h2h?.outcomes?.find((o: any) => o?.name === 'Draw' || o?.name === 'X')?.price || 0;
+                const odd2 = h2h?.outcomes?.find((o: any) => o?.name === game.away_team || o?.name === 'Away' || o?.name === '2')?.price || 0;
+
+                parsedOdds = [
+                    { odd_id: `1_${game.id}`, option: "1", value: odd1 ? parseFloat(odd1).toFixed(2) : "0.00" },
+                    { odd_id: `x_${game.id}`, option: "X", value: oddX ? parseFloat(oddX).toFixed(2) : "0.00" },
+                    { odd_id: `2_${game.id}`, option: "2", value: odd2 ? parseFloat(odd2).toFixed(2) : "0.00" }
+                ];
+            } catch (e) {
+                parsedOdds = [{ odd_id: `1_${game.id}`, option: "1", value: "0.00" }, { odd_id: `x_${game.id}`, option: "X", value: "0.00" }, { odd_id: `2_${game.id}`, option: "2", value: "0.00" }];
+            }
+
+            return {
+                id: game.id,
+                home_team: game.home_team || "Home",
+                away_team: game.away_team || "Away",
+                match_time: game.commence_time,
+                league: game.sport_key || "World|Soccer|https://media.api-sports.io/flags/un.svg",
+                league_flag: game.league_logo, 
+                odds: parsedOdds,
+                raw_markets: rawMarkets 
+            };
+        });
+    }, []);
+
+    // 🌟 Auto-Polling (Live Odds Update) 🌟
     useEffect(() => {
-        setIsFetchingFixtures(true);
-        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/matches/list`)
-            .then(res => {
+        const fetchInitialData = async () => {
+            setIsFetchingFixtures(true);
+            try {
+                const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/matches/list`);
                 if (res.data.success) {
-                    const formatted = res.data.data.map((game: any) => {
-                        let parsedOdds = [];
-                        let rawMarkets = [];
-                        try {
-                            const bookmakers = typeof game.odds_data === 'string' ? JSON.parse(game.odds_data) : game.odds_data;
-                            rawMarkets = bookmakers[0]?.markets || [];
-                            
-                            const h2h = rawMarkets.find((m: any) => {
-                                const title = (m?.title || m?.name || '').toLowerCase();
-                                return m.id === 1 || m?.key === 'h2h' || title === 'match winner' || title === '3 way' || title.includes('result') || title.includes('match betting');
-                            });
+                    setFixtures(formatFixturesData(res.data.data));
+                }
+            } catch (err) {
+                console.error("ዳታ ማምጣት አልተቻለም:", err);
+            } finally {
+                setIsFetchingFixtures(false);
+            }
+        };
 
-                            const odd1 = h2h?.outcomes?.find((o: any) => o?.name === game.home_team || o?.name === 'Home' || o?.name === '1')?.price || 0;
-                            const oddX = h2h?.outcomes?.find((o: any) => o?.name === 'Draw' || o?.name === 'X')?.price || 0;
-                            const odd2 = h2h?.outcomes?.find((o: any) => o?.name === game.away_team || o?.name === 'Away' || o?.name === '2')?.price || 0;
+        const fetchPollingData = async () => {
+            try {
+                const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/matches/list`);
+                if (res.data.success) {
+                    const formattedNew = formatFixturesData(res.data.data);
+                    
+                    setFixtures(prevFixtures => {
+                        const changes: Record<string, 'up' | 'down'> = {};
+                        
+                        // አሮጌውን እና አዲሱን ዳታ ማወዳደር
+                        formattedNew.forEach(newGame => {
+                            const oldGame = prevFixtures.find(g => g.id === newGame.id);
+                            if (oldGame) {
+                                newGame.raw_markets.forEach((newMkt: any) => {
+                                    const oldMkt = oldGame.raw_markets.find((m: any) => m.id === newMkt.id && m.key === newMkt.key);
+                                    if (oldMkt && newMkt.outcomes) {
+                                        newMkt.outcomes.forEach((newOpt: any, idx: number) => {
+                                            const oldOpt = oldMkt.outcomes[idx];
+                                            if (oldOpt && oldOpt.name === newOpt.name) {
+                                                const nP = parseFloat(newOpt.price || newOpt.odd || "0");
+                                                const oP = parseFloat(oldOpt.price || oldOpt.odd || "0");
+                                                
+                                                if (nP !== oP && nP > 0) {
+                                                    const oddId = `${newMkt.key || 'unk'}_${String(newOpt.name || '').replace(/[^a-zA-Z0-9]/g, '_')}_${newGame.id}_${idx}`;
+                                                    if (nP > oP) changes[oddId] = 'up';
+                                                    else if (nP < oP) changes[oddId] = 'down';
+                                                }
+                                            }
+                                        });
+                                    }
+                                });
+                            }
+                        });
 
-                            parsedOdds = [
-                                { odd_id: `1_${game.id}`, option: "1", value: odd1 ? parseFloat(odd1).toFixed(2) : "0.00" },
-                                { odd_id: `x_${game.id}`, option: "X", value: oddX ? parseFloat(oddX).toFixed(2) : "0.00" },
-                                { odd_id: `2_${game.id}`, option: "2", value: odd2 ? parseFloat(odd2).toFixed(2) : "0.00" }
-                            ];
-                        } catch (e) {
-                            parsedOdds = [{ odd_id: `1_${game.id}`, option: "1", value: "0.00" }, { odd_id: `x_${game.id}`, option: "X", value: "0.00" }, { odd_id: `2_${game.id}`, option: "2", value: "0.00" }];
+                        // ለውጥ ካለ አኒሜሽን (Color Flash) ማብራት
+                        if (Object.keys(changes).length > 0) {
+                            setFlashingOdds(changes);
+                            setTimeout(() => setFlashingOdds({}), 4000); // አረንጓዴ/ቀይ ቀለሙ ከ 4 ሰከንድ በኋላ ይጠፋል
                         }
 
-                        return {
-                            id: game.id,
-                            home_team: game.home_team || "Home",
-                            away_team: game.away_team || "Away",
-                            match_time: game.commence_time,
-                            league: game.sport_key || "World|Soccer|https://media.api-sports.io/flags/un.svg",
-                            league_flag: game.league_logo, 
-                            odds: parsedOdds,
-                            raw_markets: rawMarkets 
-                        };
+                        return formattedNew;
                     });
-                    
-                    setFixtures(formatted);
                 }
-            })
-            .catch(err => console.error("ዳታ ማምጣት አልተቻለም:", err))
-            .finally(() => setIsFetchingFixtures(false));
-    }, []);
+            } catch (err) {
+                // Polling Error (Silently fails)
+            }
+        };
+
+        fetchInitialData(); // የመጀመሪያ ዳታ ሎድ ሲያደርግ
+
+        // በየ 15 ሰከንዱ አዲስ ኦድ ይፈልጋል (Auto-Polling)
+        const intervalId = setInterval(fetchPollingData, 15000); 
+
+        return () => clearInterval(intervalId); // ኮምፖነንቱ ሲዘጋ ኢንተርቫሉን ማጥፋት
+    }, [formatFixturesData]);
 
     const toggleSelection = (game: any, odd: any) => {
         if (!odd || odd.value === "0.00" || odd.value === "-") return; 
@@ -284,7 +350,7 @@ export default function Home() {
         setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
     };
 
-    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ፣ ማጣሪያ እና ሎጂክ (STRICT MAPPING & DEDUPLICATION) 🌟
+    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ፣ ማጣሪያ እና ሎጂክ 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game?.raw_markets || [];
         const marketsObj: Record<string, any[]> = {
@@ -374,19 +440,22 @@ export default function Home() {
             const titleLower = title.toLowerCase();
             const mId = market.id;
 
-            // 1. 🌟 COMBINATION MARKET 🌟
             if (isComboBttsOU) {
                 category = "Combination";
                 title = "Over/Under & both teams to score";
             }
+            // --- COMBINATION MARKET ---
             else if (titleLower.includes('&') || titleLower.includes(' and ') || titleLower.includes('+') || titleLower.includes('10 minutes') || titleLower.includes('scorer') || titleLower.includes('last goal') || titleLower.includes('last corner') || (titleLower.includes('corner 1x2') && !titleLower.includes('half')) || titleLower.includes('which team to score') || (titleLower.includes('odd/even corners') && !titleLower.includes('half')) || (titleLower.includes('corner range') && (titleLower.includes((game.home_team || '').toLowerCase()) || titleLower.includes((game.away_team || '').toLowerCase())))) {
                 category = "Combination";
                 if(titleLower.includes('corner range')) title = `${game.home_team} corner range`;
                 if(titleLower.includes('3 way') && titleLower.includes('over/under')) title = "3 Way & Over/Under";
                 if(titleLower.includes('3 way') && titleLower.includes('both teams')) title = "3 Way & both teams to score";
             }
-            
-            // 2. 🌟 STRICT TOTAL MARKET LOCKING 🌟
+            // --- HANDICAP MARKET ---
+            else if (titleLower.includes('handicap') || titleLower.includes('asian')) {
+                category = "Handicap";
+            }
+            // 🌟 STRICT TOTAL MARKET LOCKING 🌟
             else if (
                 mId === 11 || titleLower.includes('exact goals') || 
                 titleLower === 'goal range' || titleLower === 'goals range' || 
@@ -402,9 +471,8 @@ export default function Home() {
                 else if (titleLower.includes('over/under corners') || titleLower.includes('corners over/under')) title = "Over/Under corners";
                 else if ((titleLower.includes('1st half') || titleLower.includes('first half')) && titleLower.includes('over/under')) title = "1st half - Over/Under";
 
-                // 🔒 Lock Outcomes strictly for Total Market
                 outcomes = outcomes.filter((o: any) => {
-                    const optTrim = o.option.replace(/\s+/g, '').toLowerCase(); // ክፍተት (spaces) በማጥፋት በጥብቅ ማጣራት
+                    const optTrim = o.option.replace(/\s+/g, '').toLowerCase(); 
                     if (title === "1st half - Over/Under") return optTrim.includes('over') || optTrim.includes('under');
                     if (title === "Exact goals") return /^\d+$/.test(optTrim) || optTrim.includes('+') || optTrim.includes('more');
                     if (title === "Goal range") return optTrim.includes('-') || optTrim.includes('+');
@@ -413,13 +481,16 @@ export default function Home() {
                     return true;
                 });
             }
-
-            // 3. 🌟 HANDICAP MARKET 🌟
-            else if (titleLower.includes('handicap') || titleLower.includes('asian')) {
-                category = "Handicap";
+            // --- HALF MARKET ---
+            else if ((titleLower.includes('half') || titleLower.includes('ht') || titleLower.includes('1st') || titleLower.includes('2nd') || titleLower.includes('halves')) && !titleLower.includes('halftime/fulltime')) {
+                if (titleLower === 'highest scoring half') {
+                    category = "Main Market"; title = "Highest scoring half";
+                } else {
+                    category = "Half";
+                    title = title.replace(/first half/i, '1st Half').replace(/second half/i, '2nd Half').replace(/match winner/i, '3 Way');
+                }
             }
-
-            // 4. 🌟 STRICT MAIN MARKET LOCKING 🌟
+            // --- STRICT MAIN MARKET LOCKING ---
             else if (
                 mId === 1 || mId === 8 || mId === 12 || mId === 5 || mId === 17 || mId === 24 || mId === 21 || mId === 40 || mId === 10 || 
                 titleLower === 'match winner' || titleLower === '1x2' || titleLower === '3 way' || 
@@ -472,7 +543,6 @@ export default function Home() {
                     return { ...o, option: n };
                 });
 
-                // 🔒 Lock Outcomes strictly for Main Market
                 if (title === "3 Way") outcomes = outcomes.filter((o: any) => ['1', 'X', '2'].includes(o.option.toUpperCase()));
                 else if (title === "Both teams to score") outcomes = outcomes.filter((o: any) => ['yes', 'no'].includes(o.option.toLowerCase()));
                 else if (title === "Double chance") outcomes = outcomes.filter((o: any) => ['1X', '12', 'X2'].includes(o.option.toUpperCase()));
@@ -483,15 +553,9 @@ export default function Home() {
                 else if (title === "Halftime/Fulltime") outcomes = outcomes.filter((o: any) => /^[1X2]\/[1X2]$/.test(o.option.toUpperCase()));
                 else if (title === "Correct score") outcomes = outcomes.filter((o: any) => /^\d+:\d+$/.test(o.option));
             }
-            // 5. 🌟 HALF MARKET 🌟
-            else if ((titleLower.includes('half') || titleLower.includes('ht') || titleLower.includes('1st') || titleLower.includes('2nd') || titleLower.includes('halves')) && !titleLower.includes('halftime/fulltime')) {
-                category = "Half";
-                title = title.replace(/first half/i, '1st Half').replace(/second half/i, '2nd Half').replace(/match winner/i, '3 Way');
-            }
 
             if (category === "All" || outcomes.length === 0) return;
 
-            // 🌟 የተደገሙ አማራጮችን በአንድ Market ውስጥ ማጥራት 🌟
             const uniqueOutcomes: any[] = [];
             const seenOptions = new Set();
             outcomes.forEach((o: any) => {
@@ -538,7 +602,6 @@ export default function Home() {
             }
         });
 
-        // 🌟 የ Main Market ክፍሎችን በሰጠኸኝ ቅደም-ተከተል መሰረት ማሰለፍ 🌟
         if (marketsObj["Main Market"].length > 0) {
             const mainOrder = [
                 "3 Way", "Both teams to score", "Double chance", "Over/Under",
@@ -551,7 +614,6 @@ export default function Home() {
             });
         }
 
-        // 🌟 የ Total Market ክፍሎችን በሰጠኸኝ ቅደም-ተከተል መሰረት ማሰለፍ 🌟
         if (marketsObj["Total"].length > 0) {
             const totalOrder = [
                 "1st half - Over/Under", "Exact goals", "Goal range", "Corner range", "Over/Under corners"
@@ -823,6 +885,14 @@ export default function Home() {
                                             <div className="max-w-5xl mx-auto w-full bg-[#485058] border border-[#3a4148] rounded-md overflow-hidden shadow-md">
                                                 {displayMarkets.map((market: any, mIdx: number) => {
                                                     const isOpen = openAccordions.includes(market.title);
+                                                    let customClass = `grid gap-2 `;
+                                                    if (market.cols === 4) customClass += 'grid-cols-2 md:grid-cols-4';
+                                                    else if (market.cols === 3) customClass += 'grid-cols-1 md:grid-cols-3';
+                                                    else if (market.cols === 1) customClass += 'grid-cols-1';
+                                                    else customClass += 'grid-cols-1 md:grid-cols-2';
+                                                    
+                                                    const isOverUnderType = market.title.toLowerCase().includes('over/under') || market.title.toLowerCase().includes('goals');
+
                                                     return (
                                                         <div key={`${marketTab}-${mIdx}`} className="border-b border-[#3a4148] last:border-b-0 w-full">
                                                             <button onClick={() => toggleAccordion(market.title)} className="w-full flex items-center justify-between p-3.5 hover:bg-[#525b65] transition-colors">
@@ -836,13 +906,19 @@ export default function Home() {
                                                             
                                                             {isOpen && (
                                                                 <div className="p-3 bg-[#1e2328] border-t border-[#3a4148]">
-                                                                    <div className={`grid gap-2 ${market.cols === 4 ? 'grid-cols-2 md:grid-cols-4' : market.cols === 3 ? 'grid-cols-1 md:grid-cols-3' : market.cols === 1 ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
+                                                                    <div className={customClass}>
                                                                         {market.odds.map((odd: any) => {
                                                                             const isSelected = betSlip.some((item: any) => item.odd_id === odd.odd_id);
+                                                                            const isFlashingUp = flashingOdds[odd.odd_id] === 'up';
+                                                                            const isFlashingDown = flashingOdds[odd.odd_id] === 'down';
+                                                                            const flashClass = isFlashingUp ? 'bg-[#00e700] text-black shadow-[0_0_8px_#00e700] border-[#00e700]' : isFlashingDown ? 'bg-red-500 text-white shadow-[0_0_8px_red] border-red-500' : '';
+                                                                            
+                                                                            const oddClass = isOverUnderType ? 'flex justify-between items-center px-3 py-2.5 rounded-sm transition-colors border' : 'flex justify-between items-center px-3 py-2.5 rounded-sm transition-colors border';
+                                                                            
                                                                             return (
-                                                                                <button key={odd.odd_id} onClick={() => handleMarketSelection(selectedMatch, odd)} className={`flex justify-between items-center px-3 py-2.5 rounded-sm transition-colors border ${isSelected ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow' : 'bg-[#1a1f24] border-[#3b4148] hover:border-[#ffcc00]'}`}>
-                                                                                    <span className={`text-[11px] ${isSelected ? 'text-black font-bold' : 'text-slate-300'}`}>{odd.option}</span>
-                                                                                    <span className={`text-[12px] font-black ${isSelected ? 'text-black' : 'text-[#ffcc00]'}`}>{odd.value}</span>
+                                                                                <button key={odd.odd_id} onClick={() => handleMarketSelection(selectedMatch, odd)} className={`${oddClass} ${flashClass !== '' ? flashClass : isSelected ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow' : 'bg-[#1a1f24] border-[#3b4148] hover:border-[#ffcc00]'}`}>
+                                                                                    <span className={`text-[11px] ${flashClass !== '' ? (isFlashingUp ? 'text-black font-bold' : 'text-white font-bold') : isSelected ? 'text-black font-bold' : 'text-slate-300'}`}>{odd.option}</span>
+                                                                                    <span className={`text-[12px] font-black ${flashClass !== '' ? (isFlashingUp ? 'text-black' : 'text-white') : isSelected ? 'text-black' : 'text-[#ffcc00]'}`}>{odd.value}</span>
                                                                                 </button>
                                                                             )
                                                                         })}
@@ -963,7 +1039,22 @@ export default function Home() {
                                                             const btn2 = currentDisplayOdds[2] || { odd_id: `2_null_${game.id}`, option: "2", value: "0.00" };
                                                             const hasSelectionInGame = betSlip.some((item: any) => item.fixture_id === game.id);
 
-                                                            const totalMarketsCount = categorizedMarkets["All"] ? categorizedMarkets["All"].length : 0;
+                                                            // Flashing checks
+                                                            const isFlashBtn1Up = flashingOdds[btn1.odd_id] === 'up';
+                                                            const isFlashBtn1Down = flashingOdds[btn1.odd_id] === 'down';
+                                                            const flashClass1 = isFlashBtn1Up ? 'bg-[#00e700] border-[#00e700] shadow-[0_0_8px_#00e700]' : isFlashBtn1Down ? 'bg-red-500 border-red-500 shadow-[0_0_8px_red]' : '';
+
+                                                            const isFlashBtnXUp = flashingOdds[btnX.odd_id] === 'up';
+                                                            const isFlashBtnXDown = flashingOdds[btnX.odd_id] === 'down';
+                                                            const flashClassX = isFlashBtnXUp ? 'bg-[#00e700] border-[#00e700] shadow-[0_0_8px_#00e700]' : isFlashBtnXDown ? 'bg-red-500 border-red-500 shadow-[0_0_8px_red]' : '';
+
+                                                            const isFlashBtn2Up = flashingOdds[btn2.odd_id] === 'up';
+                                                            const isFlashBtn2Down = flashingOdds[btn2.odd_id] === 'down';
+                                                            const flashClass2 = isFlashBtn2Up ? 'bg-[#00e700] border-[#00e700] shadow-[0_0_8px_#00e700]' : isFlashBtn2Down ? 'bg-red-500 border-red-500 shadow-[0_0_8px_red]' : '';
+
+
+                                                            let totalMarketsCount = 0;
+                                                            Object.values(categorizedMarkets).forEach(cat => totalMarketsCount += cat.length);
 
                                                             return (
                                                                 <div key={game.id} className="flex flex-col border-b border-[#2a3038] last:border-b-0 hover:bg-[#24292e] transition-colors">
@@ -974,17 +1065,17 @@ export default function Home() {
                                                                         </div>
 
                                                                         <div className="flex-1 flex items-center gap-0.5 sm:gap-1 p-1 sm:p-1.5 min-w-0">
-                                                                            <button onClick={() => toggleSelection(game, btn1)} className={`flex-1 h-full min-h-[44px] flex justify-between items-center px-1.5 sm:px-3 rounded transition-colors border ${betSlip.some(item => item.odd_id === btn1.odd_id) ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] border-[#3b4148] hover:border-[#ffcc00] shadow-sm'} ${btn1.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                                                                                <span className={`text-[9.5px] sm:text-[11px] font-semibold truncate max-w-[50px] sm:max-w-[90px] ${betSlip.some(item => item.odd_id === btn1.odd_id) ? 'text-black' : 'text-slate-300'}`}>{mainMarketView === '1X2' ? game.home_team : '1X'}</span>
-                                                                                <span className={`font-black text-[11px] sm:text-[12px] ${betSlip.some(item => item.odd_id === btn1.odd_id) ? 'text-black' : 'text-[#ffcc00]'}`}>{btn1?.value !== "0.00" ? btn1?.value : "-"}</span>
+                                                                            <button onClick={() => toggleSelection(game, btn1)} className={`flex-1 h-full min-h-[44px] flex justify-between items-center px-1.5 sm:px-3 rounded transition-colors border ${flashClass1 !== '' ? flashClass1 : betSlip.some(item => item.odd_id === btn1.odd_id) ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] border-[#3b4148] hover:border-[#ffcc00] shadow-sm'} ${btn1.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                                                <span className={`text-[9.5px] sm:text-[11px] font-semibold truncate max-w-[50px] sm:max-w-[90px] ${flashClass1 !== '' ? (isFlashBtn1Up ? 'text-black' : 'text-white') : betSlip.some(item => item.odd_id === btn1.odd_id) ? 'text-black' : 'text-slate-300'}`}>{mainMarketView === '1X2' ? game.home_team : '1X'}</span>
+                                                                                <span className={`font-black text-[11px] sm:text-[12px] ${flashClass1 !== '' ? (isFlashBtn1Up ? 'text-black' : 'text-white') : betSlip.some(item => item.odd_id === btn1.odd_id) ? 'text-black' : 'text-[#ffcc00]'}`}>{btn1?.value !== "0.00" ? btn1?.value : "-"}</span>
                                                                             </button>
-                                                                            <button onClick={() => toggleSelection(game, btnX)} className={`w-10 sm:w-16 shrink-0 h-full min-h-[44px] flex flex-col sm:flex-row justify-center sm:justify-between items-center px-1 sm:px-2 rounded transition-colors border ${betSlip.some(item => item.odd_id === btnX.odd_id) ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] border-[#3b4148] hover:border-[#ffcc00] shadow-sm'} ${btnX.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                                                                                {mainMarketView === 'DC' && <span className={`text-[9.5px] sm:text-[11px] font-semibold mb-0.5 sm:mb-0 ${betSlip.some(item => item.odd_id === btnX.odd_id) ? 'text-black' : 'text-slate-300'}`}>12</span>}
-                                                                                <span className={`font-black text-[11px] sm:text-[12px] ${betSlip.some(item => item.odd_id === btnX.odd_id) ? 'text-black' : 'text-slate-300'}`}>{btnX?.value !== "0.00" ? btnX?.value : "-"}</span>
+                                                                            <button onClick={() => toggleSelection(game, btnX)} className={`w-10 sm:w-16 shrink-0 h-full min-h-[44px] flex flex-col sm:flex-row justify-center sm:justify-between items-center px-1 sm:px-2 rounded transition-colors border ${flashClassX !== '' ? flashClassX : betSlip.some(item => item.odd_id === btnX.odd_id) ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] border-[#3b4148] hover:border-[#ffcc00] shadow-sm'} ${btnX.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                                                {mainMarketView === 'DC' && <span className={`text-[9.5px] sm:text-[11px] font-semibold mb-0.5 sm:mb-0 ${flashClassX !== '' ? (isFlashBtnXUp ? 'text-black' : 'text-white') : betSlip.some(item => item.odd_id === btnX.odd_id) ? 'text-black' : 'text-slate-300'}`}>12</span>}
+                                                                                <span className={`font-black text-[11px] sm:text-[12px] ${flashClassX !== '' ? (isFlashBtnXUp ? 'text-black' : 'text-white') : betSlip.some(item => item.odd_id === btnX.odd_id) ? 'text-black' : 'text-slate-300'}`}>{btnX?.value !== "0.00" ? btnX?.value : "-"}</span>
                                                                             </button>
-                                                                            <button onClick={() => toggleSelection(game, btn2)} className={`flex-1 h-full min-h-[44px] flex justify-between items-center px-1.5 sm:px-3 rounded transition-colors border ${betSlip.some(item => item.odd_id === btn2.odd_id) ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] border-[#3b4148] hover:border-[#ffcc00] shadow-sm'} ${btn2.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                                                                                <span className={`font-black text-[11px] sm:text-[12px] ${betSlip.some(item => item.odd_id === btn2.odd_id) ? 'text-black' : 'text-[#ffcc00]'}`}>{btn2?.value !== "0.00" ? btn2?.value : "-"}</span>
-                                                                                <span className={`text-[9.5px] sm:text-[11px] font-semibold truncate max-w-[50px] sm:max-w-[90px] ${betSlip.some(item => item.odd_id === btn2.odd_id) ? 'text-black' : 'text-slate-300'}`}>{mainMarketView === '1X2' ? game.away_team : 'X2'}</span>
+                                                                            <button onClick={() => toggleSelection(game, btn2)} className={`flex-1 h-full min-h-[44px] flex justify-between items-center px-1.5 sm:px-3 rounded transition-colors border ${flashClass2 !== '' ? flashClass2 : betSlip.some(item => item.odd_id === btn2.odd_id) ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] border-[#3b4148] hover:border-[#ffcc00] shadow-sm'} ${btn2.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                                                <span className={`font-black text-[11px] sm:text-[12px] ${flashClass2 !== '' ? (isFlashBtn2Up ? 'text-black' : 'text-white') : betSlip.some(item => item.odd_id === btn2.odd_id) ? 'text-black' : 'text-[#ffcc00]'}`}>{btn2?.value !== "0.00" ? btn2?.value : "-"}</span>
+                                                                                <span className={`text-[9.5px] sm:text-[11px] font-semibold truncate max-w-[50px] sm:max-w-[90px] ${flashClass2 !== '' ? (isFlashBtn2Up ? 'text-black' : 'text-white') : betSlip.some(item => item.odd_id === btn2.odd_id) ? 'text-black' : 'text-slate-300'}`}>{mainMarketView === '1X2' ? game.away_team : 'X2'}</span>
                                                                             </button>
                                                                         </div>
 
