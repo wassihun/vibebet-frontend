@@ -284,171 +284,169 @@ export default function Home() {
         setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
     };
 
-    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ፣ ማጣሪያ እና ሎጂክ (Strict Market Mapping & Deduplication) 🌟
+    // 🌟 አዲሱ 100% ጥርት ያለ የማርኬት አመዳደብ ሎጂክ 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game?.raw_markets || [];
-        const marketsObj: Record<string, any[]> = {
-            "All": [], "Main Market": [], "Total": [], "Combination": [], "Half": [], "Handicap": []
+        const structuredData: Record<string, Record<string, Map<string, any>>> = {
+            "Main Market": {}, "Total": {}, "Combination": {}, "Half": {}, "Handicap": {}
         };
 
-        if (!Array.isArray(raw)) return marketsObj;
+        if (!Array.isArray(raw)) return { "All": [] };
 
         raw.forEach((market: any) => {
-            if (!market || !market.outcomes || market.outcomes.length === 0) return; 
+            if (!market || !market.outcomes || market.outcomes.length === 0) return;
 
-            // 1. መጀመሪያ Option ዎችን አጣርቶ ማንበብ እና ማስተካከል
-            let hasOverUnderBttsCombo = false;
-            
-            let outcomes = market.outcomes.map((o: any, idx: number) => {
-                let optName = String(o?.name ?? 'Opt');
-                const optLower = optName.toLowerCase();
+            let cat = "All";
+            let title = String(market.title || market.name || market.key).trim();
+            const tLower = title.toLowerCase();
+
+            // 1. መጀመሪያ Option ዎችን ማስተካከል (ለምሳሌ o/no 2.5 ወደ over 2.5 & no)
+            let isComboBttsOU = false;
+            let formattedOutcomes = market.outcomes.map((o: any, idx: number) => {
+                let optName = String(o.name || "Opt").trim();
+                const optL = optName.toLowerCase();
                 
-                // ኤፒአዩ Combination Market ን በስህተት Both teams to score ብሎ ከላከው ለማወቅ 
-                if (optLower.includes('o/no') || optLower.includes('o/yes') || optLower.includes('u/no') || optLower.includes('u/yes')) {
-                    hasOverUnderBttsCombo = true;
+                if (optL.includes('o/no') || optL.includes('o/yes') || optL.includes('u/no') || optL.includes('u/yes')) {
+                    isComboBttsOU = true;
+                    if (optL.startsWith('o/no ')) optName = optL.replace('o/no ', 'over ') + ' & no';
+                    if (optL.startsWith('o/yes ')) optName = optL.replace('o/yes ', 'over ') + ' & yes';
+                    if (optL.startsWith('u/no ')) optName = optL.replace('u/no ', 'under ') + ' & no';
+                    if (optL.startsWith('u/yes ')) optName = optL.replace('u/yes ', 'under ') + ' & yes';
                 }
-
-                // የተዘበራረቁ አጫጭር ቃላትን (Short-hands) ወደ ትክክለኛ ፎርማት መቀየር
-                if (optLower.startsWith('o/no ')) optName = optLower.replace('o/no ', 'over ') + ' & no';
-                else if (optLower.startsWith('o/yes ')) optName = optLower.replace('o/yes ', 'over ') + ' & yes';
-                else if (optLower.startsWith('u/no ')) optName = optLower.replace('u/no ', 'under ') + ' & no';
-                else if (optLower.startsWith('u/yes ')) optName = optLower.replace('u/yes ', 'under ') + ' & yes';
-
+                
                 return {
-                    odd_id: `${market.key || 'unk'}_${String(o?.name || '').replace(/[^a-zA-Z0-9]/g, '_')}_${game.id}_${idx}`, 
-                    option: optName, 
-                    value: parseFloat(o?.price || o?.odd || 0).toFixed(2)
+                    odd_id: `${market.key || 'unk'}_${String(o.name || '').replace(/[^a-zA-Z0-9]/g, '_')}_${game.id}_${idx}`,
+                    option: optName,
+                    value: parseFloat(o.price || o.odd || 0).toFixed(2)
                 };
             });
 
-            // 2. የማርኬት ርዕስ (Title) እና ግሩፕ (Category) መወሰን
-            let category = "All"; 
-            let title = String(market.title || market.name || market.key || "Market").trim();
-            const titleLower = title.toLowerCase();
-            const mId = market.id;
-
-            // Option ላይ Combination (o/no) ከተገኘ በቀጥታ ማስገደድ
-            if (hasOverUnderBttsCombo) {
-                category = "Combination";
+            // 2. ትክክለኛውን Category እና Title መለየት
+            if (isComboBttsOU) {
+                cat = "Combination";
                 title = "Over/Under & both teams to score";
+            } 
+            else if (tLower.includes('handicap') || tLower.includes('asian')) {
+                cat = "Handicap";
             }
-            // --- 1. COMBINATION MARKET ---
-            else if (titleLower.includes('&') || titleLower.includes(' and ') || titleLower.includes('+') || titleLower.includes('10 minutes') || titleLower.includes('scorer') || titleLower.includes('last goal') || titleLower.includes('last corner') || (titleLower.includes('corner 1x2') && !titleLower.includes('half')) || titleLower.includes('which team to score') || (titleLower.includes('odd/even corners') && !titleLower.includes('half')) || (titleLower.includes('corner range') && (titleLower.includes((game.home_team || '').toLowerCase()) || titleLower.includes((game.away_team || '').toLowerCase())))) {
-                category = "Combination";
-                if(titleLower.includes('corner range')) title = `${game.home_team} corner range`;
-                if(titleLower.includes('3 way') && titleLower.includes('over/under')) title = "3 Way & Over/Under";
-                if(titleLower.includes('3 way') && titleLower.includes('both teams')) title = "3 Way & both teams to score";
-            }
-            // --- 2. HANDICAP MARKET ---
-            else if (titleLower.includes('handicap') || titleLower.includes('asian')) {
-                category = "Handicap";
-            }
-            // --- 3. HALF MARKET ---
-            else if ((titleLower.includes('half') || titleLower.includes('ht') || titleLower.includes('1st') || titleLower.includes('2nd') || titleLower.includes('halves')) && !titleLower.includes('halftime/fulltime')) {
-                category = "Half";
-                title = title.replace(/first half/i, '1st Half').replace(/second half/i, '2nd Half').replace(/match winner/i, '3 Way');
-            }
-            // --- 4. TOTAL MARKET ---
-            else if (mId === 11 || titleLower.includes('exact goals') || titleLower.includes('goal range') || titleLower.includes('goals range') || titleLower.includes('corner range') || titleLower.includes('over/under corners') || titleLower.includes('corners over/under')) {
-                category = "Total";
-                if(mId === 11 || titleLower.includes('exact goals')) title = "Exact goals";
-                if(titleLower.includes('goal range') || titleLower.includes('goals range')) title = "Goal range";
-                if(titleLower.includes('corner range')) title = "Corner range";
-                if(titleLower.includes('over/under corners') || titleLower.includes('corners over/under')) title = "Over/Under corners";
-            }
-            // --- 5. MAIN MARKET ---
-            else if (mId === 1 || mId === 8 || mId === 12 || mId === 5 || mId === 17 || mId === 24 || mId === 21 || mId === 40 || mId === 10 || titleLower.includes('match winner') || titleLower === '1x2' || titleLower.includes('3 way') || titleLower.includes('both teams to score') || titleLower.includes('double chance') || titleLower === 'goals over/under' || (titleLower.includes('over/under') && !titleLower.includes('corners')) || titleLower.includes('odd/even') || titleLower.includes('draw no bet') || titleLower.includes('correct score')) {
-                category = "Main Market";
-                
-                // Very strict renaming so we don't mess up combinations that slipped through
-                if(mId === 1 || titleLower === 'match winner' || titleLower === '1x2' || titleLower.includes('3 way')) title = "3 Way";
-                else if(mId === 8 || titleLower === 'both teams to score' || titleLower === 'both teams score') title = "Both teams to score";
-                else if(mId === 12 || titleLower === 'double chance') title = "Double chance";
-                else if(mId === 5 || titleLower === 'goals over/under' || titleLower === 'over/under') title = "Over/Under";
-                else if(mId === 17 || titleLower === 'halftime/fulltime' || titleLower.includes('halftime/fulltime')) title = "Halftime/Fulltime";
-                else if(mId === 24 || titleLower === 'odd/even') title = "Odd/even";
-                else if(mId === 21 || titleLower.includes('draw no bet')) title = "Draw no bet";
-                else if(mId === 40 || titleLower.includes('highest scoring half')) title = "Highest scoring half";
-                else if(mId === 10 || titleLower.includes('correct score')) title = "Correct score";
-            }
-
-            if (category === "All") return;
-
-            // 🌟 3. የተደገሙ አማራጮችን በአንድ Market ውስጥ ማጥራት 🌟
-            const uniqueOutcomes: any[] = [];
-            const seenOptions = new Set();
-            outcomes.forEach((o: any) => {
-                const cleanOpt = String(o.option).trim().toLowerCase();
-                if (!seenOptions.has(cleanOpt)) {
-                    seenOptions.add(cleanOpt);
-                    uniqueOutcomes.push(o);
+            else if (tLower.includes('half') || tLower.includes('ht') || tLower.includes('1st') || tLower.includes('2nd') || tLower.includes('halves')) {
+                if (tLower.includes('&') || tLower.includes('and')) {
+                    cat = "Combination";
+                } else if (tLower === 'halftime/fulltime' || tLower === 'highest scoring half') {
+                    cat = "Main Market";
+                    title = tLower === 'halftime/fulltime' ? "Halftime/Fulltime" : "Highest scoring half";
+                } else if (tLower.includes('over/under') && !tLower.includes('corners')) {
+                    cat = "Total";
+                    title = title.replace(/first half/i, '1st Half').replace(/second half/i, '2nd Half');
+                } else {
+                    cat = "Half";
+                    title = title.replace(/first half/i, '1st Half').replace(/second half/i, '2nd Half').replace(/match winner/i, '3 Way');
                 }
-            });
-            outcomes = uniqueOutcomes;
+            }
+            else if (tLower.includes('&') || tLower.includes(' and ') || tLower.includes('10 minutes') || tLower.includes('scorer') || tLower.includes('last goal') || tLower.includes('last corner') || (tLower.includes('corner 1x2') && !tLower.includes('half')) || tLower.includes('which team to score') || (tLower.includes('odd/even corners') && !tLower.includes('half'))) {
+                cat = "Combination";
+            }
+            else if (tLower.includes('corner range') || tLower.includes('exact goals') || tLower.includes('goal range') || tLower.includes('goals range') || tLower.includes('over/under corners') || tLower.includes('corners over/under')) {
+                cat = "Total";
+                if(tLower.includes('exact goals')) title = "Exact goals";
+                if(tLower.includes('goal range') || tLower.includes('goals range')) title = "Goal range";
+                if(tLower.includes('corner range')) title = "Corner range";
+                if(tLower.includes('over/under corners') || tLower.includes('corners over/under')) title = "Over/Under corners";
+            }
+            else {
+                cat = "Main Market";
+                if (market.id === 1 || tLower === 'match winner' || tLower === '1x2' || tLower.includes('3 way')) title = "3 Way";
+                else if (market.id === 8 || tLower === 'both teams to score' || tLower === 'both teams score') title = "Both teams to score";
+                else if (market.id === 12 || tLower === 'double chance') title = "Double chance";
+                else if (market.id === 5 || tLower === 'goals over/under' || tLower.includes('over/under')) title = "Over/Under";
+                else if (market.id === 17 || tLower === 'halftime/fulltime' || tLower.includes('halftime/fulltime')) title = "Halftime/Fulltime";
+                else if (market.id === 24 || tLower === 'odd/even') title = "Odd/even";
+                else if (market.id === 21 || tLower.includes('draw no bet')) title = "Draw no bet";
+                else if (market.id === 40 || tLower.includes('highest scoring half')) title = "Highest scoring half";
+                else if (market.id === 10 || tLower.includes('correct score')) title = "Correct score";
+                else cat = "All"; // የማናውቀው ከሆነ ወደ All ይግባ
+            }
 
-            // 🌟 4. ቁጥሮቹን በቅደም ተከተል ማሰለፍ 🌟
-            const sortOutcomes = (oddsArray: any[]) => {
-                return oddsArray.sort((a, b) => {
-                    const numA = parseFloat(a.option.match(/-?\d+(\.\d+)?/)?.[0] || "NaN");
-                    const numB = parseFloat(b.option.match(/-?\d+(\.\d+)?/)?.[0] || "NaN");
-                    
-                    if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB;
-                    
-                    const strA = a.option.toLowerCase();
-                    const strB = b.option.toLowerCase();
-                    if (strA.includes('over') && strB.includes('under')) return -1;
-                    if (strA.includes('under') && strB.includes('over')) return 1;
-                    if (strA.includes('yes') && strB.includes('no')) return -1;
-                    if (strA.includes('no') && strB.includes('yes')) return 1;
-                    
-                    const sortOrder: Record<string, number> = { '1': 1, 'x': 2, '2': 3, '1x': 4, '12': 5, 'x2': 6 };
-                    const keyA = strA.trim();
-                    const keyB = strB.trim();
-                    if (sortOrder[keyA] && sortOrder[keyB]) return sortOrder[keyA] - sortOrder[keyB];
-                    
-                    return strA.localeCompare(strB);
-                });
-            };
-
-            outcomes = sortOutcomes(outcomes);
-
-            if (outcomes.length > 0) {
-                let cols = 2; 
-                if (outcomes.length === 3) cols = 3;
-                else if (titleLower.includes('correct score') || titleLower.includes('halftime')) cols = 3;
-                else if (outcomes.length >= 6 && !titleLower.includes('over/under') && !titleLower.includes('handicap') && !titleLower.includes('goals')) cols = 3;
-                
-                if (outcomes.length === 1) cols = 1;
-                
-                const marketData = { title: title, cols: cols, odds: outcomes };
-                
-                const mergeIntoCategory = (catArray: any[]) => {
-                    const existingIdx = catArray.findIndex((m: any) => m.title === title);
-                    if (existingIdx === -1) {
-                        catArray.push(JSON.parse(JSON.stringify(marketData)));
-                    } else {
-                        const existingMarket = catArray[existingIdx];
-                        const existingOpts = new Set(existingMarket.odds.map((o:any) => String(o.option).trim().toLowerCase()));
-                        outcomes.forEach((o: any) => {
-                            const optStr = String(o.option).trim().toLowerCase();
-                            if (!existingOpts.has(optStr)) {
-                                existingMarket.odds.push({...o});
-                                existingOpts.add(optStr);
-                            }
-                        });
-                        existingMarket.odds = sortOutcomes(existingMarket.odds);
+            // 3. ድግግሞሽን ማጥፋት (Deep Merge via Map)
+            if (cat !== "All" && title) {
+                if (!structuredData[cat][title]) structuredData[cat][title] = new Map();
+                formattedOutcomes.forEach((o: any) => {
+                    const cleanOpt = o.option.toLowerCase().replace(/\s+/g, '');
+                    if (!structuredData[cat][title].has(cleanOpt)) {
+                        structuredData[cat][title].set(cleanOpt, o);
                     }
+                });
+            }
+        });
+
+        const finalObj: Record<string, any[]> = { "All": [] };
+
+        // 4. የተጣራውን ዳታ ማዘጋጀት እና ማሰለፍ
+        const sortOptions = (opts: any[]) => {
+            return opts.sort((a, b) => {
+                const optA = String(a.option).trim().toLowerCase();
+                const optB = String(b.option).trim().toLowerCase();
+
+                const getRank = (str: string) => {
+                    if (str === '1' || str.startsWith('1 ')) return 1;
+                    if (str === 'x' || str.startsWith('x ')) return 2;
+                    if (str === '2' || str.startsWith('2 ')) return 3;
+                    if (str === '1x') return 4;
+                    if (str === '12') return 5;
+                    if (str === 'x2') return 6;
+                    if (str === 'yes') return 7;
+                    if (str === 'no') return 8;
+                    return 99;
                 };
 
-                mergeIntoCategory(marketsObj[category]);
-                mergeIntoCategory(marketsObj["All"]);
-            }
-        });
+                const rankA = getRank(optA);
+                const rankB = getRank(optB);
+                if (rankA !== 99 && rankB !== 99 && rankA !== rankB) return rankA - rankB;
 
-        const finalObj: Record<string, any[]> = {};
-        Object.keys(marketsObj).forEach(key => {
-            if (marketsObj[key].length > 0) finalObj[key] = marketsObj[key];
-        });
+                const numA = parseFloat(optA.match(/-?\d+(\.\d+)?/)?.[0] || "NaN");
+                const numB = parseFloat(optB.match(/-?\d+(\.\d+)?/)?.[0] || "NaN");
+                if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB;
+
+                if (optA.includes('over') && optB.includes('under')) return -1;
+                if (optA.includes('under') && optB.includes('over')) return 1;
+
+                return optA.localeCompare(optB);
+            });
+        };
+
+        for (const cat in structuredData) {
+            const catArr: any[] = [];
+            for (const title in structuredData[cat]) {
+                const map = structuredData[cat][title];
+                let opts = Array.from(map.values());
+                opts = sortOptions(opts);
+
+                if (opts.length > 0) {
+                    let cols = 2;
+                    const tl = title.toLowerCase();
+                    if (opts.length === 3) cols = 3;
+                    else if (tl.includes('correct score') || tl.includes('halftime')) cols = 3;
+                    else if (opts.length >= 6 && !tl.includes('over/under') && !tl.includes('handicap') && !tl.includes('goals')) cols = 3;
+                    if (opts.length === 1) cols = 1;
+
+                    const marketData = { title, cols, odds: opts };
+                    catArr.push(marketData);
+                    finalObj["All"].push(marketData);
+                }
+            }
+            if (catArr.length > 0) {
+                catArr.sort((a, b) => {
+                    if (cat === "Main Market") {
+                        if (a.title === "3 Way") return -1;
+                        if (b.title === "3 Way") return 1;
+                    }
+                    return a.title.localeCompare(b.title);
+                });
+                finalObj[cat] = catArr;
+            }
+        }
+        
+        finalObj["All"].sort((a, b) => a.title.localeCompare(b.title));
 
         return finalObj;
     };
