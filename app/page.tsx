@@ -284,7 +284,7 @@ export default function Home() {
         setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
     };
 
-    // 🌟 100% STRICT MAPPING & SORTING LOGIC 🌟
+    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ፣ ማጣሪያ እና ሎጂክ (STRICT MAPPING & DEDUPLICATION) 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game?.raw_markets || [];
         const marketsObj: Record<string, any[]> = {
@@ -295,10 +295,9 @@ export default function Home() {
 
         const sortOutcomes = (oddsArray: any[], marketTitle: string) => {
             return oddsArray.sort((a, b) => {
-                const optA = String(a.option || '');
-                const optB = String(b.option || '');
+                const optA = String(a.option || '').toLowerCase();
+                const optB = String(b.option || '').toLowerCase();
                 
-                // Halftime/Fulltime Custom Sorting
                 if (marketTitle === 'Halftime/Fulltime') {
                     const htftOrder = ['1/1', '1/X', '1/2', 'X/1', 'X/X', 'X/2', '2/1', '2/X', '2/2'];
                     const idxA = htftOrder.indexOf(optA.toUpperCase());
@@ -306,7 +305,6 @@ export default function Home() {
                     return (idxA !== -1 ? idxA : 99) - (idxB !== -1 ? idxB : 99);
                 }
                 
-                // Correct Score Custom Sorting
                 if (marketTitle === 'Correct score') {
                     const [aH, aA] = optA.split(':').map(Number);
                     const [bH, bA] = optB.split(':').map(Number);
@@ -314,7 +312,6 @@ export default function Home() {
                     return aA - bA;
                 }
                 
-                // Highest Scoring Half Custom Sorting
                 if (marketTitle === 'Highest scoring half') {
                     const hsOrder = ['1st half', '2nd half', 'equal'];
                     const idxA = hsOrder.indexOf(optA.toLowerCase());
@@ -322,12 +319,10 @@ export default function Home() {
                     return (idxA !== -1 ? idxA : 99) - (idxB !== -1 ? idxB : 99);
                 }
 
-                // General Numeric Sorting
                 const numA = parseFloat(optA.match(/-?\d+(\.\d+)?/)?.[0] || "NaN");
                 const numB = parseFloat(optB.match(/-?\d+(\.\d+)?/)?.[0] || "NaN");
                 if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB;
                 
-                // General Over/Under & Yes/No Sorting
                 const strA = optA.toLowerCase();
                 const strB = optB.toLowerCase();
                 if (strA.includes('over') && strB.includes('under')) return -1;
@@ -335,7 +330,6 @@ export default function Home() {
                 if (strA === 'yes' && strB === 'no') return -1;
                 if (strA === 'no' && strB === 'yes') return 1;
                 
-                // General 1X2 & DC Sorting
                 const sortOrder: Record<string, number> = { '1': 1, 'x': 2, '2': 3, '1x': 4, '12': 5, 'x2': 6 };
                 const keyA = strA.trim();
                 const keyB = strB.trim();
@@ -401,13 +395,12 @@ export default function Home() {
                 else if (mId === 8 || titleLower === 'both teams to score' || titleLower === 'both teams score') title = "Both teams to score";
                 else if (mId === 12 || titleLower === 'double chance') title = "Double chance";
                 else if (mId === 5 || titleLower === 'goals over/under' || titleLower === 'over/under') title = "Over/Under";
-                else if (mId === 17 || titleLower === 'halftime/fulltime') title = "Halftime/Fulltime";
+                else if (mId === 17 || titleLower === 'halftime/fulltime' || titleLower.includes('halftime/fulltime')) title = "Halftime/Fulltime";
                 else if (mId === 24 || titleLower === 'odd/even') title = "Odd/even";
                 else if (mId === 21 || titleLower === 'draw no bet') title = "Draw no bet";
                 else if (mId === 40 || titleLower === 'highest scoring half') title = "Highest scoring half";
                 else if (mId === 10 || titleLower === 'correct score') title = "Correct score";
 
-                // Map format specific for Main Markets
                 outcomes = outcomes.map((o: any) => {
                     let n = o.option;
                     const l = n.toLowerCase();
@@ -440,7 +433,6 @@ export default function Home() {
                     return { ...o, option: n };
                 });
 
-                // STRICT FILTERING
                 if (title === "3 Way") outcomes = outcomes.filter((o: any) => ['1', 'X', '2'].includes(o.option.toUpperCase()));
                 else if (title === "Both teams to score") outcomes = outcomes.filter((o: any) => ['yes', 'no'].includes(o.option.toLowerCase()));
                 else if (title === "Double chance") outcomes = outcomes.filter((o: any) => ['1X', '12', 'X2'].includes(o.option.toUpperCase()));
@@ -451,8 +443,31 @@ export default function Home() {
                 else if (title === "Halftime/Fulltime") outcomes = outcomes.filter((o: any) => /^[1X2]\/[1X2]$/.test(o.option.toUpperCase()));
                 else if (title === "Correct score") outcomes = outcomes.filter((o: any) => /^\d+:\d+$/.test(o.option));
             } 
+            // 🌟 STRICT TOTAL MARKET LOCKING 🌟
+            else if (mId === 11 || titleLower.includes('exact goals') || titleLower.includes('goal range') || titleLower.includes('goals range') || titleLower.includes('corner range') || titleLower.includes('over/under corners') || titleLower.includes('corners over/under') || (titleLower.includes('1st half') && titleLower.includes('over/under') && !titleLower.includes('corners') && !titleLower.includes('&'))) {
+                category = "Total";
+                
+                if(mId === 11 || titleLower.includes('exact goals')) title = "Exact goals";
+                else if(titleLower.includes('goal range') || titleLower.includes('goals range')) title = "Goal range";
+                else if(titleLower.includes('corner range')) title = "Corner range";
+                else if(titleLower.includes('over/under corners') || titleLower.includes('corners over/under')) title = "Over/Under corners";
+                else if(titleLower.includes('1st half') && titleLower.includes('over/under')) title = "1st half - Over/Under";
+
+                // 🔒 Lock Outcomes strictly for Total Market based on User Input
+                if (title === "1st half - Over/Under") {
+                    outcomes = outcomes.filter((o: any) => ['over 0.5', 'under 0.5', 'over 1.5', 'under 1.5', 'over 2.5', 'under 2.5'].includes(o.option.toLowerCase()));
+                } else if (title === "Exact goals") {
+                    outcomes = outcomes.filter((o: any) => ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9+'].includes(o.option.toLowerCase()));
+                } else if (title === "Goal range") {
+                    outcomes = outcomes.filter((o: any) => ['0-1', '2-3', '4-6', '7+'].includes(o.option.toLowerCase()));
+                } else if (title === "Corner range") {
+                    outcomes = outcomes.filter((o: any) => ['0-8', '9-11', '12+'].includes(o.option.toLowerCase()));
+                } else if (title === "Over/Under corners") {
+                    outcomes = outcomes.filter((o: any) => ['over 7.5', 'under 7.5', 'over 8.5', 'under 8.5', 'over 9.5', 'under 9.5', 'over 10.5', 'under 10.5', 'over 11.5', 'under 11.5'].includes(o.option.toLowerCase()));
+                }
+            }
             else {
-                if (titleLower.includes('&') || titleLower.includes(' and ') || titleLower.includes('+') || titleLower.includes('10 minutes') || titleLower.includes('scorer') || titleLower.includes('last goal') || titleLower.includes('last corner') || (titleLower.includes('corner 1x2') && !titleLower.includes('half')) || titleLower.includes('which team to score') || (titleLower.includes('odd/even corners') && !titleLower.includes('half')) || (titleLower.includes('corner range') && (titleLower.includes((game.home_team || '').toLowerCase()) || titleLower.includes((game.away_team || '').toLowerCase())))) {
+                if (titleLower.includes('&') || titleLower.includes(' and ') || titleLower.includes('+') || titleLower.includes('10 minutes') || titleLower.includes('scorer') || titleLower.includes('last goal') || titleLower.includes('last corner') || (titleLower.includes('corner 1x2') && !titleLower.includes('half')) || titleLower.includes('which team to score') || (titleLower.includes('odd/even corners') && !titleLower.includes('half'))) {
                     category = "Combination";
                 }
                 else if (titleLower.includes('handicap') || titleLower.includes('asian')) {
@@ -461,14 +476,10 @@ export default function Home() {
                 else if ((titleLower.includes('half') || titleLower.includes('ht') || titleLower.includes('1st') || titleLower.includes('2nd') || titleLower.includes('halves')) && !titleLower.includes('halftime/fulltime')) {
                     category = "Half";
                 }
-                else if (mId === 11 || titleLower.includes('exact goals') || titleLower.includes('goal range') || titleLower.includes('goals range') || titleLower.includes('corner range') || titleLower.includes('over/under corners') || titleLower.includes('corners over/under')) {
-                    category = "Total";
-                }
             }
 
             if (category === "All" || outcomes.length === 0) return;
 
-            // 🌟 የተደገሙ አማራጮችን በአንድ Market ውስጥ ማጥራት 🌟
             const uniqueOutcomes: any[] = [];
             const seenOptions = new Set();
             outcomes.forEach((o: any) => {
@@ -524,6 +535,18 @@ export default function Home() {
             marketsObj["Main Market"].sort((a, b) => {
                 const idxA = mainOrder.indexOf(a.title);
                 const idxB = mainOrder.indexOf(b.title);
+                return (idxA !== -1 ? idxA : 99) - (idxB !== -1 ? idxB : 99);
+            });
+        }
+        
+        // 🌟 የ Total Market ክፍሎችን በሰጠኸኝ ቅደም-ተከተል መሰረት ማሰለፍ 🌟
+        if (marketsObj["Total"].length > 0) {
+            const totalOrder = [
+                "1st half - Over/Under", "Exact goals", "Goal range", "Corner range", "Over/Under corners"
+            ];
+            marketsObj["Total"].sort((a, b) => {
+                const idxA = totalOrder.indexOf(a.title);
+                const idxB = totalOrder.indexOf(b.title);
                 return (idxA !== -1 ? idxA : 99) - (idxB !== -1 ? idxB : 99);
             });
         }
