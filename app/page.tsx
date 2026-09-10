@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { io } from 'socket.io-client'; // 🌟 Socket.io ገብቷል
 import AuthModal from './components/AuthModal';
 
 const MAX_STAKE = 10000;
@@ -52,7 +51,6 @@ export default function Home() {
     const [selectedCountryFilter, setSelectedCountryFilter] = useState<string>('All Countries');
 
     const [acceptOddsChange, setAcceptOddsChange] = useState<boolean>(true);
-    const [flashingOdds, setFlashingOdds] = useState<Record<string, 'up' | 'down'>>({}); // 🌟 የቀይ እና አረንጓዴ መቆጣጠሪያ 🌟
 
     const today = new Date();
     const todayStr = today.toDateString();
@@ -93,103 +91,53 @@ export default function Home() {
         }
     }, []);
 
-    // 🌟 API Formatting Logic Function 🌟
-    const formatFixturesData = (data: any[]) => {
-        return data.map((game: any) => {
-            let parsedOdds = [];
-            let rawMarkets = [];
-            try {
-                const bookmakers = typeof game.odds_data === 'string' ? JSON.parse(game.odds_data) : game.odds_data;
-                rawMarkets = bookmakers[0]?.markets || [];
-                
-                const h2h = rawMarkets.find((m: any) => {
-                    const title = (m?.title || m?.name || '').toLowerCase();
-                    return m.id === 1 || m?.key === 'h2h' || title === 'match winner' || title === '3 way' || title.includes('result') || title.includes('match betting');
-                });
-
-                const odd1 = h2h?.outcomes?.find((o: any) => o?.name === game.home_team || o?.name === 'Home' || o?.name === '1')?.price || 0;
-                const oddX = h2h?.outcomes?.find((o: any) => o?.name === 'Draw' || o?.name === 'X')?.price || 0;
-                const odd2 = h2h?.outcomes?.find((o: any) => o?.name === game.away_team || o?.name === 'Away' || o?.name === '2')?.price || 0;
-
-                parsedOdds = [
-                    { odd_id: `1_${game.id}`, option: "1", value: odd1 ? parseFloat(odd1).toFixed(2) : "0.00" },
-                    { odd_id: `x_${game.id}`, option: "X", value: oddX ? parseFloat(oddX).toFixed(2) : "0.00" },
-                    { odd_id: `2_${game.id}`, option: "2", value: odd2 ? parseFloat(odd2).toFixed(2) : "0.00" }
-                ];
-            } catch (e) {
-                parsedOdds = [{ odd_id: `1_${game.id}`, option: "1", value: "0.00" }, { odd_id: `x_${game.id}`, option: "X", value: "0.00" }, { odd_id: `2_${game.id}`, option: "2", value: "0.00" }];
-            }
-
-            return {
-                id: game.id,
-                home_team: game.home_team || "Home",
-                away_team: game.away_team || "Away",
-                match_time: game.commence_time,
-                league: game.sport_key || "World|Soccer|https://media.api-sports.io/flags/un.svg",
-                league_flag: game.league_logo, 
-                odds: parsedOdds,
-                raw_markets: rawMarkets 
-            };
-        });
-    };
-
-    // 🌟 Fetch Initial Fixtures & Setup WebSockets 🌟
     useEffect(() => {
         setIsFetchingFixtures(true);
         axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/matches/list`)
             .then(res => {
-                if (res.data.success) setFixtures(formatFixturesData(res.data.data));
+                if (res.data.success) {
+                    const formatted = res.data.data.map((game: any) => {
+                        let parsedOdds = [];
+                        let rawMarkets = [];
+                        try {
+                            const bookmakers = typeof game.odds_data === 'string' ? JSON.parse(game.odds_data) : game.odds_data;
+                            rawMarkets = bookmakers[0]?.markets || [];
+                            
+                            const h2h = rawMarkets.find((m: any) => {
+                                const title = (m?.title || m?.name || '').toLowerCase();
+                                return m.id === 1 || m?.key === 'h2h' || title === 'match winner' || title === '3 way' || title.includes('result') || title.includes('match betting');
+                            });
+
+                            const odd1 = h2h?.outcomes?.find((o: any) => o?.name === game.home_team || o?.name === 'Home' || o?.name === '1')?.price || 0;
+                            const oddX = h2h?.outcomes?.find((o: any) => o?.name === 'Draw' || o?.name === 'X')?.price || 0;
+                            const odd2 = h2h?.outcomes?.find((o: any) => o?.name === game.away_team || o?.name === 'Away' || o?.name === '2')?.price || 0;
+
+                            parsedOdds = [
+                                { odd_id: `1_${game.id}`, option: "1", value: odd1 ? parseFloat(odd1).toFixed(2) : "0.00" },
+                                { odd_id: `x_${game.id}`, option: "X", value: oddX ? parseFloat(oddX).toFixed(2) : "0.00" },
+                                { odd_id: `2_${game.id}`, option: "2", value: odd2 ? parseFloat(odd2).toFixed(2) : "0.00" }
+                            ];
+                        } catch (e) {
+                            parsedOdds = [{ odd_id: `1_${game.id}`, option: "1", value: "0.00" }, { odd_id: `x_${game.id}`, option: "X", value: "0.00" }, { odd_id: `2_${game.id}`, option: "2", value: "0.00" }];
+                        }
+
+                        return {
+                            id: game.id,
+                            home_team: game.home_team || "Home",
+                            away_team: game.away_team || "Away",
+                            match_time: game.commence_time,
+                            league: game.sport_key || "World|Soccer|https://media.api-sports.io/flags/un.svg",
+                            league_flag: game.league_logo, 
+                            odds: parsedOdds,
+                            raw_markets: rawMarkets 
+                        };
+                    });
+                    
+                    setFixtures(formatted);
+                }
             })
             .catch(err => console.error("ዳታ ማምጣት አልተቻለም:", err))
             .finally(() => setIsFetchingFixtures(false));
-
-        // 🔥 WebSocket Connection 🔥
-        const socket = io(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000', { transports: ['websocket'] });
-        
-        socket.on('odds_updated', (newData) => {
-            if (newData && Array.isArray(newData)) {
-                const formattedNew = formatFixturesData(newData);
-                
-                setFixtures(prev => {
-                    const changes: Record<string, 'up' | 'down'> = {};
-                    
-                    // 🌟 Compare new odds with old odds 🌟
-                    formattedNew.forEach(newGame => {
-                        const oldGame = prev.find(g => g.id === newGame.id);
-                        if (oldGame) {
-                            newGame.raw_markets.forEach((newMkt: any) => {
-                                const oldMkt = oldGame.raw_markets.find((m: any) => m.id === newMkt.id && m.key === newMkt.key);
-                                if (oldMkt && newMkt.outcomes) {
-                                    newMkt.outcomes.forEach((newOpt: any, idx: number) => {
-                                        const oldOpt = oldMkt.outcomes[idx];
-                                        if (oldOpt && oldOpt.name === newOpt.name) {
-                                            const nP = parseFloat(newOpt.price || newOpt.odd || "0");
-                                            const oP = parseFloat(oldOpt.price || oldOpt.odd || "0");
-                                            
-                                            if (nP !== oP && nP > 0) {
-                                                const oddId = `${newMkt.key || 'unk'}_${String(newOpt.name || '').replace(/[^a-zA-Z0-9]/g, '_')}_${newGame.id}_${idx}`;
-                                                if (nP > oP) changes[oddId] = 'up';
-                                                else if (nP < oP) changes[oddId] = 'down';
-                                            }
-                                        }
-                                    });
-                                }
-                            });
-                        }
-                    });
-
-                    // 🌟 አዲስ ኦድ ለውጥ ከተገኘ አኒሜሽኑን አስነሳው 🌟
-                    if (Object.keys(changes).length > 0) {
-                        setFlashingOdds(changes);
-                        setTimeout(() => setFlashingOdds({}), 4000); // አረንጓዴ/ቀዩ ከ4 ሰከንድ በኋላ ይጠፋል
-                    }
-
-                    return formattedNew;
-                });
-            }
-        });
-
-        return () => { socket.disconnect(); };
     }, []);
 
     const toggleSelection = (game: any, odd: any) => {
@@ -336,7 +284,7 @@ export default function Home() {
         setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
     };
 
-    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ 🌟
+    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ፣ ማጣሪያ እና ሎጂክ (STRICT MAPPING & DEDUPLICATION) 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game?.raw_markets || [];
         const marketsObj: Record<string, any[]> = {
@@ -426,22 +374,19 @@ export default function Home() {
             const titleLower = title.toLowerCase();
             const mId = market.id;
 
+            // 1. 🌟 COMBINATION MARKET 🌟
             if (isComboBttsOU) {
                 category = "Combination";
                 title = "Over/Under & both teams to score";
             }
-            // --- COMBINATION MARKET ---
             else if (titleLower.includes('&') || titleLower.includes(' and ') || titleLower.includes('+') || titleLower.includes('10 minutes') || titleLower.includes('scorer') || titleLower.includes('last goal') || titleLower.includes('last corner') || (titleLower.includes('corner 1x2') && !titleLower.includes('half')) || titleLower.includes('which team to score') || (titleLower.includes('odd/even corners') && !titleLower.includes('half')) || (titleLower.includes('corner range') && (titleLower.includes((game.home_team || '').toLowerCase()) || titleLower.includes((game.away_team || '').toLowerCase())))) {
                 category = "Combination";
                 if(titleLower.includes('corner range')) title = `${game.home_team} corner range`;
                 if(titleLower.includes('3 way') && titleLower.includes('over/under')) title = "3 Way & Over/Under";
                 if(titleLower.includes('3 way') && titleLower.includes('both teams')) title = "3 Way & both teams to score";
             }
-            // --- HANDICAP MARKET ---
-            else if (titleLower.includes('handicap') || titleLower.includes('asian')) {
-                category = "Handicap";
-            }
-            // 🌟 STRICT TOTAL MARKET LOCKING 🌟
+            
+            // 2. 🌟 STRICT TOTAL MARKET LOCKING 🌟
             else if (
                 mId === 11 || titleLower.includes('exact goals') || 
                 titleLower === 'goal range' || titleLower === 'goals range' || 
@@ -457,8 +402,9 @@ export default function Home() {
                 else if (titleLower.includes('over/under corners') || titleLower.includes('corners over/under')) title = "Over/Under corners";
                 else if ((titleLower.includes('1st half') || titleLower.includes('first half')) && titleLower.includes('over/under')) title = "1st half - Over/Under";
 
+                // 🔒 Lock Outcomes strictly for Total Market
                 outcomes = outcomes.filter((o: any) => {
-                    const optTrim = o.option.replace(/\s+/g, '').toLowerCase(); 
+                    const optTrim = o.option.replace(/\s+/g, '').toLowerCase(); // ክፍተት (spaces) በማጥፋት በጥብቅ ማጣራት
                     if (title === "1st half - Over/Under") return optTrim.includes('over') || optTrim.includes('under');
                     if (title === "Exact goals") return /^\d+$/.test(optTrim) || optTrim.includes('+') || optTrim.includes('more');
                     if (title === "Goal range") return optTrim.includes('-') || optTrim.includes('+');
@@ -467,16 +413,13 @@ export default function Home() {
                     return true;
                 });
             }
-            // --- HALF MARKET ---
-            else if ((titleLower.includes('half') || titleLower.includes('ht') || titleLower.includes('1st') || titleLower.includes('2nd') || titleLower.includes('halves')) && !titleLower.includes('halftime/fulltime')) {
-                if (titleLower === 'highest scoring half') {
-                    category = "Main Market"; title = "Highest scoring half";
-                } else {
-                    category = "Half";
-                    title = title.replace(/first half/i, '1st Half').replace(/second half/i, '2nd Half').replace(/match winner/i, '3 Way');
-                }
+
+            // 3. 🌟 HANDICAP MARKET 🌟
+            else if (titleLower.includes('handicap') || titleLower.includes('asian')) {
+                category = "Handicap";
             }
-            // --- STRICT MAIN MARKET LOCKING ---
+
+            // 4. 🌟 STRICT MAIN MARKET LOCKING 🌟
             else if (
                 mId === 1 || mId === 8 || mId === 12 || mId === 5 || mId === 17 || mId === 24 || mId === 21 || mId === 40 || mId === 10 || 
                 titleLower === 'match winner' || titleLower === '1x2' || titleLower === '3 way' || 
@@ -529,6 +472,7 @@ export default function Home() {
                     return { ...o, option: n };
                 });
 
+                // 🔒 Lock Outcomes strictly for Main Market
                 if (title === "3 Way") outcomes = outcomes.filter((o: any) => ['1', 'X', '2'].includes(o.option.toUpperCase()));
                 else if (title === "Both teams to score") outcomes = outcomes.filter((o: any) => ['yes', 'no'].includes(o.option.toLowerCase()));
                 else if (title === "Double chance") outcomes = outcomes.filter((o: any) => ['1X', '12', 'X2'].includes(o.option.toUpperCase()));
@@ -539,9 +483,15 @@ export default function Home() {
                 else if (title === "Halftime/Fulltime") outcomes = outcomes.filter((o: any) => /^[1X2]\/[1X2]$/.test(o.option.toUpperCase()));
                 else if (title === "Correct score") outcomes = outcomes.filter((o: any) => /^\d+:\d+$/.test(o.option));
             }
+            // 5. 🌟 HALF MARKET 🌟
+            else if ((titleLower.includes('half') || titleLower.includes('ht') || titleLower.includes('1st') || titleLower.includes('2nd') || titleLower.includes('halves')) && !titleLower.includes('halftime/fulltime')) {
+                category = "Half";
+                title = title.replace(/first half/i, '1st Half').replace(/second half/i, '2nd Half').replace(/match winner/i, '3 Way');
+            }
 
             if (category === "All" || outcomes.length === 0) return;
 
+            // 🌟 የተደገሙ አማራጮችን በአንድ Market ውስጥ ማጥራት 🌟
             const uniqueOutcomes: any[] = [];
             const seenOptions = new Set();
             outcomes.forEach((o: any) => {
@@ -588,6 +538,7 @@ export default function Home() {
             }
         });
 
+        // 🌟 የ Main Market ክፍሎችን በሰጠኸኝ ቅደም-ተከተል መሰረት ማሰለፍ 🌟
         if (marketsObj["Main Market"].length > 0) {
             const mainOrder = [
                 "3 Way", "Both teams to score", "Double chance", "Over/Under",
@@ -600,6 +551,7 @@ export default function Home() {
             });
         }
 
+        // 🌟 የ Total Market ክፍሎችን በሰጠኸኝ ቅደም-ተከተል መሰረት ማሰለፍ 🌟
         if (marketsObj["Total"].length > 0) {
             const totalOrder = [
                 "1st half - Over/Under", "Exact goals", "Goal range", "Corner range", "Over/Under corners"
@@ -871,14 +823,6 @@ export default function Home() {
                                             <div className="max-w-5xl mx-auto w-full bg-[#485058] border border-[#3a4148] rounded-md overflow-hidden shadow-md">
                                                 {displayMarkets.map((market: any, mIdx: number) => {
                                                     const isOpen = openAccordions.includes(market.title);
-                                                    let customClass = `grid gap-2 `;
-                                                    if (market.cols === 4) customClass += 'grid-cols-2 md:grid-cols-4';
-                                                    else if (market.cols === 3) customClass += 'grid-cols-1 md:grid-cols-3';
-                                                    else if (market.cols === 1) customClass += 'grid-cols-1';
-                                                    else customClass += 'grid-cols-1 md:grid-cols-2';
-                                                    
-                                                    const isOverUnderType = market.title.toLowerCase().includes('over/under') || market.title.toLowerCase().includes('goals');
-
                                                     return (
                                                         <div key={`${marketTab}-${mIdx}`} className="border-b border-[#3a4148] last:border-b-0 w-full">
                                                             <button onClick={() => toggleAccordion(market.title)} className="w-full flex items-center justify-between p-3.5 hover:bg-[#525b65] transition-colors">
@@ -892,12 +836,11 @@ export default function Home() {
                                                             
                                                             {isOpen && (
                                                                 <div className="p-3 bg-[#1e2328] border-t border-[#3a4148]">
-                                                                    <div className={customClass}>
+                                                                    <div className={`grid gap-2 ${market.cols === 4 ? 'grid-cols-2 md:grid-cols-4' : market.cols === 3 ? 'grid-cols-1 md:grid-cols-3' : market.cols === 1 ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
                                                                         {market.odds.map((odd: any) => {
                                                                             const isSelected = betSlip.some((item: any) => item.odd_id === odd.odd_id);
-                                                                            const oddClass = isOverUnderType ? 'flex justify-between items-center px-3 py-2.5 rounded-sm transition-colors border' : 'flex justify-between items-center px-3 py-2.5 rounded-sm transition-colors border';
                                                                             return (
-                                                                                <button key={odd.odd_id} onClick={() => handleMarketSelection(selectedMatch, odd)} className={`${oddClass} ${isSelected ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow' : 'bg-[#1a1f24] border-[#3b4148] hover:border-[#ffcc00]'}`}>
+                                                                                <button key={odd.odd_id} onClick={() => handleMarketSelection(selectedMatch, odd)} className={`flex justify-between items-center px-3 py-2.5 rounded-sm transition-colors border ${isSelected ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow' : 'bg-[#1a1f24] border-[#3b4148] hover:border-[#ffcc00]'}`}>
                                                                                     <span className={`text-[11px] ${isSelected ? 'text-black font-bold' : 'text-slate-300'}`}>{odd.option}</span>
                                                                                     <span className={`text-[12px] font-black ${isSelected ? 'text-black' : 'text-[#ffcc00]'}`}>{odd.value}</span>
                                                                                 </button>
@@ -1020,8 +963,7 @@ export default function Home() {
                                                             const btn2 = currentDisplayOdds[2] || { odd_id: `2_null_${game.id}`, option: "2", value: "0.00" };
                                                             const hasSelectionInGame = betSlip.some((item: any) => item.fixture_id === game.id);
 
-                                                            let totalMarketsCount = 0;
-                                                            Object.values(categorizedMarkets).forEach(cat => totalMarketsCount += cat.length);
+                                                            const totalMarketsCount = categorizedMarkets["All"] ? categorizedMarkets["All"].length : 0;
 
                                                             return (
                                                                 <div key={game.id} className="flex flex-col border-b border-[#2a3038] last:border-b-0 hover:bg-[#24292e] transition-colors">
