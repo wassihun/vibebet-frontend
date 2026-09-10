@@ -28,7 +28,7 @@ export default function CashierDashboard() {
 
     const [recentTickets, setRecentTickets] = useState<any[]>([]);
     const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
-    const [receiptHtml, setReceiptHtml] = useState<string>(''); // 🌟 ለፕሪንት ፕሪቪው የተጨመረ ስቴት
+    const [receiptHtml, setReceiptHtml] = useState<string>(''); 
     
     const [cancelTimer, setCancelTimer] = useState<number | null>(null);
 
@@ -115,9 +115,11 @@ export default function CashierDashboard() {
             } else if (e.key === 'F2') {
                 e.preventDefault();
                 if (activeTab === 'new' && ticketData && !isPrintModalOpen) {
-                    openPrintModal();
-                } else if (isPrintModalOpen && ticketData && !ticketData.ticket_number) {
-                    handleSubmitAndPrint();
+                    if (!ticketData.ticket_number) {
+                        handleConfirmTicket(); // ገና ካልተቆረጠ አረጋግጥ
+                    } else {
+                        handleCustomPrint(ticketData); // ከተቆረጠ ፕሪንት አድርግ
+                    }
                 } else if (activeTab === 'check' && payoutDetails) {
                     if (displayStatus === 'won') {
                         handleConfirmPayout();
@@ -243,7 +245,7 @@ export default function CashierDashboard() {
 
     const openPrintModal = () => { setIsPrintModalOpen(true); };
 
-    // 🌟 ማስተካከያ 2: አዲሱ እና ትክክለኛው የፕሪንት ዲዛይን አመነጫጨት 🌟
+    // 🌟 አዲሱ እና ጥብቅ (Compact) የሆነው የፕሪንት ዲዛይን 🌟
     const handleCustomPrint = (ticketDetails: any) => {
         const htmlContent = `
             <!DOCTYPE html>
@@ -254,7 +256,7 @@ export default function CashierDashboard() {
                     @page { margin: 0; size: 72mm auto; }
                     body { 
                         margin: 0; 
-                        padding: 0mm 2mm 2mm 2mm; 
+                        padding: 0; 
                         font-family: Arial, Helvetica, sans-serif; 
                         color: #000; 
                         width: 72mm; 
@@ -264,41 +266,47 @@ export default function CashierDashboard() {
                     * {
                         font-weight: 900 !important; 
                         font-size: 11px;
-                        line-height: 1.15;
+                        line-height: 1.1;
                         color: #000 !important;
                     }
-                    .text-center { text-align: center; }
-                    .flex-between { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2px; }
-                    h1 { font-size: 20px; margin: 2px 0 1px 0; letter-spacing: 0.5px; }
-                    .small-text { font-size: 9px; margin-bottom: 1px; font-weight: normal !important;}
                 </style>
             </head>
             <body>
-                <div class="text-center" style="margin-bottom: 4px;">
-                    <h1>VIBE BET</h1>
-                    <div class="small-text">SPORTS BETTING</div>
-                    <div class="small-text">${new Date().toLocaleString('en-GB')}</div>
+                <div style="text-align: center; margin-bottom: 2px;">
+                    <h1 style="font-size: 18px; margin: 0;">VIBE BET</h1>
+                    <div style="font-size: 9px; font-weight: normal !important;">SPORTS BETTING</div>
+                    <div style="font-size: 9px; font-weight: normal !important;">${new Date().toLocaleString('en-GB')}</div>
                 </div>
                 
-                <div style="border-top: 1px dashed #000; margin: 4px 0;"></div>
-                <div class="flex-between"><span>TKT:</span><span>${ticketDetails.ticket_number || 'PENDING'}</span></div>
-                <div class="flex-between"><span>BOOK:</span><span>${ticketDetails.booking_code === 'REBOOK' ? 'REBOOK' : ticketDetails.booking_code}</span></div>
-                <div class="flex-between"><span>CASHIER:</span><span style="text-transform: uppercase;">${username}</span></div>
+                <div style="border-top: 1px dashed #000; margin: 2px 0;"></div>
+                <div style="display: flex; justify-content: space-between; font-size: 11px;"><span>TKT:</span><span>${ticketDetails.ticket_number || 'PENDING'}</span></div>
+                <div style="display: flex; justify-content: space-between; font-size: 11px;"><span>BOOK:</span><span>${ticketDetails.booking_code === 'REBOOK' ? 'REBOOK' : ticketDetails.booking_code}</span></div>
+                <div style="display: flex; justify-content: space-between; font-size: 11px;"><span>CASHIER:</span><span style="text-transform: uppercase;">${username}</span></div>
                 
-                <div style="border-top: 1.5px solid #000; margin-top: 5px;"></div>
+                <div style="border-top: 1px solid #000; margin: 3px 0;"></div>
 
                 ${ticketDetails.selections.map((item: any, index: number) => {
                     const matchDetails = fixtures.find((f: any) => f.id === item.fixture_id);
-                    let lName = "Soccer";
+                    let countryName = "World";
+                    let leagueName = "Soccer";
                     let mTimeRaw = new Date();
                     
                     if (matchDetails) {
-                        lName = getLeagueDetails(matchDetails.sport_key || matchDetails.league).name;
+                        const parts = (matchDetails.sport_key || matchDetails.league)?.split('|');
+                        if (parts && parts.length >= 2) {
+                            countryName = parts[0];
+                            leagueName = parts[1];
+                        } else {
+                            leagueName = matchDetails.sport_key || matchDetails.league;
+                        }
                         mTimeRaw = new Date(matchDetails.commence_time || matchDetails.match_time);
                     } else if (item.match_time || item.commence_time) {
                         mTimeRaw = new Date(item.match_time || item.commence_time);
-                        lName = item.league_name || "Soccer";
+                        countryName = "";
+                        leagueName = item.league_name || "Soccer";
                     }
+                    
+                    const cleanLeague = countryName ? \`\${countryName} - \${leagueName}\`.replace(/Soccer /gi, '').trim() : leagueName;
                     
                     const pad = (n: number) => n < 10 ? '0' + n : n;
                     const dStr = `${pad(mTimeRaw.getDate())}/${pad(mTimeRaw.getMonth() + 1)}/${String(mTimeRaw.getFullYear()).slice(-2)} ${pad(mTimeRaw.getHours())}:${pad(mTimeRaw.getMinutes())}`;
@@ -328,41 +336,41 @@ export default function CashierDashboard() {
                     }
 
                     return `
-                    <div style="${index > 0 ? 'border-top: 1.5px solid #000;' : ''} padding: 3px 0;">
-                        <div style="font-size: 11.5px !important; font-weight: 900 !important; text-align: left; line-height: 1.2;">${teamStr}</div>
-                        <div style="display: flex; justify-content: space-between; font-size: 10px !important; line-height: 1.2; margin-top: 1px;">
-                            <span style="font-weight: normal !important; text-transform: capitalize; width: 65%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Football / ${lName.replace('Soccer', 'World').replace('Soccer / ', '')}</span>
+                    <div style="${index > 0 ? 'border-top: 1px solid #000;' : ''} padding: 1.5px 0; margin: 0;">
+                        <div style="font-size: 11px !important; font-weight: 900 !important; text-align: left; line-height: 1.1;">${teamStr}</div>
+                        <div style="display: flex; justify-content: space-between; font-size: 9.5px !important; line-height: 1.1; margin-top: 1px;">
+                            <span style="font-weight: normal !important; text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 65%;">${cleanLeague}</span>
                             <span style="font-weight: normal !important;">${dStr}</span>
                         </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 11px !important; font-weight: 900 !important; line-height: 1.2; margin-top: 2px;">
-                            <span style="width: 45%; text-align: left;">${marketText}</span>
-                            <span style="width: 35%; text-align: right; padding-right: 5px;">${pickText}</span>
+                        <div style="display: flex; justify-content: space-between; font-size: 11px !important; font-weight: 900 !important; line-height: 1.1; margin-top: 1px;">
+                            <span style="width: 45%; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${marketText}</span>
+                            <span style="width: 35%; text-align: right; padding-right: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${pickText}</span>
                             <span style="width: 20%; text-align: right;">Q: ${parseFloat(item.odd_value).toFixed(2)}</span>
                         </div>
                     </div>
                     `;
                 }).join('')}
 
-                <div style="border: 1.5px solid #000; display: flex; justify-content: space-between; padding: 4px 6px; margin-top: 3px; align-items: center;">
-                    <span style="font-size: 12px !important; font-weight: 900 !important;">NR EVENTS: ${ticketDetails.selections.length}</span>
-                    <span style="font-size: 12px !important; font-weight: 900 !important;">ODDS TOTAL: ${ticketDetails.total_odds}</span>
+                <div style="border: 1px solid #000; display: flex; justify-content: space-between; padding: 2px 4px; margin-top: 2px; align-items: center;">
+                    <span style="font-size: 11px !important; font-weight: 900 !important;">NR EVENTS: ${ticketDetails.selections.length}</span>
+                    <span style="font-size: 11px !important; font-weight: 900 !important;">ODDS TOTAL: ${ticketDetails.total_odds}</span>
                 </div>
 
-                <div class="flex-between" style="margin-top: 6px;"><span>STAKE:</span><span style="font-size: 13px !important;">${parseFloat(ticketDetails.stake_amount).toFixed(2)} Br</span></div>
-                <div class="flex-between"><span>FEE:</span><span style="font-size: 13px !important;">10.00 Br</span></div>
+                <div style="display: flex; justify-content: space-between; margin-top: 3px; font-size: 12px;"><span>STAKE:</span><span>${parseFloat(ticketDetails.stake_amount).toFixed(2)} Br</span></div>
+                <div style="display: flex; justify-content: space-between; font-size: 12px;"><span>FEE:</span><span>10.00 Br</span></div>
                 
-                <div class="flex-between" style="margin-top: 3px; border-top: 1px solid #000; padding-top: 2px;">
-                    <span style="font-size: 13px !important;">PAID:</span>
-                    <span style="font-size: 13px !important;">${(parseFloat(ticketDetails.stake_amount) + 10).toFixed(2)} Br</span>
+                <div style="display: flex; justify-content: space-between; border-top: 1px solid #000; margin-top: 2px; padding-top: 1px;">
+                    <span style="font-size: 12px !important;">PAID:</span>
+                    <span style="font-size: 12px !important;">${(parseFloat(ticketDetails.stake_amount) + 10).toFixed(2)} Br</span>
                 </div>
-                <div class="flex-between" style="margin-top: 2px; border-top: 1.5px solid #000; padding-top: 2px;">
-                    <span style="font-size: 16px !important;">MAX WIN:</span>
-                    <span style="font-size: 16px !important;">${parseFloat(ticketDetails.potential_win).toFixed(2)} Br</span>
+                <div style="display: flex; justify-content: space-between; border-top: 1px solid #000; margin-top: 2px; padding-top: 1px;">
+                    <span style="font-size: 14px !important; font-weight: 900 !important;">MAX WIN:</span>
+                    <span style="font-size: 14px !important; font-weight: 900 !important;">${parseFloat(ticketDetails.potential_win).toFixed(2)} Br</span>
                 </div>
 
-                <div class="text-center" style="margin-top: 8px; border-top: 1.5px dashed #000; padding-top: 4px;">
-                    <div class="small-text">Thanks for playing!</div>
-                    <div class="small-text">Valid for 24 hrs</div>
+                <div style="text-align: center; margin-top: 4px; border-top: 1px dashed #000; padding-top: 2px;">
+                    <div style="font-size: 9px; font-weight: normal !important;">Thanks for playing!</div>
+                    <div style="font-size: 9px; font-weight: normal !important;">Valid for 24 hrs</div>
                 </div>
             </body>
             </html>
@@ -371,7 +379,7 @@ export default function CashierDashboard() {
         setReceiptHtml(htmlContent);
         setIsPrintModalOpen(true);
 
-        // ፕሪቪው አይቶ ቀጥታ ፕሪንት (Silent Print Function)
+        // Silent Print
         setTimeout(() => {
             const printFrame = document.getElementById('receipt-preview-frame') as HTMLIFrameElement;
             if (printFrame && printFrame.contentWindow) {
@@ -388,7 +396,8 @@ export default function CashierDashboard() {
         }, 1000);
     };
 
-    const handleSubmitAndPrint = async () => {
+    // 🌟 አዲሱ አሰራር: Submit ብቻ ያደርጋል (አያትምም) 🌟
+    const handleConfirmTicket = async () => {
         const hasStarted = ticketData.selections.some((item: any) => item.commence_time && new Date(item.commence_time) < new Date());
         if (hasStarted) { alert("የጀመሩ ጨዋታዎች አሉ! እባክዎ ከትኬቱ ላይ ይቀንሱ።"); return; }
         if (ticketData.booking_code === 'REBOOK') {
@@ -433,8 +442,8 @@ export default function CashierDashboard() {
                     created_at: new Date().toISOString() 
                 };
                 
+                // ትኬት ተቆርጧል, Print በተን እንዲመጣ እናደርጋለን (handleCustomPrintን እዚህ አናስነሳም)
                 setTicketData(finalTicket);
-                handleCustomPrint(finalTicket);
             }
         } catch (error: any) { alert(error.response?.data?.message || "ክፍያ ማረጋገጥ አልተቻለም"); } 
         finally { setIsLoading(false); }
@@ -452,11 +461,9 @@ export default function CashierDashboard() {
         } finally { setIsPayingOut(false); }
     };
 
-    // 🌟 ማስተካከያ 1: የትኬት ቁጥር 8 ዲጂት ብቻ እንዲሆን ማጣራት (Strict Validation) 🌟
     const checkTicketDetails = (e: React.FormEvent) => {
         e.preventDefault();
         const code = payoutTicket.trim();
-        // ትኬት ቁጥር በቁጥር ብቻ የተዋቀረና 8 ዲጂት መሆኑን ያረጋግጣል
         if (!/^\d{8}$/.test(code)) {
             setMessage({ type: 'error', text: 'እባክዎ 8 ዲጂት ያለው የትኬት ቁጥር ብቻ ያስገቡ! (ቡኪንግ ኮድ አይሰራም)' });
             setPayoutDetails(null);
@@ -744,18 +751,23 @@ export default function CashierDashboard() {
                                         </div>
 
                                         <div className="shrink-0">
+                                            {/* 🌟 ማስተካከያ 1: Two-Step Submit & Print Flow 🌟 */}
                                             {!ticketData.ticket_number ? (
                                                 <button 
-                                                    onClick={handleSubmitAndPrint} 
+                                                    onClick={handleConfirmTicket} 
                                                     disabled={isLoading}
                                                     className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:text-gray-200 text-white font-black py-2.5 rounded text-sm transition transform active:scale-[0.98] tracking-widest flex items-center justify-center gap-2 shadow-md"
                                                 >
-                                                    {isLoading ? '...' : `አትም (SUBMIT & PRINT)`} <span className="text-[10px] bg-black/20 px-1.5 py-0.5 rounded ml-1">F2</span>
+                                                    {isLoading ? '...' : `አረጋግጥ (CONFIRM)`} <span className="text-[10px] bg-black/20 px-1.5 py-0.5 rounded ml-1">F2</span>
                                                 </button>
                                             ) : (
-                                                <div className="w-full bg-green-100 text-green-700 font-black text-sm py-2.5 rounded flex items-center justify-center gap-2 border border-green-300 animate-pulse">
-                                                    ✅ ትኬቱ እየታተመ ነው...
-                                                </div>
+                                                <button 
+                                                    onClick={() => handleCustomPrint(ticketData)} 
+                                                    disabled={isLoading}
+                                                    className="w-full bg-[#00e700] hover:bg-green-500 text-black font-black py-2.5 rounded text-sm transition transform active:scale-[0.98] tracking-widest flex items-center justify-center gap-2 shadow-md"
+                                                >
+                                                    🖨️ ፕሪንት (PRINT TICKET) <span className="text-[10px] bg-black/20 px-1.5 py-0.5 rounded ml-1">F2</span>
+                                                </button>
                                             )}
                                         </div>
                                     </div>
@@ -767,7 +779,6 @@ export default function CashierDashboard() {
                             <div className="bg-[#24292e] p-6 rounded-xl border border-[#3b4148] shadow-sm flex-1 flex flex-col">
                                 <h2 className="text-xl font-black text-white mb-5 flex items-center gap-2"><span>💰</span> ትኬት ማጣሪያ እና ክፍያ</h2>
                                 <form onSubmit={checkTicketDetails} className="flex gap-3 mb-6 shrink-0">
-                                    {/* 🌟 ማስተካከያ: 8 ዲጂት ብቻ እንዲያስገባ */}
                                     <input 
                                         type="text" value={payoutTicket} onChange={(e) => setPayoutTicket(e.target.value.trim().toUpperCase())}
                                         placeholder="የቲኬት ቁጥር (8 ዲጂት ብቻ)" 
@@ -961,7 +972,6 @@ export default function CashierDashboard() {
                 <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex justify-center items-center p-4 overflow-y-auto custom-scrollbar">
                     <div className="flex flex-col items-center w-[72mm] my-auto">
                         <div className="bg-white rounded shadow-2xl relative w-full mb-4 flex justify-center overflow-hidden" style={{ minHeight: '400px', maxHeight: '75vh' }}>
-                            {/* 🌟 ልክ በሚወጣው ወረቀት ልክ ትክክለኛው ዲዛይን (Preview) 🌟 */}
                             <iframe
                                 id="receipt-preview-frame"
                                 srcDoc={receiptHtml}
