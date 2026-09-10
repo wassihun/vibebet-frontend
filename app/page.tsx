@@ -61,16 +61,20 @@ export default function Home() {
     const dayAfterTmwLabel = dayAfterTmw.toLocaleDateString('en-US', { weekday: 'short' });
 
     const [selectedDateFilter, setSelectedDateFilter] = useState<string>('All');
+    
     const dateInputRef = useRef<HTMLInputElement>(null);
+
     const [isOnline, setIsOnline] = useState<boolean>(true);
 
     useEffect(() => {
         document.title = "vibebet.et";
+
         setIsOnline(navigator.onLine);
         const handleOnline = () => setIsOnline(true);
         const handleOffline = () => setIsOnline(false);
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
+        
         return () => {
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
@@ -98,6 +102,7 @@ export default function Home() {
                             const bookmakers = typeof game.odds_data === 'string' ? JSON.parse(game.odds_data) : game.odds_data;
                             rawMarkets = bookmakers[0]?.markets || [];
                             
+                            // 🌟 የውሸት ስሌቶችን (Mock Calculations) ሙሉ በሙሉ አጥፍተን እውነተኛውን ኦድ ብቻ እናነባለን 🌟
                             const h2h = rawMarkets.find((m: any) => {
                                 const title = (m?.title || '').toLowerCase();
                                 return m?.key === 'h2h' || title.includes('winner') || title.includes('result') || title.includes('match betting');
@@ -113,7 +118,11 @@ export default function Home() {
                                 { odd_id: `2_${game.id}`, option: "2", value: odd2 ? odd2.toFixed(2) : "0.00" }
                             ];
                         } catch (e) {
-                            parsedOdds = [{ odd_id: `1_${game.id}`, option: "1", value: "0.00" }, { odd_id: `x_${game.id}`, option: "X", value: "0.00" }, { odd_id: `2_${game.id}`, option: "2", value: "0.00" }];
+                            parsedOdds = [
+                                { odd_id: `1_${game.id}`, option: "1", value: "0.00" },
+                                { odd_id: `x_${game.id}`, option: "X", value: "0.00" },
+                                { odd_id: `2_${game.id}`, option: "2", value: "0.00" }
+                            ];
                         }
 
                         return {
@@ -122,6 +131,7 @@ export default function Home() {
                             away_team: game.away_team || "Away",
                             match_time: game.commence_time,
                             league: game.sport_key || "World|Soccer|https://media.api-sports.io/flags/un.svg",
+                            league_flag: game.league_logo, 
                             odds: parsedOdds,
                             raw_markets: rawMarkets 
                         };
@@ -140,13 +150,21 @@ export default function Home() {
         setErrorMessage(null);
         setBetSlip(prev => {
             const exists = prev.find(item => item.fixture_id === game.id);
-            if (exists && exists.odd_id === odd.odd_id) return prev.filter(item => item.fixture_id !== game.id);
+            if (exists && exists.odd_id === odd.odd_id) {
+                return prev.filter(item => item.fixture_id !== game.id);
+            }
             const newItem = {
-                fixture_id: game.id, home_team: game.home_team, away_team: game.away_team,
-                match_time: game.match_time, league_name: getLeagueDetails(game.league).name,
-                odd_id: odd.odd_id, odd_name: odd.option, odd_value: parseFloat(odd.value)
+                fixture_id: game.id,
+                home_team: game.home_team,
+                away_team: game.away_team,
+                match_time: game.match_time, 
+                league_name: getLeagueDetails(game.league, game.league_flag).name,
+                odd_id: odd.odd_id,
+                odd_name: odd.option,
+                odd_value: parseFloat(odd.value)
             };
-            return [...prev.filter(item => item.fixture_id !== game.id), newItem];
+            const filtered = prev.filter(item => item.fixture_id !== game.id);
+            return [...filtered, newItem];
         });
     };
 
@@ -167,18 +185,21 @@ export default function Home() {
 
     const handlePlaceBet = async () => {
         if (betSlip.length === 0 || stake < MIN_STAKE || limitWarning) return;
+        
         setIsLoading(true);
         try {
             const payload = {
-                stake_amount: stake, is_guest: !user,
+                stake_amount: stake,
+                is_guest: !user,
                 selections: betSlip.map(item => ({ fixture_id: item.fixture_id, odd_id: item.odd_id, odd_value: item.odd_value, match_info: `${item.home_team} vs ${item.away_team}`, odd_name: item.odd_name }))
             };
             const headers = user ? { Authorization: `Bearer ${token}` } : {};
             const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/place`, payload, { headers });
             
             if (response.data.success) {
-                if (!user) setBookingCode(response.data.data.booking_code);
-                else {
+                if (!user) {
+                    setBookingCode(response.data.data.booking_code);
+                } else {
                     alert(`ትኬትዎ በተሳካ ሁኔታ ተቆርጧል!`);
                     setUser({ ...user, current_balance: (user.current_balance || 0) - stake });
                     setBetSlip([]); 
@@ -186,7 +207,11 @@ export default function Home() {
                 setPlacedBetSignatures(prev => [...prev, currentBetSignature]);
                 if(window.innerWidth < 1024 && user) setIsMobileBetSlipOpen(false); 
             }
-        } catch (error: any) { setErrorMessage("ስህተት ተፈጥሯል"); } finally { setIsLoading(false); }
+        } catch (error: any) {
+            setErrorMessage("ስህተት ተፈጥሯል");
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const loadTicketByCode = async (code: string) => {
@@ -196,13 +221,28 @@ export default function Home() {
             const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/load/${code}`);
             if (response.data.success && response.data.data.selections) {
                 const loadedSelections = response.data.data.selections.map((s: any) => ({
-                    fixture_id: s.fixture_id, home_team: s.match_info ? s.match_info.split(' vs ')[0] : 'Home', away_team: s.match_info ? s.match_info.split(' vs ')[1] : 'Away',
-                    odd_id: s.odd_id, odd_name: s.odd_name, odd_value: parseFloat(s.odd_value || 0),
-                    match_time: new Date().toISOString(), league_name: 'Loaded Match'
+                    fixture_id: s.fixture_id,
+                    home_team: s.match_info ? s.match_info.split(' vs ')[0] : 'Home',
+                    away_team: s.match_info ? s.match_info.split(' vs ')[1] : 'Away',
+                    odd_id: s.odd_id,
+                    odd_name: s.odd_name,
+                    odd_value: parseFloat(s.odd_value || 0),
+                    match_time: new Date().toISOString(), 
+                    league_name: 'Loaded Match'
                 }));
-                setBetSlip(loadedSelections); setBookingCode(null); return true;
-            } else { alert("ትኬቱ አልተገኘም!"); return false; }
-        } catch (err) { alert("ትኬት ማምጣት አልተቻለም!"); return false; } finally { setIsLoading(false); }
+                setBetSlip(loadedSelections);
+                setBookingCode(null);
+                return true;
+            } else {
+                alert("ትኬቱ አልተገኘም! እባክዎ ትክክለኛ Booking Code ያስገቡ።");
+                return false;
+            }
+        } catch (err) {
+            alert("ትኬት ማምጣት አልተቻለም!");
+            return false;
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleLoadTicket = async () => {
@@ -214,113 +254,196 @@ export default function Home() {
         e.preventDefault();
         const cleanCode = checkInputCode.trim().toUpperCase();
         if (!cleanCode) return;
-        setIsCheckingTicket(true); setCheckTicketError(null); setCheckedTicketData(null);
+        
+        setIsCheckingTicket(true); 
+        setCheckTicketError(null); 
+        setCheckedTicketData(null);
+        
         try {
             const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/tickets/check/${cleanCode}`);
-            if (response.data.success) setCheckedTicketData(response.data.data);
-        } catch (err: any) { setCheckTicketError(err.response?.data?.message || 'ይህ ትኬት አልተገኘም!'); } finally { setIsCheckingTicket(false); }
+            if (response.data.success) {
+                setCheckedTicketData(response.data.data);
+            }
+        } catch (err: any) {
+            setCheckTicketError(err.response?.data?.message || 'ይህ ትኬት ወይም ቡኪንግ ኮድ አልተገኘም!');
+        } finally {
+            setIsCheckingTicket(false);
+        }
     };
 
     const handleBetAgain = async () => {
         if (!checkedTicketData) return;
-        const success = await loadTicketByCode(checkedTicketData.booking_code || checkedTicketData.ticket_number);
-        if (success) { closeCheckTicketModal(); if(window.innerWidth < 1024) setIsMobileBetSlipOpen(true); }
+        const codeToLoad = checkedTicketData.booking_code || checkedTicketData.ticket_number;
+        const success = await loadTicketByCode(codeToLoad);
+        if (success) {
+            closeCheckTicketModal();
+            if(window.innerWidth < 1024) setIsMobileBetSlipOpen(true);
+        }
     };
 
-    const closeCheckTicketModal = () => { setIsCheckTicketModalOpen(false); setCheckInputCode(''); setCheckedTicketData(null); setCheckTicketError(null); };
+    const closeCheckTicketModal = () => {
+        setIsCheckTicketModalOpen(false);
+        setCheckInputCode('');
+        setCheckedTicketData(null);
+        setCheckTicketError(null);
+    };
 
     const handlePrintBooking = () => {
         const printFrame = document.createElement('iframe');
-        printFrame.style.position = 'fixed'; printFrame.style.right = '0'; printFrame.style.bottom = '0'; printFrame.style.width = '0'; printFrame.style.height = '0'; printFrame.style.border = '0';
+        printFrame.style.position = 'fixed';
+        printFrame.style.right = '0';
+        printFrame.style.bottom = '0';
+        printFrame.style.width = '0';
+        printFrame.style.height = '0';
+        printFrame.style.border = '0';
         document.body.appendChild(printFrame);
+
         const doc = printFrame.contentWindow?.document;
         if (!doc) return;
 
         const htmlContent = `
             <!DOCTYPE html>
             <html>
-            <head><meta charset="utf-8"><style>@page { margin: 0; size: 80mm auto; } body { margin: 0; padding: 5mm; font-family: Arial, sans-serif; text-align: center; color: #000; position: relative; background: #fff; } .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 26px; color: rgba(255, 0, 0, 0.15); white-space: nowrap; font-weight: 900; pointer-events: none; z-index: 0; text-align: center; line-height: 1.2; } .content { position: relative; z-index: 1; } h2 { margin: 0 0 5px 0; font-size: 16px; font-weight: 900;} .code { font-size: 28px; font-weight: 900; margin: 10px 0; letter-spacing: 2px; } .details { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 10px; border-bottom: 2px dashed #000; padding-bottom: 8px;} .match { text-align: left; font-size: 11px; margin-bottom: 8px; border-bottom: 1px dotted #888; padding-bottom: 6px; } .match-teams { font-weight: 900; margin-bottom: 2px;} .match-pick { display: flex; justify-content: space-between; margin-top: 2px; }</style></head>
+            <head>
+                <meta charset="utf-8">
+                <style>
+                    @page { margin: 0; size: 80mm auto; }
+                    body { margin: 0; padding: 5mm; font-family: Arial, sans-serif; text-align: center; color: #000; position: relative; background: #fff; }
+                    .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 26px; color: rgba(255, 0, 0, 0.15); white-space: nowrap; font-weight: 900; pointer-events: none; z-index: 0; text-align: center; line-height: 1.2; }
+                    .content { position: relative; z-index: 1; }
+                    h2 { margin: 0 0 5px 0; font-size: 16px; font-weight: 900;}
+                    .code { font-size: 28px; font-weight: 900; margin: 10px 0; letter-spacing: 2px; }
+                    .details { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 10px; border-bottom: 2px dashed #000; padding-bottom: 8px;}
+                    .match { text-align: left; font-size: 11px; margin-bottom: 8px; border-bottom: 1px dotted #888; padding-bottom: 6px; }
+                    .match-teams { font-weight: 900; margin-bottom: 2px;}
+                    .match-pick { display: flex; justify-content: space-between; margin-top: 2px; }
+                </style>
+            </head>
             <body>
                 <div class="watermark">NOT FOR PAYOUT<br>BOOKING ONLY</div>
                 <div class="content">
                     <h2>VIBE BET - BOOKING</h2>
                     <div class="code">*${bookingCode}*</div>
-                    <div class="details"><div>Date: ${new Date().toLocaleDateString()}</div><div style="text-align: right;">Stake: ${stake.toFixed(2)} Br<br>Potential Win: ${grossWin.toFixed(2)} Br</div></div>
+                    <div class="details">
+                        <div>Date: ${new Date().toLocaleDateString()}</div>
+                        <div style="text-align: right;">Stake: ${stake.toFixed(2)} Br<br>Potential Win: ${grossWin.toFixed(2)} Br</div>
+                    </div>
                     <div style="text-align: left; margin-bottom: 5px; font-size: 12px; font-weight: 900;">EVENTS PLAYED:</div>
-                    ${betSlip.map(item => `<div class="match"><div class="match-teams">${item.home_team} vs ${item.away_team}</div><div class="match-pick"><span>Pick: ${item.odd_name}</span><span style="font-weight: 900;">@${item.odd_value}</span></div></div>`).join('')}
-                    <div style="text-align: center; font-size: 10px; margin-top: 15px; font-weight: bold;">This is a booking slip.<br>Please visit a branch to confirm your bet.</div>
+                    ${betSlip.map(item => `
+                        <div class="match">
+                            <div class="match-teams">${item.home_team} vs ${item.away_team}</div>
+                            <div class="match-pick">
+                                <span>Pick: ${item.odd_name}</span>
+                                <span style="font-weight: 900;">@${item.odd_value}</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                    <div style="text-align: center; font-size: 10px; margin-top: 15px; font-weight: bold;">
+                        This is a booking slip.<br>Please visit a branch to confirm your bet.
+                    </div>
                 </div>
             </body>
             </html>
         `;
         doc.open(); doc.write(htmlContent); doc.close();
-        setTimeout(() => { printFrame.contentWindow?.focus(); printFrame.contentWindow?.print(); setTimeout(() => document.body.removeChild(printFrame), 1000); }, 500);
+        setTimeout(() => {
+            printFrame.contentWindow?.focus();
+            printFrame.contentWindow?.print();
+            setTimeout(() => document.body.removeChild(printFrame), 1000);
+        }, 500);
     };
 
     const handleAuthSuccess = (userData: any, userToken: string) => {
-        setUser(userData); setToken(userToken);
-        localStorage.setItem('user', JSON.stringify(userData)); localStorage.setItem('token', userToken);
+        setUser(userData);
+        setToken(userToken);
+        localStorage.setItem('user', JSON.stringify(userData));
+        localStorage.setItem('token', userToken);
         setIsAuthModalOpen(false);
     };
 
-    const handleLogout = () => { setUser(null); setToken(null); localStorage.removeItem('user'); localStorage.removeItem('token'); };
+    const handleLogout = () => {
+        setUser(null); setToken(null);
+        localStorage.removeItem('user'); localStorage.removeItem('token');
+    };
 
-    const toggleAccordion = (title: string) => { setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]); };
+    const toggleAccordion = (title: string) => {
+        setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
+    };
 
-    // 🌟 የ 50+ ማርኬቶች ማውጫ 🌟
+    // 🌟 አዲሱ እና ትክክለኛው የማርኬት (All Markets) አወቃቀር 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game?.raw_markets || [];
-        const marketsObj: Record<string, any[]> = { "Main Match Result": [], "Goal Markets": [], "Handicap & Others": [] };
+        const marketsObj: Record<string, any[]> = {
+            "Main Match Result": [],
+            "Goal Markets": [],
+            "Handicap & Others": []
+        };
+
         if (!Array.isArray(raw)) return marketsObj;
 
         raw.forEach((market: any) => {
             if (!market) return; 
+            
             let category = "Handicap & Others";
             let title = market.title || market.key || "Market";
             const keyLower = (market.key || "").toLowerCase();
             const titleLower = (title || "").toLowerCase();
 
-            if (['h2h', 'double_chance'].includes(keyLower) || titleLower.includes('winner') || titleLower.includes('result') || titleLower.includes('correct score') || titleLower.includes('match betting')) category = "Main Match Result";
-            else if (['totals', 'btts'].includes(keyLower) || titleLower.includes('goal') || titleLower.includes('score')) category = "Goal Markets";
+            if (['h2h', 'double_chance'].includes(keyLower) || titleLower.includes('winner') || titleLower.includes('result') || titleLower.includes('correct score') || titleLower.includes('match betting')) {
+                category = "Main Match Result";
+            } else if (['totals', 'btts'].includes(keyLower) || titleLower.includes('goal') || titleLower.includes('score')) {
+                category = "Goal Markets";
+            }
 
             const outcomes = Array.isArray(market.outcomes) ? market.outcomes.map((o: any, idx: number) => ({
                 odd_id: `${market.key || 'unk'}_${(o?.name || '').toString().replace(/[^a-zA-Z0-9]/g, '_')}_${game.id}_${idx}`, 
-                option: o?.name || 'Opt', value: parseFloat(o?.price || 0).toFixed(2)
+                option: o?.name || 'Opt', 
+                value: parseFloat(o?.price || 0).toFixed(2)
             })) : [];
 
             if (outcomes.length > 0) {
-                let cols = outcomes.length === 3 || outcomes.length > 6 ? 3 : 2;
-                marketsObj[category].push({ title: title, cols: cols, odds: outcomes });
+                let cols = 2; 
+                if (outcomes.length === 3 || outcomes.length > 6) cols = 3;
+                
+                marketsObj[category].push({
+                    title: title,
+                    cols: cols, 
+                    odds: outcomes
+                });
             }
         });
 
         const finalObj: Record<string, any[]> = {};
-        Object.keys(marketsObj).forEach(key => { if (marketsObj[key].length > 0) finalObj[key] = marketsObj[key]; });
+        Object.keys(marketsObj).forEach(key => {
+            if (marketsObj[key].length > 0) {
+                finalObj[key] = marketsObj[key];
+            }
+        });
+
         return finalObj;
     };
 
-    // 🌟 እጅግ ጥብቅ የሆነው የ ቶፕ ሊግ (Top League) መለያ 🌟
-    const getLeagueDetails = (key: string) => {
+    // 🌟 አዲሱ እና ፍጹም ትክክለኛ የሀገር እና ሊግ ማንበቢያ (Country|League|Flag) 🌟
+    const getLeagueDetails = (key: string, flagFromApi?: string) => {
         if (!key || typeof key !== 'string') return { country: 'World', flag: 'https://media.api-sports.io/flags/un.svg', name: 'Soccer', isTop: false };
 
-        // እነዚህ 6ቱ ሊጎች ብቻ ናቸው በ Top Leagues ስር የሚወጡት
         const topLeaguesExactMatches = [
-            'England|Premier League',
-            'Spain|La Liga',
-            'Italy|Serie A',
-            'Germany|Bundesliga',
-            'France|Ligue 1',
-            'World|UEFA Champions League'
+            'England|Premier League', 'England|Championship',
+            'Spain|La Liga', 'Spain|Primera Division',
+            'Italy|Serie A', 'Germany|Bundesliga', 
+            'France|Ligue 1', 'World|UEFA Champions League', 
+            'World|UEFA Europa League', 'Netherlands|Eredivisie',
+            'Portugal|Primeira Liga', 'Saudi Arabia|Pro League', 'Ethiopia|Premier League'
         ];
 
         if (key.includes('|')) {
             const parts = key.split('|');
             const countryName = parts[0] || 'World';
             const leagueName = parts[1] || 'League';
-            const flagUrl = parts[2] || 'https://media.api-sports.io/flags/un.svg';
+            const flagUrl = parts[2] || flagFromApi || 'https://media.api-sports.io/flags/un.svg';
             
             const exactKey = `${countryName}|${leagueName}`;
-            const isTopLeague = topLeaguesExactMatches.includes(exactKey);
+            const isTopLeague = topLeaguesExactMatches.includes(exactKey) || topLeaguesExactMatches.some(t => exactKey.toLowerCase().includes(t.toLowerCase()));
 
             return {
                 country: countryName,
@@ -330,6 +453,7 @@ export default function Home() {
             };
         }
 
+        // ለድሮ ዳታ (Fallback)
         return { country: 'World', flag: 'https://media.api-sports.io/flags/un.svg', name: key.replace('soccer_', '').replace(/_/g, ' '), isTop: false };
     };
 
@@ -342,7 +466,7 @@ export default function Home() {
     const activeFixtures = fixtures.filter(g => g && g.match_time && new Date(g.match_time).getTime() > currentTime);
 
     const groupedFixtures = activeFixtures.reduce((acc: any, game: any) => {
-        const details = getLeagueDetails(game.league);
+        const details = getLeagueDetails(game.league, game.league_flag);
         const uniqueKey = game.league || 'unknown';
         if (!acc[uniqueKey]) acc[uniqueKey] = { details, games: [] };
         acc[uniqueKey].games.push(game);
@@ -350,8 +474,6 @@ export default function Home() {
     }, {});
 
     const allLeagues: [string, any][] = Object.entries(groupedFixtures);
-    
-    // የቶፕ ሊጎችን ብቻ ማውጣት
     const topLeagues = allLeagues.filter(([_, data]) => data.details.isTop);
     
     const countriesMap = new Map<string, { flag: string, leagues: {key: string, name: string, count: number}[] }>();
@@ -371,7 +493,7 @@ export default function Home() {
             const leagueKey = game.league;
             if (!currentGroup || currentGroup.leagueKey !== leagueKey) {
                 if (currentGroup) groupedArray.push([currentGroup.id, currentGroup.data]);
-                currentGroup = { leagueKey: leagueKey, id: leagueKey + '_' + game.id, data: { details: getLeagueDetails(leagueKey), games: [game] } };
+                currentGroup = { leagueKey: leagueKey, id: leagueKey + '_' + game.id, data: { details: getLeagueDetails(leagueKey, game.league_flag), games: [game] } };
             } else currentGroup.data.games.push(game);
         }
         if (currentGroup) groupedArray.push([currentGroup.id, currentGroup.data]);
