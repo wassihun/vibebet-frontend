@@ -140,7 +140,7 @@ export default function CashierDashboard() {
             'soccer_saudi_professional_league': 'Pro League', 'soccer_saudi_arabia_pro_league': 'Pro League',
             'soccer_spl': 'Premiership', 'soccer_brazil_campeonato': 'Serie A'
         };
-        if (mapped[key]) return { name: mapped[key] };
+        if (mapped[key]) return { name mapped[key] };
         const parts = key.replace('soccer_', '').split('_');
         let leagueName = parts.slice(1).join(' ').replace(/\b\w/g, l => l.toUpperCase());
         return { name: leagueName || "Soccer" };
@@ -306,7 +306,8 @@ export default function CashierDashboard() {
                         leagueName = item.league_name || "Soccer";
                     }
                     
-                    const cleanLeague = countryName ? \`\${countryName} - \${leagueName}\`.replace(/Soccer /gi, '').trim() : leagueName;
+                    // 🌟 ስህተቱ የታረመበት (String Concatenation ተጠቅመን) 🌟
+                    const cleanLeague = countryName ? (countryName + ' - ' + leagueName).replace(/Soccer /gi, '').trim() : leagueName;
                     
                     const pad = (n: number) => n < 10 ? '0' + n : n;
                     const dStr = `${pad(mTimeRaw.getDate())}/${pad(mTimeRaw.getMonth() + 1)}/${String(mTimeRaw.getFullYear()).slice(-2)} ${pad(mTimeRaw.getHours())}:${pad(mTimeRaw.getMinutes())}`;
@@ -751,7 +752,6 @@ export default function CashierDashboard() {
                                         </div>
 
                                         <div className="shrink-0">
-                                            {/* 🌟 ማስተካከያ 1: Two-Step Submit & Print Flow 🌟 */}
                                             {!ticketData.ticket_number ? (
                                                 <button 
                                                     onClick={handleConfirmTicket} 
@@ -764,7 +764,7 @@ export default function CashierDashboard() {
                                                 <button 
                                                     onClick={() => handleCustomPrint(ticketData)} 
                                                     disabled={isLoading}
-                                                    className="w-full bg-[#00e700] hover:bg-green-500 text-black font-black py-2.5 rounded text-sm transition transform active:scale-[0.98] tracking-widest flex items-center justify-center gap-2 shadow-md"
+                                                    className="w-full bg-[#00e700] hover:bg-green-500 text-black font-black py-2.5 rounded text-sm transition transform active:scale-[0.98] tracking-widest flex items-center justify-center gap-2 shadow-md animate-pulse"
                                                 >
                                                     🖨️ ፕሪንት (PRINT TICKET) <span className="text-[10px] bg-black/20 px-1.5 py-0.5 rounded ml-1">F2</span>
                                                 </button>
