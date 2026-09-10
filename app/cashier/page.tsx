@@ -343,23 +343,26 @@ export default function CashierDashboard() {
                     }
 
                     return `
-                    <div style="border-bottom: 1.5px solid #000; padding: 2px 0;">
+                    <div style="border-bottom: 1px solid #000; padding: 2px 0;">
                         <div style="font-size: 11px !important; font-weight: 900 !important; text-align: left; line-height: 1.2;">${teamStr}</div>
                         <div style="display: flex; justify-content: space-between; font-size: 9px !important; line-height: 1.2;">
                             <span style="font-weight: normal !important; text-transform: capitalize;">Football / ${lName.replace('Soccer', 'World').replace('Soccer / ', '')}</span>
                             <span style="font-weight: normal !important;">${dStr}</span>
                         </div>
                         <div style="display: flex; justify-content: space-between; font-size: 11px !important; font-weight: 900 !important; line-height: 1.2;">
-                            <span style="flex: 1; text-align: left;">${marketText}</span>
-                            <span style="width: 50px; text-align: right;">${pickText}</span>
-                            <span style="text-align: right; width: 45px;">Q: ${parseFloat(item.odd_value).toFixed(2)}</span>
+                            <span style="text-align: left; width: 45%;">${marketText}</span>
+                            <span style="text-align: right; width: 35%; padding-right: 5px;">${pickText}</span>
+                            <span style="text-align: right; width: 20%;">Q: ${parseFloat(item.odd_value).toFixed(2)}</span>
                         </div>
                     </div>
                 `}).join('')}
 
-                <div class="border-solid" style="margin-top: 2px;"></div>
-                <div class="flex-between"><span>T.ODDS:</span><span style="font-size: 13px;">${ticketDetails.total_odds}</span></div>
-                <div class="flex-between"><span>STAKE:</span><span style="font-size: 13px;">${parseFloat(ticketDetails.stake_amount).toFixed(2)} Br</span></div>
+                <div style="border: 1px solid #000; display: flex; justify-content: space-between; padding: 3px 4px; margin-top: 3px; font-size: 11px !important; font-weight: 900 !important;">
+                    <span>NR EVENTS: ${ticketDetails.selections.length}</span>
+                    <span>ODDS TOTAL: ${ticketDetails.total_odds}</span>
+                </div>
+
+                <div class="flex-between" style="margin-top: 6px;"><span>STAKE:</span><span style="font-size: 13px;">${parseFloat(ticketDetails.stake_amount).toFixed(2)} Br</span></div>
                 <div class="flex-between"><span>FEE:</span><span style="font-size: 13px;">10.00 Br</span></div>
                 
                 <div class="flex-between big-text">
@@ -463,6 +466,13 @@ export default function CashierDashboard() {
 
     const checkTicketDetails = (e: React.FormEvent) => {
         e.preventDefault();
+        const code = payoutTicket.trim();
+        // ትኬት ቁጥር በቁጥር (Numbers) ብቻ የተዋቀረ ስለሆነ፣ ፊደል ካለው ቡኪንግ ኮድ ነው ብሎ ይከለክላል
+        if (!/^\d+$/.test(code)) {
+            setMessage({ type: 'error', text: 'እባክዎ የትኬት ቁጥር (Numbers) ብቻ ያስገቡ! (ቡኪንግ ኮድ እዚህ አይሰራም)' });
+            setPayoutDetails(null);
+            return;
+        }
         if (payoutTicket) fetchTicketDetailsForCheck(payoutTicket);
     };
 
@@ -807,7 +817,7 @@ export default function CashierDashboard() {
 
                                         <div className="flex-1 overflow-y-auto custom-scrollbar mb-4">
                                             <div className="bg-white border border-gray-300 rounded overflow-hidden shadow-sm">
-                                                {/* 🌟 ማስተካከያ 2: Live Match Score 🌟 */}
+                                                {/* 🌟 Live Match Score 🌟 */}
                                                 {payoutDetails.selections?.map((item: any, i: number) => {
                                                     const isWon = item.match_status === 'won'; 
                                                     const isLost = item.match_status === 'lost'; 
@@ -830,7 +840,6 @@ export default function CashierDashboard() {
                                                             <div className="flex justify-between items-center text-[11px] font-black text-gray-800 uppercase mt-0.5">
                                                                 <span>{awayTeam}</span>
                                                                 
-                                                                {/* አዲሱ የትክክለኛ ውጤት (Score) ማሳያ */}
                                                                 <span className={`mx-2 text-[10px] px-2 py-0.5 rounded shrink-0 font-black border ${item.score && item.score !== '-:-' ? 'bg-[#ffcc00] text-black border-[#e6b800] shadow-sm' : 'bg-[#24292e] text-slate-400 border-[#3b4148]'}`}>
                                                                     {item.score && item.score !== '-:-' ? item.score : 'vs'}
                                                                 </span>
