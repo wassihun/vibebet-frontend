@@ -9,6 +9,7 @@ const MAX_WIN = 10000;
 const MIN_STAKE = 20; 
 
 export default function Home() {
+    const [isMounted, setIsMounted] = useState(false); // 🌟 Hydration Error ለመከላከል
     const [fixtures, setFixtures] = useState<any[]>([]);
     const [betSlip, setBetSlip] = useState<any[]>([]);
     const [stake, setStake] = useState<number>(20);
@@ -69,6 +70,7 @@ export default function Home() {
     const [isOnline, setIsOnline] = useState<boolean>(true);
 
     useEffect(() => {
+        setIsMounted(true); // 🌟 Client-side rendering ብቻ እንዲሰራ
         document.title = "vibebet.et";
         setIsOnline(navigator.onLine);
         const handleOnline = () => setIsOnline(true);
@@ -403,7 +405,7 @@ export default function Home() {
                 category = "Handicap";
             }
 
-            // 🚫 ካልተመደበ ሙሉ በሙሉ መዝለል (Skipping unknown markets to keep it 100% clean) 🚫
+            // 🚫 ካልተመደበ ሙሉ በሙሉ መዝለል 🚫
             if (!category) return;
 
             const outcomes = market.outcomes.map((o: any, idx: number) => ({
@@ -418,8 +420,15 @@ export default function Home() {
                 if (outcomes.length === 1) cols = 1;
                 
                 const marketData = { title: title, cols: cols, odds: outcomes };
-                marketsObj[category].push(marketData);
-                marketsObj["All"].push(marketData);
+                
+                // 🌟 የተደገሙትን ለማስወገድ የሚደረግ ማጣሪያ (Deduplication Check) 🌟
+                if (!marketsObj[category].some((m: any) => m.title === title)) {
+                    marketsObj[category].push(marketData);
+                }
+                
+                if (!marketsObj["All"].some((m: any) => m.title === title)) {
+                    marketsObj["All"].push(marketData);
+                }
             }
         });
 
@@ -462,6 +471,9 @@ export default function Home() {
         if (!flagObj) return <img src="https://media.api-sports.io/flags/un.svg" alt="flag" className="w-full h-full object-cover" />;
         return <img src={flagObj} alt="flag" onError={(e: any) => e.target.src='https://media.api-sports.io/flags/un.svg'} className="w-full h-full object-cover" />;
     };
+
+    // Hydration fix: delay UI render until mounted
+    if (!isMounted) return <div className="min-h-screen bg-[#1c2024]"></div>;
 
     const currentTime = new Date().getTime();
     const activeFixtures = fixtures.filter(g => g && g.match_time && new Date(g.match_time).getTime() > currentTime);
