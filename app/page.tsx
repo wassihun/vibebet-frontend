@@ -9,7 +9,7 @@ const MAX_WIN = 10000;
 const MIN_STAKE = 20; 
 
 export default function Home() {
-    const [isMounted, setIsMounted] = useState(false); // 🌟 Hydration Error ለመከላከል
+    const [isMounted, setIsMounted] = useState(false);
     const [fixtures, setFixtures] = useState<any[]>([]);
     const [betSlip, setBetSlip] = useState<any[]>([]);
     const [stake, setStake] = useState<number>(20);
@@ -35,7 +35,6 @@ export default function Home() {
     const [isSoccerOpen, setIsSoccerOpen] = useState(true);
     const [openCountry, setOpenCountry] = useState<string | null>(null);
 
-    // 🌟 ዋና ማርኬቶች በነባሪነት ክፍት እንዲሆኑ 🌟
     const [openAccordions, setOpenAccordions] = useState<string[]>(['3 Way', 'Both teams to score', 'Double chance', 'Over/Under']);
 
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -70,7 +69,7 @@ export default function Home() {
     const [isOnline, setIsOnline] = useState<boolean>(true);
 
     useEffect(() => {
-        setIsMounted(true); // 🌟 Client-side rendering ብቻ እንዲሰራ
+        setIsMounted(true);
         document.title = "vibebet.et";
         setIsOnline(navigator.onLine);
         const handleOnline = () => setIsOnline(true);
@@ -285,7 +284,6 @@ export default function Home() {
         setOpenAccordions(prev => prev.includes(title) ? prev.filter(t => t !== title) : [...prev, title]);
     };
 
-    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ (Strict Market Mapping API-Football to UI) 🌟
     const getCategorizedMarkets = (game: any) => {
         const raw = game?.raw_markets || [];
         const marketsObj: Record<string, any[]> = {
@@ -297,17 +295,20 @@ export default function Home() {
         // 🌟 Smart Sorting Logic 🌟
         const sortOutcomes = (oddsArray: any[]) => {
             return oddsArray.sort((a, b) => {
-                const matchA = a.option.match(/-?\d+(\.\d+)?/);
-                const matchB = b.option.match(/-?\d+(\.\d+)?/);
+                const optA = String(a.option || '');
+                const optB = String(b.option || '');
+                
+                const matchA = optA.match(/-?\d+(\.\d+)?/);
+                const matchB = optB.match(/-?\d+(\.\d+)?/);
                 const numA = matchA ? parseFloat(matchA[0]) : NaN;
                 const numB = matchB ? parseFloat(matchB[0]) : NaN;
                 
                 if (!isNaN(numA) && !isNaN(numB)) {
-                    if (numA !== numB) return numA - numB; // ቁጥሮቹን በቅደም-ተከተል ያሰልፋል (0.5, 1.0, 1.5...)
+                    if (numA !== numB) return numA - numB;
                     
-                    const strA = a.option.toLowerCase();
-                    const strB = b.option.toLowerCase();
-                    // "Over" ሁልጊዜም ከ "Under" በፊት እንዲመጣ ያደርጋል
+                    const strA = optA.toLowerCase();
+                    const strB = optB.toLowerCase();
+                    
                     if (strA.includes('over') && strB.includes('under')) return -1;
                     if (strA.includes('under') && strB.includes('over')) return 1;
                     if (strA.includes('home') && strB.includes('away')) return -1;
@@ -317,11 +318,11 @@ export default function Home() {
                 }
                 
                 const sortOrder: Record<string, number> = { '1': 1, 'x': 2, '2': 3, '1x': 4, '12': 5, 'x2': 6 };
-                const keyA = a.option.toLowerCase().trim();
-                const keyB = b.option.toLowerCase().trim();
+                const keyA = optA.toLowerCase().trim();
+                const keyB = optB.toLowerCase().trim();
                 if (sortOrder[keyA] && sortOrder[keyB]) return sortOrder[keyA] - sortOrder[keyB];
                 
-                return a.option.localeCompare(b.option);
+                return optA.localeCompare(optB);
             });
         };
 
@@ -330,7 +331,7 @@ export default function Home() {
             
             let category = null; 
             let title = market.title || market.name || market.key || "Market";
-            const titleLower = title.toLowerCase().trim();
+            const titleLower = String(title).toLowerCase().trim();
             const mId = market.id;
 
             // --- 1. MAIN MARKET ---
@@ -372,7 +373,7 @@ export default function Home() {
             else if (titleLower.includes('goal range') || titleLower.includes('goals range')) {
                 title = "Goal range"; category = "Total";
             }
-            else if (titleLower.includes('corner range') && !titleLower.includes('half') && !titleLower.includes(game.home_team?.toLowerCase())) {
+            else if (titleLower.includes('corner range') && !titleLower.includes('half') && !titleLower.includes((game.home_team || '').toLowerCase())) {
                 title = "Corner range"; category = "Total";
             }
             else if (titleLower.includes('over/under corners') || titleLower.includes('corners over/under')) {
@@ -416,14 +417,14 @@ export default function Home() {
             else if (titleLower.includes('which team to score')) {
                 title = "Which team to score"; category = "Combination";
             }
-            else if (titleLower.includes('corner range') && (titleLower.includes(game.home_team?.toLowerCase()) || titleLower.includes(game.away_team?.toLowerCase()))) {
+            else if (titleLower.includes('corner range') && (titleLower.includes((game.home_team || '').toLowerCase()) || titleLower.includes((game.away_team || '').toLowerCase()))) {
                 title = `${game.home_team} corner range`; category = "Combination";
             }
 
             // --- 4. HALF MARKET ---
             else if (titleLower.includes('half') || titleLower.includes('ht') || titleLower.includes('1st') || titleLower.includes('2nd') || titleLower.includes('first half') || titleLower.includes('second half') || titleLower.includes('both halves') || titleLower.includes('halftime/fulltime &') || titleLower.includes('to win either half')) {
                 category = "Half";
-                title = title.replace(/first half/i, '1st Half').replace(/second half/i, '2nd Half').replace(/match winner/i, '3 Way');
+                title = String(title).replace(/first half/i, '1st Half').replace(/second half/i, '2nd Half').replace(/match winner/i, '3 Way');
             }
 
             // --- 5. HANDICAP MARKET ---
@@ -431,20 +432,19 @@ export default function Home() {
                 category = "Handicap";
             }
 
-            // 🚫 ካልተመደበ ሙሉ በሙሉ መዝለል 🚫
             if (!category) return;
 
             let outcomes = market.outcomes.map((o: any, idx: number) => ({
-                odd_id: `${market.key || 'unk'}_${(o?.name || '').toString().replace(/[^a-zA-Z0-9]/g, '_')}_${game.id}_${idx}`, 
-                option: o?.name || 'Opt', 
+                odd_id: `${market.key || 'unk'}_${String(o?.name || '').replace(/[^a-zA-Z0-9]/g, '_')}_${game.id}_${idx}`, 
+                option: String(o?.name ?? 'Opt'), // 🌟 FIX: Data into strict String
                 value: parseFloat(o?.price || o?.odd || 0).toFixed(2)
             }));
 
-            // 🌟 1. የተደገሙ አማራጮችን በአንድ Market ውስጥ ማጥራት (Deduplicate options) 🌟
+            // 🌟 1. የተደገሙ አማራጮችን በአንድ Market ውስጥ ማጥራት 🌟
             const uniqueOutcomes: any[] = [];
             const seenOptions = new Set();
             outcomes.forEach((o: any) => {
-                const cleanOpt = o.option.trim().toLowerCase();
+                const cleanOpt = String(o.option).trim().toLowerCase();
                 if (!seenOptions.has(cleanOpt)) {
                     seenOptions.add(cleanOpt);
                     uniqueOutcomes.push(o);
@@ -452,36 +452,33 @@ export default function Home() {
             });
             outcomes = uniqueOutcomes;
 
-            // 🌟 2. ቁጥሮቹን በቅደም ተከተል ማሰለፍ (Sort arrays logically) 🌟
+            // 🌟 2. ቁጥሮቹን በቅደም ተከተል ማሰለፍ 🌟
             outcomes = sortOutcomes(outcomes);
 
             if (outcomes.length > 0) {
-                // 🌟 3. Over/Under ሁልጊዜም 2 Column እንዲሆን ማዘዝ (Force 2-columns for totals) 🌟
                 let cols = 2; 
                 if (outcomes.length === 3) cols = 3;
                 else if (titleLower.includes('correct score') || titleLower.includes('halftime/fulltime')) cols = 3;
-                // Over/Under እና Handicap ብዙ ቢሆኑም በ2 አምድ ብቻ እንዲታዩ መገደብ
                 else if (outcomes.length >= 6 && !titleLower.includes('over/under') && !titleLower.includes('handicap') && !titleLower.includes('goals')) cols = 3;
                 
                 if (outcomes.length === 1) cols = 1;
                 
                 const marketData = { title: title, cols: cols, odds: outcomes };
                 
-                // 🌟 4. የተደገሙ ማርኬቶችን ማዋሃድ (Merge duplicate market titles like Asian vs Normal Over/Under) 🌟
                 const mergeIntoCategory = (catArray: any[]) => {
-                    const existingIdx = catArray.findIndex(m => m.title === title);
+                    const existingIdx = catArray.findIndex((m: any) => m.title === title);
                     if (existingIdx === -1) {
                         catArray.push(JSON.parse(JSON.stringify(marketData)));
                     } else {
                         const existingMarket = catArray[existingIdx];
-                        const existingOpts = new Set(existingMarket.odds.map((o:any) => o.option.trim().toLowerCase()));
+                        const existingOpts = new Set(existingMarket.odds.map((o:any) => String(o.option).trim().toLowerCase()));
                         outcomes.forEach((o: any) => {
-                            if (!existingOpts.has(o.option.trim().toLowerCase())) {
+                            const optStr = String(o.option).trim().toLowerCase();
+                            if (!existingOpts.has(optStr)) {
                                 existingMarket.odds.push({...o});
-                                existingOpts.add(o.option.trim().toLowerCase());
+                                existingOpts.add(optStr);
                             }
                         });
-                        // ከተዋሃደ በኋላ ድጋሚ በቅደም ተከተል ማሰለፍ
                         existingMarket.odds = sortOutcomes(existingMarket.odds);
                     }
                 };
