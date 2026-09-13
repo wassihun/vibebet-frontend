@@ -538,6 +538,7 @@ export default function Home() {
         setOpenAccordions((prev: string[]) => prev.includes(id) ? prev.filter((t: string) => t !== id) : [...prev, id]);
     };
 
+    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ፣ ማጣሪያ እና ሎጂክ 🌟
     const getCategorizedMarkets = (game: any) => {
         const rawBets = game?.raw_markets || [];
         const categories: Record<string, any[]> = { "MAIN": [], "TOTALS": [], "HALF": [], "HANDICAPS": [], "COMBOS": [], "PLAYERS": [], "ALL": [] };
@@ -1041,6 +1042,11 @@ export default function Home() {
                                     {selectedMatch.home_team} <span className="text-slate-500 font-normal">vs</span> {selectedMatch.away_team}
                                 </div>
                             </div>
+                            
+                            {(() => {
+                                const allCats = getCategorizedMarkets(selectedMatch);
+                                const tabs = ['All', 'Main Market', 'Total', 'Combination', 'Half', 'Handicap'];
+                                const availableTabs = tabs.filter(t => t === 'All' || (allCats[t] && allCats[t].length > 0));
 
                             {(() => {
                                 const allCats = getCategorizedMarkets(selectedMatch);
