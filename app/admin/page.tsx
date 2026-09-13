@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
 export default function AdminDashboard() {
     const [token, setToken] = useState<string | null>(null);
     const [adminName, setAdminName] = useState('');
@@ -19,7 +21,6 @@ export default function AdminDashboard() {
     
     const [staffList, setStaffList] = useState<any[]>([]);
 
-    // 🌟 አዲስ፡ የ API Keys ዝርዝር ስቴት 🌟
     const [apiKeysList, setApiKeysList] = useState<string[]>([]);
     const [newApiKeyValue, setNewApiKeyValue] = useState('');
     
@@ -44,6 +45,9 @@ export default function AdminDashboard() {
     const [isFetchingReports, setIsFetchingReports] = useState(false);
 
     useEffect(() => {
+        // 🌟 ማስተካከያ: የብሮውዘር ታብ ጽሁፍ 🌟
+        document.title = "vibebet.et - Admin";
+
         const savedToken = localStorage.getItem('adminToken');
         const savedUsername = localStorage.getItem('adminUsername');
         if (savedToken && savedUsername) {
@@ -55,13 +59,13 @@ export default function AdminDashboard() {
     useEffect(() => {
         if (token && activeTab === 'settings') {
             fetchApiKeys();
-            axios.get('http://localhost:5000/api/matches/api-usage').then(res => {
+            axios.get(`${API_BASE}/api/matches/api-usage`).then(res => {
                 if (res.data.success) setApiUsage(res.data.data);
             }).catch(() => {});
         }
         
         if (token && activeTab === 'dashboard') {
-            axios.get('http://localhost:5000/api/matches/list').then(res => {
+            axios.get(`${API_BASE}/api/matches/list`).then(res => {
                 if (res.data.success) setTotalMatches(res.data.data.length);
             }).catch(() => setTotalMatches(0));
             fetchReports(); 
@@ -76,9 +80,8 @@ export default function AdminDashboard() {
         }
     }, [token, activeTab, reportFilter]);
 
-    // 🌟 አዲስ፡ የገባውን የ API Keys ዝርዝር ያመጣል 🌟
     const fetchApiKeys = () => {
-        axios.get('http://localhost:5000/api/matches/get-api-key').then(res => {
+        axios.get(`${API_BASE}/api/matches/get-api-key`).then(res => {
             if (res.data.success && res.data.api_key) {
                 const keysArray = res.data.api_key.split(',').map((k: string) => k.trim()).filter((k: string) => k.length > 0);
                 setApiKeysList(keysArray);
@@ -91,7 +94,7 @@ export default function AdminDashboard() {
     const fetchReports = async () => {
         setIsFetchingReports(true);
         try {
-            const res = await axios.get(`http://localhost:5000/api/tickets/reports/summary?filter=${reportFilter}`, {
+            const res = await axios.get(`${API_BASE}/api/tickets/reports/summary?filter=${reportFilter}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if (res.data.success) {
@@ -106,7 +109,7 @@ export default function AdminDashboard() {
 
     const fetchStaffList = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/tickets/staff-list', {
+            const res = await axios.get(`${API_BASE}/api/tickets/staff-list`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if (res.data.success) {
@@ -121,7 +124,7 @@ export default function AdminDashboard() {
         e.preventDefault();
         setLoginError('');
         try {
-            const res = await axios.post('http://localhost:5000/api/auth/login', { username: loginUsername, password: loginPassword });
+            const res = await axios.post(`${API_BASE}/api/auth/login`, { username: loginUsername, password: loginPassword });
             if (res.data.success && res.data.user.role === 'admin') {
                 setToken(res.data.token);
                 setAdminName(res.data.user.username);
@@ -147,7 +150,7 @@ export default function AdminDashboard() {
         setIsLoading(true);
         setStaffMsg(null);
         try {
-            const res = await axios.post('http://localhost:5000/api/auth/register-staff', { username: newUsername, password: newPassword, role: newRole });
+            const res = await axios.post(`${API_BASE}/api/auth/register-staff`, { username: newUsername, password: newPassword, role: newRole });
             setStaffMsg({ type: 'success', text: res.data.message });
             setNewUsername('');
             setNewPassword('');
@@ -159,13 +162,12 @@ export default function AdminDashboard() {
         }
     };
 
-    // 🌟 አዲስ፡ ወደ ዳታቤዝ አዲሱን የKeys ዝርዝር (Array) ያስቀምጣል 🌟
     const saveKeysToBackend = async (keysArray: string[]) => {
         setIsLoading(true);
         setApiMsg(null);
         try {
             const keysStr = keysArray.join(',');
-            await axios.post('http://localhost:5000/api/matches/update-api-key', { api_key: keysStr });
+            await axios.post(`${API_BASE}/api/matches/update-api-key`, { api_key: keysStr });
             setApiKeysList(keysArray);
             setApiMsg({ type: 'success', text: '✅ የ API Keys ዝርዝር በተሳካ ሁኔታ ተዘምኗል!' });
         } catch (err: any) {
@@ -175,7 +177,6 @@ export default function AdminDashboard() {
         }
     };
 
-    // አዲስ Key ሲገባ የሚጠራ
     const handleAddKey = (e: React.FormEvent) => {
         e.preventDefault();
         if (!newApiKeyValue.trim()) return;
@@ -184,7 +185,6 @@ export default function AdminDashboard() {
         setNewApiKeyValue('');
     };
 
-    // ከዝርዝሩ ላይ ሲሰረዝ የሚጠራ
     const handleDeleteKey = (indexToRemove: number) => {
         const updatedList = apiKeysList.filter((_, idx) => idx !== indexToRemove);
         saveKeysToBackend(updatedList);
@@ -194,21 +194,19 @@ export default function AdminDashboard() {
         setIsSyncing(true);
         setApiMsg({ type: 'success', text: '⏳ አዳዲስ ጨዋታዎችን ከ API በማምጣት ላይ... እባክዎ ትንሽ ይጠብቁ' });
         try {
-            const res = await axios.post('http://localhost:5000/api/matches/manual-sync');
+            const res = await axios.post(`${API_BASE}/api/matches/manual-sync`);
             setApiMsg({ type: 'success', text: res.data.message });
             
-            axios.get('http://localhost:5000/api/matches/list').then(r => {
+            axios.get(`${API_BASE}/api/matches/list`).then(r => {
                 if (r.data.success) setTotalMatches(r.data.data.length);
             });
-            // ሲያመጣ ኮታ ስለሚበላ የ API Usageን ዳግም ይጠይቃል
-            axios.get('http://localhost:5000/api/matches/api-usage').then(r => {
+            axios.get(`${API_BASE}/api/matches/api-usage`).then(r => {
                 if (r.data.success) setApiUsage(r.data.data);
             }).catch(() => {});
-            // ከዳታቤዝ አዲስ የ Keys ዝርዝር ያመጣል (ካለቀ እያጠፋ ስለሚሄድ)
             fetchApiKeys();
         } catch (err: any) {
             setApiMsg({ type: 'error', text: 'ዳታ ማምጣት አልተቻለም! የገቡት Keys ሁሉም አልቀው ሊሆን ይችላል።' });
-            fetchApiKeys(); // ያለቁት ጠፍተው ሊሆን ስለሚችል አሁንም ሪፍሬሽ እናደርጋለን
+            fetchApiKeys(); 
         } finally {
             setIsSyncing(false);
         }
@@ -220,11 +218,12 @@ export default function AdminDashboard() {
                 <div className="bg-[#1e2328] p-10 rounded-xl shadow-2xl border border-[#3b4148] w-[400px] relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-full h-2 bg-[#ffcc00]"></div>
                     <div className="text-center mb-8 mt-2">
-                        <div className="w-16 h-16 bg-[#ffcc00]/10 rounded-full mx-auto flex items-center justify-center mb-4 border border-[#ffcc00]/20">
-                            <span className="text-2xl">🔒</span>
+                        {/* 🌟 Login ሎጎ ወደ አዲሱ SVG ተቀይሯል 🌟 */}
+                        <div className="w-20 h-20 bg-[#1c2024] rounded-[15px] flex items-center justify-center mx-auto mb-4 shadow-inner border border-[#3b4148] p-2">
+                            <img src="/icon.svg" alt="Vibe Bet Admin" className="w-full h-full object-contain" />
                         </div>
-                        <h2 className="text-3xl font-black text-white tracking-wide">VIBE <span className="text-[#ffcc00]">BET</span></h2>
-                        <p className="text-slate-400 text-sm mt-1">Super User Portal</p>
+                        <h2 className="text-3xl font-black text-white tracking-wide italic">VIBE <span className="text-[#ffcc00]">BET</span></h2>
+                        <p className="text-slate-400 text-sm mt-1 font-bold">Super User Portal</p>
                     </div>
                     <form onSubmit={handleLogin} className="space-y-5">
                         {loginError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold p-3 rounded text-center">{loginError}</div>}
@@ -236,7 +235,7 @@ export default function AdminDashboard() {
                             <label className="block text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">Password</label>
                             <input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} required className="w-full bg-[#111418] border border-[#3b4148] text-white px-4 py-3 rounded outline-none focus:border-[#ffcc00] transition-colors" />
                         </div>
-                        <button type="submit" className="w-full bg-[#ffcc00] hover:bg-[#e6b800] text-black font-black py-3.5 rounded mt-4 transition transform active:scale-95">ግባ (LOGIN)</button>
+                        <button type="submit" className="w-full bg-[#ffcc00] hover:bg-[#e6b800] text-black font-black py-3.5 rounded mt-4 transition transform active:scale-95 uppercase tracking-wider">ግባ (LOGIN)</button>
                     </form>
                 </div>
             </div>
@@ -247,10 +246,17 @@ export default function AdminDashboard() {
         <div className="min-h-screen bg-[#111418] text-slate-300 font-sans flex">
             {/* Sidebar */}
             <div className="w-64 bg-[#1e2328] border-r border-[#3b4148] p-6 flex flex-col relative z-10 shadow-[4px_0_24px_rgba(0,0,0,0.2)]">
-                <div className="mb-10">
-                    <h2 className="text-2xl font-black text-white">VIBE <span className="text-[#ffcc00]">BET</span></h2>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1">Admin Panel</p>
+                {/* 🌟 ማስተካከያ: Sidebar ሎጎ አዲሱ ገብቷል 🌟 */}
+                <div className="mb-10 flex items-center gap-3">
+                    <div className="w-10 h-10 shrink-0 rounded-lg overflow-hidden shadow-lg border border-[#3b4148]/50 bg-[#1c2024] p-1 flex items-center justify-center">
+                        <img src="/icon.svg" alt="Vibe Bet" className="w-full h-full object-contain" />
+                    </div>
+                    <div>
+                        <h2 className="text-xl font-black text-white leading-none italic">VIBE <span className="text-[#ffcc00]">BET</span></h2>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1">Admin Panel</p>
+                    </div>
                 </div>
+
                 <nav className="flex-1 space-y-2">
                     <button onClick={() => setActiveTab('dashboard')} className={`w-full text-left font-bold px-4 py-3 rounded-lg flex items-center gap-3 transition ${activeTab === 'dashboard' ? 'bg-[#ffcc00]/10 text-[#ffcc00] border border-[#ffcc00]/30' : 'text-slate-400 hover:bg-[#24292e] hover:text-white'}`}>
                         📊 ዳሽቦርድ (Overview)
@@ -542,9 +548,9 @@ export default function AdminDashboard() {
                 {activeTab === 'settings' && (
                     <div className="max-w-4xl animate-fade-in-down">
                         <h1 className="text-3xl font-black text-white mb-2">⚙️ ሲስተም ሴቲንግ</h1>
-                        <p className="text-slate-400 mb-8">የስፖርት ዳታ (Odds API) ቁልፍን እና ሌሎች ማስተካከያዎችን ከዚህ ይቆጣጠሩ።</p>
+                        {/* 🌟 ማስተካከያ: የ API ስም ማስተካከያ 🌟 */}
+                        <p className="text-slate-400 mb-8">የስፖርት ዳታ (API-Football) ቁልፍን እና ሌሎች ማስተካከያዎችን ከዚህ ይቆጣጠሩ。</p>
 
-                        {/* 🌟 አዲስ፡ የ API Usage የሚያሳይ ውብ ቦርድ 🌟 */}
                         <div className="bg-[#24292e] p-6 rounded-xl border border-[#3b4148] mb-8 shadow-md relative overflow-hidden">
                             <div className="absolute top-0 right-0 p-4 opacity-10 text-5xl">📊</div>
                             <h3 className="text-slate-400 font-bold text-xs uppercase mb-2">አሁን እየሰራ ያለው የ API ኮታ (Usage Limit)</h3>
@@ -557,15 +563,15 @@ export default function AdminDashboard() {
                             <div className="w-full bg-[#111418] rounded-full h-3 mb-2 border border-[#3b4148] overflow-hidden">
                                 <div 
                                     className={`h-full rounded-full transition-all duration-1000 ${apiUsage.remaining < 50 ? 'bg-red-500' : 'bg-gradient-to-r from-[#ffcc00] to-[#e6b800]'}`} 
-                                    style={{ width: `${Math.min((apiUsage.used / 500) * 100, 100)}%` }}
+                                    style={{ width: `${Math.min((apiUsage.used / ((apiUsage.used + apiUsage.remaining) || 100)) * 100, 100)}%` }}
                                 ></div>
                             </div>
-                            <p className="text-[10px] text-slate-500">በየወሩ 500 ነፃ ጥያቄ ይሰጣል። ሲያልቅ ወደ ቀጣዩ Key አውቶማቲክ ይቀየራል።</p>
+                            <p className="text-[10px] text-slate-500">በየቀኑ የተወሰነ ነፃ ጥያቄ (API Requests) ይሰጣል። ሲያልቅ ወደ ቀጣዩ Key አውቶማቲክ ይቀየራል።</p>
                         </div>
 
                         <div className="bg-[#1e2328] border border-[#3b4148] p-8 rounded-xl shadow-lg">
                             <h2 className="text-lg font-bold text-white mb-6 border-b border-[#3b4148] pb-4 flex items-center gap-2">
-                                🔑 የ The Odds API ቁልፎች (Multiple Keys)
+                                🔑 የ API-Football ቁልፎች (Multiple Keys)
                             </h2>
                             
                             {apiMsg && (
@@ -574,7 +580,6 @@ export default function AdminDashboard() {
                                 </div>
                             )}
 
-                            {/* 🌟 አዲስ፡ በግራም በቀኝም (Grid) የተሰራ የAPI ማስገቢያ እና መደርደሪያ 🌟 */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                 {/* Left Side: Add API Key Form */}
                                 <div className="bg-[#1a1f24] p-5 rounded-lg border border-[#3b4148] h-max">
@@ -585,7 +590,7 @@ export default function AdminDashboard() {
                                             value={newApiKeyValue} 
                                             onChange={(e) => setNewApiKeyValue(e.target.value)} 
                                             required 
-                                            placeholder="አዲስ የ API ቁልፍ (Key) ያስገቡ..." 
+                                            placeholder="አዲስ የ API-Football ቁልፍ ያስገቡ..." 
                                             className="w-full bg-[#111418] border border-[#3b4148] text-white px-4 py-3 rounded outline-none focus:border-[#ffcc00] font-mono text-xs transition-colors" 
                                         />
                                         <button type="submit" disabled={isLoading} className="w-full bg-[#3b4148] hover:bg-[#464c54] text-white font-bold py-3.5 rounded-lg transition active:scale-[0.98] text-sm">
@@ -642,7 +647,7 @@ export default function AdminDashboard() {
                                 <div className="bg-[#111418] p-4 rounded-lg border border-[#3b4148] mb-6">
                                     <p className="text-sm text-slate-400 flex items-start gap-2 leading-relaxed">
                                         <span className="text-[#ffcc00] text-lg">💡</span>
-                                        ሲስተሙ በየ 30 ደቂቃው ራሱ ያዘምናል (አውቶማቲክ)። ነገር ግን አሁን ወዲያውኑ አዳዲስ ጨዋታዎችን ወደ ዳታቤዝ ማስገባት ከፈለጉ ከታች ያለውን በተን ይጫኑ።
+                                        ሲስተሙ በየተወሰነ ሰዓት ራሱ ያዘምናል (አውቶማቲክ)። ነገር ግን አሁን ወዲያውኑ አዳዲስ ጨዋታዎችን ወደ ዳታቤዝ ማስገባት ከፈለጉ ከታች ያለውን በተን ይጫኑ።
                                     </p>
                                 </div>
                                 <button 
