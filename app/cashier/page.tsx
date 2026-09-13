@@ -310,42 +310,51 @@ export default function CashierDashboard() {
             const qzModule = await import('qz-tray');
             const qz = qzModule.default || qzModule;
 
-            qz.security.setCertificatePromise(function(resolve: any, reject: any) {
-                resolve(`-----BEGIN CERTIFICATE-----
-MIID9zCCAt+gAwIBAgIUHJrFToXi5GNox9w7d0q+G6QJdtMwDQYJKoZIhvcNAQEL
-BQAwgYoxCzAJBgNVBAYTAkVUMQ8wDQYDVQQIDAZBbWhhcmExDzANBgNVBAcMBkVu
-ZnJhejEQMA4GA1UECgwHQWZyb2JldDEOMAwGA1UECwwFTG9jYWwxEzARBgNVBAMM
-CnZpYmViZXQuZXQxIjAgBgkqhkiG9w0BCQEWE2Fia293b3JrdUBnbWFpbC5jb20w
-HhcNMjYwOTEyMTcxMTU1WhcNMzYwOTA5MTcxMTU1WjCBijELMAkGA1UEBhMCRVQx
-DzANBgNVBAgMBkFtaGFyYTEPMA0GA1UEBwwGRW5mcmF6MRAwDgYDVQQKDAdBZnJv
-YmV0MQ4wDAYDVQQLDAVMb2NhbDETMBEGA1UEAwwKdmliZWJldC5ldDEiMCAGCSqG
-SIb3DQEJARYTYWJrb3dvcmt1QGdtYWlsLmNvbTCCASIwDQYJKoZIhvcNAQEBBQAD
-ggEPADCCAQoCggEBALLpofDt1OsPNHFxxn61olx8PrDVhvs6tMEK3BGP9Ddg52uJ
-YscD/SdiiVgdwMcAfWESejdMlbaK95fzaibM+RckltCnh6Tk8Ac5cFaBV6lupUlh
-eIMzuyqG5SKMdy0Y8zSb4qqlIft26ZfQKlNX6vhTlGIPA0C2JKzATXm+kRB+ECia
-5YqYWJ8yA8BFDcwGUZhqqgx8nMyubNUuRQTExAZad8sYdOMe8dhs6MXsd498yaMy
-xf3apryX9IUVphJEG9TVwSpA/YiDGAE9vzSFKFI8HcyVDpG1bMZ41f1hmj0fNYv8
-Gw98aBbAC6H1fdqpatRVjq1n8703taDQ1cHeAjcCAwEAAaNTMFEwHQYDVR0OBBYE
-FKQcaumkzkCjHaAGDfPUpSLnDIpHMB8GA1UdIwQYMBaAFKQcaumkzkCjHaAGDfPU
-pSLnDIpHMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAFNSMohh
-D4OFQW1Swa2RD4ICZmf/twsmJY6DqmFtBvxS0tUxOwsaDGyUJw+HST2AVmTLtwxn
-lwy/gwphmCl7TpgRUCBmDmMo2NBpMKnWOo7WyoWMzfRBzxJ7TnTF/id6k+ymKPC3
-m/EjcTPZP9g37lT3bpecMNc1iZveBnLht9py+vfN1DL7tQKvpwUTvlvjIClGj5mm
-5p30nEr/mNEmaZ6/X4GWaW0vHHYMF0XbMLTmenu2DjJudBO8luh2Gf5YvgzkWYpI
-KrbL8xPJO7DKfn/J+QZYYmoDVliVFTDmasY9qPm+vep7gGkdfQbiMeGrhp0WcuGr
-aR4ucTpnYio6L8w=
------END CERTIFICATE-----`);
-            });
-
-            qz.security.setSignaturePromise(function(toSign: string) {
-                return function(resolve: any, reject: any) {
-                    axios.post(`${API_URL}/api/qz/sign`, { request: toSign })
-                        .then(res => resolve(res.data))
-                        .catch(err => reject(err));
-                };
-            });
-
+            // 🔑 1. የሰርቲፊኬት ፎርማቱን እና የቶከን አላላኩን አስተካክለናል
             if (!qz.websocket.isActive()) {
+                qz.security.setCertificatePromise(function(resolve: any, reject: any) {
+                    resolve(
+                        "-----BEGIN CERTIFICATE-----\n" +
+                        "MIID9zCCAt+gAwIBAgIUHJrFToXi5GNox9w7d0q+G6QJdtMwDQYJKoZIhvcNAQEL\n" +
+                        "BQAwgYoxCzAJBgNVBAYTAkVUMQ8wDQYDVQQIDAZBbWhhcmExDzANBgNVBAcMBkVu\n" +
+                        "ZnJhejEQMA4GA1UECgwHQWZyb2JldDEOMAwGA1UECwwFTG9jYWwxEzARBgNVBAMM\n" +
+                        "CnZpYmViZXQuZXQxIjAgBgkqhkiG9w0BCQEWE2Fia293b3JrdUBnbWFpbC5jb20w\n" +
+                        "HhcNMjYwOTEyMTcxMTU1WhcNMzYwOTA5MTcxMTU1WjCBijELMAkGA1UEBhMCRVQx\n" +
+                        "DzANBgNVBAgMBkFtaGFyYTEPMA0GA1UEBwwGRW5mcmF6MRAwDgYDVQQKDAdBZnJv\n" +
+                        "YmV0MQ4wDAYDVQQLDAVMb2NhbDETMBEGA1UEAwwKdmliZWJldC5ldDEiMCAGCSqG\n" +
+                        "SIb3DQEJARYTYWJrb3dvcmt1QGdtYWlsLmNvbTCCASIwDQYJKoZIhvcNAQEBBQAD\n" +
+                        "ggEPADCCAQoCggEBALLpofDt1OsPNHFxxn61olx8PrDVhvs6tMEK3BGP9Ddg52uJ\n" +
+                        "YscD/SdiiVgdwMcAfWESejdMlbaK95fzaibM+RckltCnh6Tk8Ac5cFaBV6lupUlh\n" +
+                        "eIMzuyqG5SKMdy0Y8zSb4qqlIft26ZfQKlNX6vhTlGIPA0C2JKzATXm+kRB+ECia\n" +
+                        "5YqYWJ8yA8BFDcwGUZhqqgx8nMyubNUuRQTExAZad8sYdOMe8dhs6MXsd498yaMy\n" +
+                        "xf3apryX9IUVphJEG9TVwSpA/YiDGAE9vzSFKFI8HcyVDpG1bMZ41f1hmj0fNYv8\n" +
+                        "Gw98aBbAC6H1fdqpatRVjq1n8703taDQ1cHeAjcCAwEAAaNTMFEwHQYDVR0OBBYE\n" +
+                        "FKQcaumkzkCjHaAGDfPUpSLnDIpHMB8GA1UdIwQYMBaAFKQcaumkzkCjHaAGDfPU\n" +
+                        "pSLnDIpHMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAFNSMohh\n" +
+                        "D4OFQW1Swa2RD4ICZmf/twsmJY6DqmFtBvxS0tUxOwsaDGyUJw+HST2AVmTLtwxn\n" +
+                        "lwy/gwphmCl7TpgRUCBmDmMo2NBpMKnWOo7WyoWMzfRBzxJ7TnTF/id6k+ymKPC3\n" +
+                        "m/EjcTPZP9g37lT3bpecMNc1iZveBnLht9py+vfN1DL7tQKvpwUTvlvjIClGj5mm\n" +
+                        "5p30nEr/mNEmaZ6/X4GWaW0vHHYMF0XbMLTmenu2DjJudBO8luh2Gf5YvgzkWYpI\n" +
+                        "KrbL8xPJO7DKfn/J+QZYYmoDVliVFTDmasY9qPm+vep7gGkdfQbiMeGrhp0WcuGr\n" +
+                        "aR4ucTpnYio6L8w=\n" +
+                        "-----END CERTIFICATE-----"
+                    );
+                });
+
+                qz.security.setSignaturePromise(function(toSign: string) {
+                    return function(resolve: any, reject: any) {
+                        axios.post(`${API_URL}/api/qz/sign`, { request: toSign }, {
+                            headers: { Authorization: `Bearer ${token}` } // 🔑 ቶከን እዚህ ገብቷል!
+                        })
+                        .then(res => {
+                            // ባክኤንዱ የሚመልሰውን ፊርማ (Signature) በትክክል ለማውጣት
+                            const sig = res.data.signature || res.data.data || res.data;
+                            resolve(sig);
+                        })
+                        .catch(err => reject(err));
+                    };
+                });
+
                 await qz.websocket.connect();
             }
 
