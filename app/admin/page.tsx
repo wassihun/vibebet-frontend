@@ -150,7 +150,10 @@ export default function AdminDashboard() {
         setIsLoading(true);
         setStaffMsg(null);
         try {
-            const res = await axios.post(`${API_BASE}/api/auth/register-staff`, { username: newUsername, password: newPassword, role: newRole });
+            const res = await axios.post(`${API_BASE}/api/auth/register-staff`, 
+                { username: newUsername, password: newPassword, role: newRole },
+                { headers: { Authorization: `Bearer ${token}` } } // 🔑 ማስተካከያ እዚህ ገብቷል
+            );
             setStaffMsg({ type: 'success', text: res.data.message });
             setNewUsername('');
             setNewPassword('');
@@ -167,7 +170,10 @@ export default function AdminDashboard() {
         setApiMsg(null);
         try {
             const keysStr = keysArray.join(',');
-            await axios.post(`${API_BASE}/api/matches/update-api-key`, { api_key: keysStr });
+            await axios.post(`${API_BASE}/api/matches/update-api-key`, 
+                { api_key: keysStr },
+                { headers: { Authorization: `Bearer ${token}` } } // 🔑 ማስተካከያ እዚህ ገብቷል
+            );
             setApiKeysList(keysArray);
             setApiMsg({ type: 'success', text: '✅ የ API Keys ዝርዝር በተሳካ ሁኔታ ተዘምኗል!' });
         } catch (err: any) {
@@ -194,7 +200,10 @@ export default function AdminDashboard() {
         setIsSyncing(true);
         setApiMsg({ type: 'success', text: '⏳ አዳዲስ ጨዋታዎችን ከ API በማምጣት ላይ... እባክዎ ትንሽ ይጠብቁ' });
         try {
-            const res = await axios.post(`${API_BASE}/api/matches/manual-sync`);
+            const res = await axios.post(`${API_BASE}/api/matches/manual-sync`, 
+                {}, 
+                { headers: { Authorization: `Bearer ${token}` } } // 🔑 ማስተካከያ እዚህ ገብቷል
+            );
             setApiMsg({ type: 'success', text: res.data.message });
             
             axios.get(`${API_BASE}/api/matches/list`).then(r => {
@@ -477,7 +486,7 @@ export default function AdminDashboard() {
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                             <div>
                                 <h1 className="text-2xl font-black text-white mb-2">👥 አዲስ ሰራተኛ መመዝገቢያ</h1>
-                                <p className="text-slate-400 mb-6 text-sm">ለካሼር ወይም ለሌላ አድሚን መግቢያ አካውንት ይፍጠሩ።</p>
+                                <p className="text-slate-400 mb-6 text-sm">ለካሼር ወይም ለሌላ አድሚን መግቢያ አካውንት ይፍጠሩ。</p>
                                 <div className="bg-[#1e2328] border border-[#3b4148] p-6 rounded-xl shadow-lg">
                                     {staffMsg && (
                                         <div className={`p-4 rounded-lg mb-6 font-bold text-sm border ${staffMsg.type === 'success' ? 'bg-[#00e700]/10 border-[#00e700]/30 text-[#00e700]' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
@@ -548,8 +557,7 @@ export default function AdminDashboard() {
                 {activeTab === 'settings' && (
                     <div className="max-w-4xl animate-fade-in-down">
                         <h1 className="text-3xl font-black text-white mb-2">⚙️ ሲስተም ሴቲንግ</h1>
-                        {/* 🌟 ማስተካከያ: የ API ስም ማስተካከያ 🌟 */}
-                        <p className="text-slate-400 mb-8">የስፖርት ዳታ (API-Football) ቁልፍን እና ሌሎች ማስተካከያዎችን ከዚህ ይቆጣጠሩ。</p>
+                        <p className="text-slate-400 mb-8">የስፖርት ዳታ (API-Football) ቁልፍን እና ሌሎች ማስተካከያዎችን ከዚህ ይቆጣጠሩ።</p>
 
                         <div className="bg-[#24292e] p-6 rounded-xl border border-[#3b4148] mb-8 shadow-md relative overflow-hidden">
                             <div className="absolute top-0 right-0 p-4 opacity-10 text-5xl">📊</div>

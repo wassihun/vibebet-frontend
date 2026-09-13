@@ -1045,11 +1045,6 @@ export default function Home() {
                             
                             {(() => {
                                 const allCats = getCategorizedMarkets(selectedMatch);
-                                const tabs = ['All', 'Main Market', 'Total', 'Combination', 'Half', 'Handicap'];
-                                const availableTabs = tabs.filter(t => t === 'All' || (allCats[t] && allCats[t].length > 0));
-
-                            {(() => {
-                                const allCats = getCategorizedMarkets(selectedMatch);
                                 const tabs = ['ALL', 'MAIN', 'TOTALS', 'COMBOS', 'HALF', 'HANDICAPS', 'PLAYERS'];
                                 const availableTabs = tabs.filter((t: string) => t === 'ALL' || (allCats[t] && allCats[t].length > 0));
 
