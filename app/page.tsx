@@ -36,6 +36,8 @@ interface Fixture {
     id: string | number;
     home_team: string;
     away_team: string;
+    home_team_logo?: string;
+    away_team_logo?: string;
     match_time: string;
     league: string;
     league_flag?: string;
@@ -144,7 +146,7 @@ export default function Home() {
     const [placedBetSignatures, setPlacedBetSignatures] = useState<string[]>([]);
 
     const [selectedMatch, setSelectedMatch] = useState<Fixture | null>(null);
-    const [marketTab, setMarketTab] = useState<string>('MAIN');
+    const [marketTab, setMarketTab] = useState<string>('ALL');
 
     const [selectedLeague, setSelectedLeague] = useState<string>('Upcoming');
     const [isTopLeaguesOpen, setIsTopLeaguesOpen] = useState(true);
@@ -278,6 +280,8 @@ export default function Home() {
                 id: game.id,
                 home_team: game.home_team || "Home",
                 away_team: game.away_team || "Away",
+                home_team_logo: game.home_team_logo || game.home_logo || null,
+                away_team_logo: game.away_team_logo || game.away_logo || null,
                 match_time: game.commence_time,
                 league: game.sport_key || "World|Soccer|https://media.api-sports.io/flags/un.svg",
                 league_flag: game.league_logo,
@@ -404,7 +408,6 @@ export default function Home() {
 
     const handleMarketSelection = (game: any, odd: any, marketName: string) => {
         toggleSelection(game, odd, marketName);
-        setSelectedMatch(null);
     };
 
     const totalOdds = betSlip.reduce((total: number, item: any) => total * (item.odd_value || 1), 1).toFixed(2);
@@ -561,37 +564,37 @@ export default function Home() {
         };
 
         const CUSTOM_TITLES: Record<number, string> = {
-            1: "1X2",
-            8: "BOTH TEAMS TO SCORE",
-            12: "DOUBLE CHANCE",
-            5: "TOTAL",
-            7: "HALFTIME/FULLTIME",
-            11: "HIGHEST SCORING HALF",
-            21: "ODD/EVEN",
-            2: "DRAW NO BET",
-            10: "CORRECT SCORE",
-            6: "1ST HALF - TOTAL",
-            38: "EXACT GOALS",
-            349: "GOAL RANGE",
-            295: "CORNER RANGE",
-            85: "TOTAL CORNERS",
-            25: "1X2 & TOTAL",
-            24: "1X2 & BOTH TEAMS TO SCORE",
-            54: "10 MINUTES - 1X2 FROM 1 TO 10",
-            92: "ANYTIME GOALSCORER",
-            79: "CORNER 1X2",
-            33: "DOUBLE CHANCE & BOTH TEAMS TO SCORE",
-            86: "LAST CORNER",
-            15: "LAST GOAL",
-            94: "LAST GOALSCORER",
-            88: "ODD/EVEN CORNERS",
-            83: "SENDING OFF",
-            49: "TOTAL & BOTH TEAMS TO SCORE",
-            62: "WHICH TEAM TO SCORE"
+            1: "Match Result",
+            8: "Both Teams To Score",
+            12: "Double Chance",
+            5: "Total Goals",
+            7: "Halftime/Fulltime",
+            11: "Highest Scoring Half",
+            21: "Odd/Even",
+            2: "Draw No Bet",
+            10: "Correct Score",
+            6: "1st Half - Total",
+            38: "Exact Goals",
+            349: "Goal Range",
+            295: "Corner Range",
+            85: "Total Corners",
+            25: "1X2 & Total",
+            24: "1X2 & Both Teams To Score",
+            54: "10 Minutes - 1X2 From 1 To 10",
+            92: "Anytime Goalscorer",
+            79: "Corner 1X2",
+            33: "Double Chance & Both Teams To Score",
+            86: "Last Corner",
+            15: "Last Goal",
+            94: "Last Goalscorer",
+            88: "Odd/Even Corners",
+            83: "Sending Off",
+            49: "Total & Both Teams To Score",
+            62: "Which Team To Score"
         };
 
         const GLOBAL_ID_ORDER = [
-            1, 8, 12, 5, 7, 21, 2, 11, 10, 
+            1, 12, 8, 5, 2, 7, 21, 11, 10, 
             6, 38, 349, 295, 85,
             25, 24, 54, 92, 79, 33, 86, 15, 94, 88, 83, 49, 62,
             50, 13, 72, 31, 34, 39, 14, 93, 20, 46, 18, 19, 22, 77, 3, 35, 42, 63, 26, 27, 40, 192, 23, 48, 32, 16, 9, 4, 56, 239, 28, 41, 193, 60, 17
@@ -646,7 +649,7 @@ export default function Home() {
                     normalizedOutcomes = normalizedOutcomes.filter((o: any) => {
                         const numMatch = o.option.match(/\d+(\.\d+)?/);
                         if (!numMatch) return true;
-                        return numMatch[0].endsWith('.5');
+                        return numMatch[0].endsWith('.5') || numMatch[0].endsWith('.0');
                     });
                 }
             }
@@ -708,9 +711,6 @@ export default function Home() {
             if (normalizedOutcomes.length === 1) cols = 1;
 
             let finalTitle = CUSTOM_TITLES[betId] || rawTitle;
-            if ((category === "MAIN" || category === "TOTALS" || category === "COMBOS") && !CUSTOM_TITLES[betId]) {
-                finalTitle = rawTitle.toUpperCase();
-            }
 
             if (normalizedOutcomes.length > 0) {
                 categories[category].push({
@@ -810,38 +810,78 @@ export default function Home() {
     const getLeagueDetails = (key: string, flagFromApi?: string) => {
         if (!key || typeof key !== 'string') return { country: 'World', flag: 'https://media.api-sports.io/flags/un.svg', name: 'Soccer', isTop: false };
         
-        const topLeaguesExactMatches = [
-            'England|Premier League',
-            'Germany|Bundesliga',
-            'Netherlands|Eredivisie',
-            'Spain|La Liga',
-            'Spain|Primera Division',
-            'Portugal|Liga Portugal',
-            'Portugal|Primeira Liga',
-            'France|Ligue 1',
-            'Belgium|Pro League',
-            'Belgium|Jupiler Pro League',
-            'Italy|Serie A',
-            'Switzerland|Super League',
-            'Sweden|Superettan',
-            'World|UEFA Champions League',
-            'World|UEFA Europa League'
-        ];
+        let country = 'World';
+        let name = key.replace('soccer_', '').replace(/_/g, ' ');
+        let flag = flagFromApi || 'https://media.api-sports.io/flags/un.svg';
 
         if (key.includes('|')) {
             const parts = key.split('|');
-            const exactKey = `${parts[0] || 'World'}|${parts[1] || 'League'}`;
-            
-            let displayName = parts[1] || 'League';
-            if (displayName === 'Primera Division' || displayName === 'La Liga') displayName = 'LaLiga';
-            if (displayName === 'Primeira Liga') displayName = 'Liga Portugal';
-            if (displayName === 'Jupiler Pro League') displayName = 'Pro League';
-
-            const isTop = topLeaguesExactMatches.some((t: string) => exactKey.toLowerCase() === t.toLowerCase());
-            
-            return { country: parts[0] || 'World', flag: parts[2] || flagFromApi || 'https://media.api-sports.io/flags/un.svg', name: displayName, isTop: isTop };
+            country = parts[0] || 'World';
+            name = parts[1] || name;
+            flag = parts[2] || flag;
         }
-        return { country: 'World', flag: 'https://media.api-sports.io/flags/un.svg', name: key.replace('soccer_', '').replace(/_/g, ' '), isTop: false };
+
+        const nameLower = name.toLowerCase().trim();
+        const countryLower = country.toLowerCase().trim();
+        const keyLower = key.toLowerCase().trim();
+
+        // Standardize common variations
+        if (nameLower === 'primera division' || nameLower === 'la liga' || nameLower === 'laliga') name = 'LaLiga';
+        if (nameLower === 'primeira liga' || nameLower === 'liga portugal') name = 'Liga Portugal';
+        if (nameLower === 'jupiler pro league') name = 'Pro League';
+
+        let isTop = false;
+
+        // 1. Bundesliga
+        if ((name === 'Bundesliga' || nameLower === '1. bundesliga' || keyLower.includes('germany_bundesliga')) && (countryLower === 'germany' || countryLower === 'world') && !nameLower.includes('austria') && !nameLower.includes('2')) {
+            name = 'Bundesliga'; country = 'Germany'; flag = 'https://media.api-sports.io/flags/de.svg'; isTop = true;
+        }
+        // 2. Eredivisie
+        else if ((nameLower === 'eredivisie' || keyLower.includes('netherlands_eredivisie')) && (countryLower === 'netherlands' || countryLower === 'world')) {
+            name = 'Eredivisie'; country = 'Netherlands'; flag = 'https://media.api-sports.io/flags/nl.svg'; isTop = true;
+        }
+        // 3. LaLiga
+        else if ((name === 'LaLiga' || keyLower.includes('spain_la_liga')) && (countryLower === 'spain' || countryLower === 'world')) {
+            name = 'LaLiga'; country = 'Spain'; flag = 'https://media.api-sports.io/flags/es.svg'; isTop = true;
+        }
+        // 4. Liga Portugal
+        else if ((name === 'Liga Portugal' || keyLower.includes('portugal_primeira_liga')) && (countryLower === 'portugal' || countryLower === 'world')) {
+            name = 'Liga Portugal'; country = 'Portugal'; flag = 'https://media.api-sports.io/flags/pt.svg'; isTop = true;
+        }
+        // 5. Ligue 1
+        else if ((nameLower === 'ligue 1' || keyLower.includes('france_ligue_one')) && (countryLower === 'france' || countryLower === 'world')) {
+            name = 'Ligue 1'; country = 'France'; flag = 'https://media.api-sports.io/flags/fr.svg'; isTop = true;
+        }
+        // 6. Premier League
+        else if ((nameLower === 'premier league' || keyLower === 'soccer_epl') && (countryLower === 'england' || keyLower === 'soccer_epl')) {
+            name = 'Premier League'; country = 'England'; flag = 'https://media.api-sports.io/flags/gb-eng.svg'; isTop = true;
+        }
+        // 7. Pro League
+        else if ((name === 'Pro League' || keyLower.includes('belgium_first_div')) && (countryLower === 'belgium' || countryLower === 'world')) {
+            name = 'Pro League'; country = 'Belgium'; flag = 'https://media.api-sports.io/flags/be.svg'; isTop = true;
+        }
+        // 8. Serie A
+        else if ((nameLower === 'serie a' || keyLower.includes('italy_serie_a')) && (countryLower === 'italy' || countryLower === 'world') && !nameLower.includes('brazil') && !nameLower.includes('ecuador')) {
+            name = 'Serie A'; country = 'Italy'; flag = 'https://media.api-sports.io/flags/it.svg'; isTop = true;
+        }
+        // 9. Super League
+        else if ((nameLower === 'super league' || keyLower.includes('swiss_super_league')) && (countryLower === 'switzerland' || keyLower.includes('switzerland') || keyLower.includes('switz'))) {
+            name = 'Super League'; country = 'Switzerland'; flag = 'https://media.api-sports.io/flags/ch.svg'; isTop = true;
+        }
+        // 10. Superettan
+        else if ((nameLower === 'superettan' || keyLower.includes('sweden_superettan')) && (countryLower === 'sweden' || countryLower === 'world')) {
+            name = 'Superettan'; country = 'Sweden'; flag = 'https://media.api-sports.io/flags/se.svg'; isTop = true;
+        }
+        // 11. UEFA Champions League
+        else if ((nameLower.includes('champions league') || nameLower.includes('champs league') || keyLower.includes('uefa_champs_league')) && !nameLower.includes('afc') && !nameLower.includes('caf') && !nameLower.includes('women') && !keyLower.includes('afc')) {
+            name = 'UEFA Champions League'; country = 'World'; flag = 'https://media.api-sports.io/football/leagues/2.png'; isTop = true;
+        }
+        // 12. UEFA Europa League
+        else if ((nameLower.includes('europa league') || keyLower.includes('uefa_europa_league')) && !nameLower.includes('women')) {
+            name = 'UEFA Europa League'; country = 'World'; flag = 'https://media.api-sports.io/football/leagues/3.png'; isTop = true;
+        }
+
+        return { country, flag, name, isTop };
     };
 
     const activeFixtures = useMemo(() => {
@@ -852,7 +892,7 @@ export default function Home() {
     const { allLeagues, topLeagues, sortedCountries } = useMemo(() => {
         const grouped = activeFixtures.reduce((acc: any, game: any) => {
             const details = getLeagueDetails(game.league, game.league_flag);
-            const uniqueKey = game.league || 'unknown';
+            const uniqueKey = details.isTop ? details.name : (game.league || 'unknown');
             if (!acc[uniqueKey]) acc[uniqueKey] = { details, games: [] };
             acc[uniqueKey].games.push(game);
             return acc;
@@ -902,7 +942,7 @@ export default function Home() {
 
     return (
         <div className="min-h-screen bg-[#1c2024] text-slate-300 font-sans text-sm relative">
-            <header className="bg-[#ffcc00] border-b border-[#e6b800] sticky top-0 z-30 h-[60px] flex items-center justify-between px-4 shadow-md">
+            <header className="bg-[#ffcc00] border-b border-[#e6b800] sticky top-0 z-50 h-[60px] flex items-center justify-between px-4 shadow-md">
                 <button onClick={() => window.location.reload()} className="flex items-center gap-3 cursor-pointer hover:opacity-90 transition text-left">
                     <div className="w-11 h-11 shrink-0 rounded-[10px] overflow-hidden shadow-sm border border-black/10 bg-[#1c2024] p-1.5 flex items-center justify-center">
                         <img src="/icon.svg" alt="Vibe Bet" className="w-full h-full object-contain" />
@@ -928,7 +968,7 @@ export default function Home() {
                 </div>
             </header>
 
-            <div className="lg:hidden fixed bottom-0 left-0 right-0 h-[60px] bg-[#1e2328] border-t border-[#3b4148] flex justify-around items-center z-40 shadow-[0_-4px_10px_rgba(0,0,0,0.5)]">
+            <div className="lg:hidden fixed bottom-0 left-0 right-0 h-[60px] bg-[#1e2328] border-t border-[#3b4148] flex justify-around items-center z-50 shadow-[0_-4px_10px_rgba(0,0,0,0.5)]">
                 <button onClick={() => setIsMobileMenuOpen(true)} className="flex flex-col items-center gap-1 text-slate-400 hover:text-[#ffcc00]"><span className="text-xl">☰</span><span className="text-[10px] font-bold uppercase">Menu</span></button>
                 <button onClick={() => setIsCheckTicketModalOpen(true)} className="flex flex-col items-center gap-1 text-slate-400 hover:text-[#ffcc00]"><span className="text-xl">🔍</span><span className="text-[10px] font-bold uppercase">Check</span></button>
                 <button onClick={() => { setIsMobileMenuOpen(false); setIsMobileBetSlipOpen(false); setSelectedMatch(null); }} className="flex flex-col items-center gap-1 text-[#ffcc00]"><span className="text-xl">🏠</span><span className="text-[10px] font-bold uppercase">Home</span></button>
@@ -938,11 +978,11 @@ export default function Home() {
                 </button>
             </div>
 
-            {isMobileMenuOpen && <div className="fixed inset-0 bg-black/70 z-40 xl:hidden animate-fade-in" onClick={() => setIsMobileMenuOpen(false)} />}
-            {isMobileBetSlipOpen && <div className="fixed inset-0 bg-black/70 z-40 lg:hidden animate-fade-in" onClick={() => setIsMobileBetSlipOpen(false)} />}
+            {isMobileMenuOpen && <div className="fixed inset-0 top-[60px] bottom-[60px] lg:bottom-0 bg-black/70 z-30 xl:hidden animate-fade-in" onClick={() => setIsMobileMenuOpen(false)} />}
+            {isMobileBetSlipOpen && <div className="fixed inset-0 top-[60px] bottom-[60px] lg:bottom-0 bg-black/70 z-30 lg:hidden animate-fade-in" onClick={() => setIsMobileBetSlipOpen(false)} />}
 
             <div className="flex w-full h-[calc(100vh-60px)] overflow-hidden pb-[60px] lg:pb-0">
-                <aside className={`fixed inset-y-0 left-0 z-50 w-[260px] bg-[#1e2328] border-r border-[#2a3038] overflow-y-auto custom-scrollbar transform transition-transform duration-300 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} xl:relative xl:translate-x-0 xl:flex flex-col shrink-0`}>
+                <aside className={`fixed top-[60px] bottom-[60px] lg:bottom-0 left-0 z-40 w-[260px] bg-[#1e2328] border-r border-[#2a3038] overflow-y-auto custom-scrollbar transform transition-transform duration-300 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} xl:relative xl:top-0 xl:bottom-0 xl:translate-x-0 xl:flex flex-col shrink-0`}>
                     <div className="xl:hidden flex justify-between items-center p-3 bg-[#24292e] border-b border-[#3b4148]">
                         <span className="font-bold text-[#ffcc00] uppercase text-sm">Menu</span><button onClick={() => setIsMobileMenuOpen(false)} className="text-slate-400 hover:text-white text-2xl leading-none">×</button>
                     </div>
@@ -963,27 +1003,53 @@ export default function Home() {
                         </button>
                     </div>
 
+                    {/* 🌟 በምስሉ መሰረት የተቀረጸው TOP LEAGUES ዝርዝር 🌟 */}
                     {topLeagues.length > 0 && (
                         <div className="border-b border-[#2a3038]">
                             <button onClick={() => setIsTopLeaguesOpen(!isTopLeaguesOpen)} className="w-full flex items-center justify-between p-3 hover:bg-[#24292e] transition-colors">
-                                <div className="flex items-center gap-2"><span className="text-[#ffcc00]">🔥</span><span className="text-[13px] font-bold text-white">Top Leagues</span></div>
-                                <div className="flex items-center gap-2"><span className="bg-[#2a3038] text-slate-400 text-[10px] px-1.5 py-0.5 rounded-sm">{topLeagues.length}</span><span className="text-slate-500 text-[10px]">{isTopLeaguesOpen ? '▲' : '▼'}</span></div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-base">🔥</span>
+                                    <span className="text-[14px] font-bold text-white tracking-wide">Top Leagues</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="bg-[#24292e] border border-[#3b4148]/50 text-slate-400 text-[11px] font-semibold px-2 py-0.5 rounded">{topLeagues.length}</span>
+                                    <span className="text-slate-500 text-[10px]">{isTopLeaguesOpen ? '▲' : '▼'}</span>
+                                </div>
                             </button>
                             {isTopLeaguesOpen && (
-                                <ul className="text-xs text-slate-300 pb-2">
-                                    {topLeagues.map(([key, data]: [string, any]) => (
-                                        <li key={key}>
-                                            <button onClick={() => { setSelectedLeague(key); setSelectedMatch(null); if (window.innerWidth < 1280) setIsMobileMenuOpen(false); }} className={`w-full flex items-center justify-between px-3 py-1.5 transition-colors ${selectedLeague === key ? 'bg-[#2a3038] border-l-2 border-[#ffcc00] text-white' : 'border-l-2 border-transparent hover:bg-[#2a3038] hover:text-white'}`}>
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-5 h-5 bg-[#2a3038] rounded-full flex items-center justify-center text-xs overflow-hidden border border-[#3b4148]">{renderFlag(data.details.flag)}</div>
-                                                    <span className="font-semibold">{data.details.name}</span>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-slate-500 text-[11px]">{data.games.length}</span><span className="text-slate-600 hover:text-[#ffcc00] transition-colors text-sm">☆</span>
-                                                </div>
-                                            </button>
-                                        </li>
-                                    ))}
+                                <ul className="text-xs text-slate-300 pb-1">
+                                    {topLeagues.map(([key, data]: [string, any]) => {
+                                        const isSelected = selectedLeague === key;
+                                        return (
+                                            <li key={key}>
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedLeague(key);
+                                                        setSelectedMatch(null);
+                                                        if (window.innerWidth < 1280) setIsMobileMenuOpen(false);
+                                                    }}
+                                                    className={`w-full flex items-center justify-between px-3 py-2.5 transition-colors ${
+                                                        isSelected
+                                                            ? 'bg-[#24292e] border-l-4 border-[#ffcc00] text-white font-bold'
+                                                            : 'border-l-4 border-transparent hover:bg-[#24292e] text-slate-300 hover:text-white'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-6 h-6 rounded-full flex items-center justify-center overflow-hidden shrink-0">
+                                                            {renderFlag(data.details.flag)}
+                                                        </div>
+                                                        <span className={`text-[13px] ${isSelected ? 'font-bold text-white' : 'font-semibold text-slate-200'}`}>
+                                                            {data.details.name}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-slate-400 text-[11px] font-medium">{data.games.length}</span>
+                                                        <span className="text-slate-500 hover:text-[#ffcc00] transition-colors text-sm">☆</span>
+                                                    </div>
+                                                </button>
+                                            </li>
+                                        );
+                                    })}
                                 </ul>
                             )}
                         </div>
@@ -1034,12 +1100,38 @@ export default function Home() {
                 <main className="flex-1 flex flex-col min-w-0 bg-[#16191c] overflow-hidden relative">
                     {selectedMatch ? (
                         <div className="flex flex-col h-full bg-[#16191c] animate-fade-in">
-                            <div className="bg-[#1e2328] px-4 py-3 flex items-center justify-between border-b border-[#2a3038]">
-                                <button onClick={() => setSelectedMatch(null)} className="text-[#ffcc00] font-bold hover:text-white flex items-center gap-1 transition text-xs sm:text-sm">
-                                    <span>←</span> ተመለስ
-                                </button>
-                                <div className="text-white font-black text-sm sm:text-base text-right flex-1 ml-4 truncate">
-                                    {selectedMatch.home_team} <span className="text-slate-500 font-normal">vs</span> {selectedMatch.away_team}
+                            <div className="bg-[#1e2328] flex flex-col border-b border-[#2a3038]">
+                                <div className="flex items-center gap-3 px-3 py-2 border-b border-[#2a3038] bg-[#24292e]">
+                                    <button onClick={() => setSelectedMatch(null)} className="text-[#00e700] hover:text-[#ffcc00] text-xl font-bold px-2 py-1 leading-none transition">❮</button>
+                                    <div className="flex items-center gap-2 text-white font-bold text-sm tracking-wide">
+                                        <span className="text-slate-400">⚽</span>
+                                        {getLeagueDetails(selectedMatch.league).country} - {getLeagueDetails(selectedMatch.league).name}
+                                    </div>
+                                </div>
+
+                                <div className="py-4 flex flex-col items-center bg-[#1a1f24]">
+                                    <div className="text-slate-400 text-[11px] font-semibold tracking-widest mb-3">
+                                        {formatMatchDateTime(selectedMatch.match_time)}
+                                    </div>
+                                    <div className="flex items-center justify-center w-full px-4 gap-2">
+                                        <div className="flex-1 flex flex-col items-center text-center gap-2">
+                                            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/5 rounded-full flex items-center justify-center text-xl shadow-inner border border-[#3b4148] overflow-hidden">
+                                                {selectedMatch.home_team_logo ? (
+                                                    <img src={selectedMatch.home_team_logo} alt={selectedMatch.home_team} className="w-8 h-8 sm:w-10 sm:h-10 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                                                ) : '🛡️'}
+                                            </div>
+                                            <span className="text-[11px] sm:text-[13px] font-black text-white leading-tight">{selectedMatch.home_team}</span>
+                                        </div>
+                                        <div className="text-[13px] font-black text-slate-500 tracking-widest mx-2">VS</div>
+                                        <div className="flex-1 flex flex-col items-center text-center gap-2">
+                                            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/5 rounded-full flex items-center justify-center text-xl shadow-inner border border-[#3b4148] overflow-hidden">
+                                                {selectedMatch.away_team_logo ? (
+                                                    <img src={selectedMatch.away_team_logo} alt={selectedMatch.away_team} className="w-8 h-8 sm:w-10 sm:h-10 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                                                ) : '🛡️'}
+                                            </div>
+                                            <span className="text-[11px] sm:text-[13px] font-black text-white leading-tight">{selectedMatch.away_team}</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             
@@ -1052,57 +1144,52 @@ export default function Home() {
 
                                 return (
                                     <>
-                                        <div className="flex overflow-x-auto gap-6 px-4 bg-[#24292e] border-b border-[#3b4148] custom-scrollbar shrink-0">
+                                        <div className="flex overflow-x-auto bg-[#2a3038] custom-scrollbar shrink-0 border-b border-[#3b4148]">
                                             {availableTabs.map((tab: string) => (
                                                 <button
                                                     key={tab}
                                                     onClick={() => setMarketTab(tab)}
-                                                    className={`py-4 text-[12px] tracking-[0.05em] font-black whitespace-nowrap uppercase transition-all border-b-[3px] ${marketTab === tab ? 'text-[#ffcc00] border-[#ffcc00]' : 'text-slate-400 border-transparent hover:text-white'}`}
+                                                    className={`py-3 px-5 text-[12px] font-black whitespace-nowrap transition-colors ${marketTab === tab ? 'bg-[#1a1f24] text-[#ffcc00] border-t-2 border-t-[#ffcc00]' : 'bg-[#2a3038] text-slate-400 hover:text-white hover:bg-[#24292e]'}`}
                                                 >
                                                     {tab}
                                                 </button>
                                             ))}
                                         </div>
 
-                                        <div className="flex-1 overflow-y-auto p-2 sm:p-4 bg-[#2a3038] custom-scrollbar">
-                                            <div className="max-w-5xl mx-auto w-full bg-[#485058] border border-[#3a4148] rounded-md overflow-hidden shadow-md">
-                                                {displayMarkets.map((market: any, mIdx: number) => {
+                                        <div className="flex-1 overflow-y-auto bg-[#1a1f24] custom-scrollbar">
+                                            <div className="w-full bg-[#1a1f24]">
+                                                {displayMarkets.map((market: any) => {
                                                     const isOpen = openAccordions.includes(market.unique_id);
-                                                    let customClass = `grid gap-2 `;
-                                                    if (market.cols === 4) customClass += 'grid-cols-2 md:grid-cols-4';
-                                                    else if (market.cols === 3) customClass += 'grid-cols-1 md:grid-cols-3';
-                                                    else if (market.cols === 1) customClass += 'grid-cols-1';
-                                                    else customClass += 'grid-cols-1 md:grid-cols-2';
-
-                                                    const oddClass = 'flex justify-between items-center px-3 py-2.5 rounded-sm transition-all duration-500 border';
+                                                    
+                                                    let gridClass = "grid gap-[1px] bg-[#3a4148] border-b border-[#3a4148] ";
+                                                    if (market.cols === 4) gridClass += "grid-cols-2 sm:grid-cols-4";
+                                                    else if (market.cols === 3) gridClass += "grid-cols-3";
+                                                    else if (market.cols === 1) gridClass += "grid-cols-1";
+                                                    else gridClass += "grid-cols-2";
 
                                                     return (
-                                                        <div key={market.unique_id} className="border-b border-[#3a4148] last:border-b-0 w-full">
-                                                            <button onClick={() => toggleAccordion(market.unique_id)} className="w-full flex items-center justify-between p-3.5 hover:bg-[#525b65] transition-colors">
-                                                                <div className="flex items-center gap-3">
-                                                                    <svg className="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"></path></svg>
-                                                                    <span className="text-[13px] font-bold text-white tracking-wide text-left">{market.title}</span>
-                                                                </div>
-                                                                <svg className={`w-4 h-4 text-slate-300 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                                                        <div key={market.unique_id} className="w-full">
+                                                            <button onClick={() => toggleAccordion(market.unique_id)} className="w-full flex items-center px-3 py-3 bg-[#24292e] border-b border-[#3a4148] transition-colors">
+                                                                <svg className={`w-4 h-4 text-slate-400 mr-3 transition-transform ${isOpen ? '' : '-rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path></svg>
+                                                                <span className="text-slate-400 mr-2 text-sm">⭐</span>
+                                                                <span className="text-[12px] font-black text-slate-300 tracking-wide text-left">{market.title}</span>
                                                             </button>
 
                                                             {isOpen && (
-                                                                <div className="p-3 bg-[#1e2328] border-t border-[#3a4148]">
-                                                                    <div className={customClass}>
-                                                                        {market.odds.map((odd: any) => {
-                                                                            const isSelected = betSlip.some((item: any) => item.odd_id === odd.odd_id);
-                                                                            const isFlashingUp = flashingOdds[odd.odd_id] === 'up';
-                                                                            const isFlashingDown = flashingOdds[odd.odd_id] === 'down';
-                                                                            const flashClass = isFlashingUp ? 'bg-[#00e700] text-black shadow-[0_0_8px_#00e700] border-[#00e700]' : isFlashingDown ? 'bg-red-500 text-white shadow-[0_0_8px_red] border-red-500' : '';
+                                                                <div className={gridClass}>
+                                                                    {market.odds.map((odd: any) => {
+                                                                        const isSelected = betSlip.some((item: any) => item.odd_id === odd.odd_id);
+                                                                        const isFlashingUp = flashingOdds[odd.odd_id] === 'up';
+                                                                        const isFlashingDown = flashingOdds[odd.odd_id] === 'down';
+                                                                        const flashClass = isFlashingUp ? 'bg-[#00e700] text-black shadow-inner' : isFlashingDown ? 'bg-red-500 text-white shadow-inner' : '';
 
-                                                                            return (
-                                                                                <button key={odd.odd_id} onClick={() => handleMarketSelection(selectedMatch, odd, market.title)} className={`${oddClass} ${flashClass !== '' ? flashClass : isSelected ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow' : 'bg-[#1a1f24] border-[#3b4148] hover:border-[#ffcc00]'}`}>
-                                                                                    <span className={`text-[11px] ${flashClass !== '' ? (isFlashingUp ? 'text-black font-bold' : 'text-white font-bold') : isSelected ? 'text-black font-bold' : 'text-slate-300'}`}>{odd.option}</span>
-                                                                                    <span className={`text-[12px] font-black ${flashClass !== '' ? (isFlashingUp ? 'text-black' : 'text-white') : isSelected ? 'text-black' : 'text-[#ffcc00]'}`}>{odd.value}</span>
-                                                                                </button>
-                                                                            )
-                                                                        })}
-                                                                    </div>
+                                                                        return (
+                                                                            <button key={odd.odd_id} onClick={() => handleMarketSelection(selectedMatch, odd, market.title)} className={`flex justify-between items-center p-3 transition-colors ${flashClass !== '' ? flashClass : isSelected ? 'bg-[#ffcc00] text-black' : 'bg-[#1a1f24] hover:bg-[#2a3038] text-white'}`}>
+                                                                                <span className={`text-[11px] font-medium truncate pr-2 ${flashClass !== '' ? (isFlashingUp ? 'text-black' : 'text-white') : isSelected ? 'text-black/80' : 'text-slate-400'}`}>{odd.option}</span>
+                                                                                <span className={`text-[12px] font-black ${flashClass !== '' ? (isFlashingUp ? 'text-black' : 'text-white') : isSelected ? 'text-black' : 'text-white'}`}>{odd.value}</span>
+                                                                            </button>
+                                                                        )
+                                                                    })}
                                                                 </div>
                                                             )}
                                                         </div>
@@ -1157,7 +1244,7 @@ export default function Home() {
                                 </div>
                             </div>
 
-                            <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
+                            <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#16191c]">
                                 {isFetchingFixtures ? (
                                     <div className="py-32 text-center flex flex-col items-center justify-center">
                                         <div className="w-8 h-8 border-4 border-[#3b4148] border-t-[#ffcc00] rounded-full animate-spin mb-4"></div><p className="text-slate-400 font-bold text-xs uppercase tracking-wider">ጨዋታዎችን በማምጣት ላይ...</p>
@@ -1185,21 +1272,13 @@ export default function Home() {
                                             if (filteredGames.length === 0) return null;
 
                                             return (
-                                                <div key={key} className="mb-6 rounded-lg overflow-hidden border border-[#2a3038] shadow-sm">
-                                                    <div className="bg-[#24292e] px-4 py-3 flex items-center gap-3 border-b border-[#3b4148] sticky top-0 z-10">
-                                                        <div className="w-6 h-6 bg-[#1e2328] rounded-full flex items-center justify-center text-sm shadow-inner border border-[#3b4148] overflow-hidden">{renderFlag(data.details.flag)}</div>
-                                                        <span className="text-[13px] font-black text-white tracking-wide">{data.details.country}: {data.details.name}</span>
+                                                <div key={key} className="mb-4 bg-[#1a1f24] border-y border-[#3b4148] sm:mx-2 sm:rounded-lg sm:border sm:my-4 overflow-hidden shadow-sm">
+                                                    <div className="bg-[#24292e] px-3 py-2 flex items-center gap-2 border-b border-[#3b4148] sticky top-0 z-10">
+                                                        <div className="w-6 h-6 rounded-full flex items-center justify-center overflow-hidden shrink-0">{renderFlag(data.details.flag)}</div>
+                                                        <span className="text-[12px] font-black text-white tracking-wide">{data.details.country}: {data.details.name}</span>
                                                     </div>
 
-                                                    <div className="flex flex-col bg-[#1e2328]">
-                                                        <div className="flex text-[10px] font-bold text-slate-500 px-1 sm:px-2 py-2 border-b border-[#2a3038] bg-[#1a1f24]">
-                                                            <div className="w-12 sm:w-16"></div>
-                                                            <div className="flex-1 flex justify-around">
-                                                                {mainMarketView === '1X2' ? (<><span>1</span><span>X</span><span>2</span></>) : (<><span>1X</span><span>12</span><span>X2</span></>)}
-                                                            </div>
-                                                            <div className="w-10 sm:w-14"></div>
-                                                        </div>
-
+                                                    <div className="flex flex-col">
                                                         {filteredGames.map((game: any) => {
                                                             const matchDate = new Date(game.match_time);
                                                             const currentDisplayOdds = mainMarketView === '1X2' ? game.odds : game.dc_odds;
@@ -1209,50 +1288,52 @@ export default function Home() {
                                                             const btn2 = currentDisplayOdds?.[2] || { odd_id: buildOddId('h2h', '2', game.id), option: "2", value: "0.00" };
 
                                                             const hasSelectionInGame = betSlip.some((item: any) => item.fixture_id === game.id);
-                                                            const totalMarketsCount = game.total_markets_count || 0;
 
                                                             const isFlashBtn1Up = flashingOdds[btn1.odd_id] === 'up';
                                                             const isFlashBtn1Down = flashingOdds[btn1.odd_id] === 'down';
-                                                            const flashClass1 = isFlashBtn1Up ? 'bg-[#00e700] border-[#00e700] shadow-[0_0_8px_#00e700]' : isFlashBtn1Down ? 'bg-red-500 border-red-500 shadow-[0_0_8px_red]' : '';
+                                                            const flashClass1 = isFlashBtn1Up ? 'bg-[#00e700] text-black shadow-inner' : isFlashBtn1Down ? 'bg-red-500 text-white shadow-inner' : '';
 
                                                             const isFlashBtnXUp = flashingOdds[btnX.odd_id] === 'up';
                                                             const isFlashBtnXDown = flashingOdds[btnX.odd_id] === 'down';
-                                                            const flashClassX = isFlashBtnXUp ? 'bg-[#00e700] border-[#00e700] shadow-[0_0_8px_#00e700]' : isFlashBtnXDown ? 'bg-red-500 border-red-500 shadow-[0_0_8px_red]' : '';
+                                                            const flashClassX = isFlashBtnXUp ? 'bg-[#00e700] text-black shadow-inner' : isFlashBtnXDown ? 'bg-red-500 text-white shadow-inner' : '';
 
                                                             const isFlashBtn2Up = flashingOdds[btn2.odd_id] === 'up';
                                                             const isFlashBtn2Down = flashingOdds[btn2.odd_id] === 'down';
-                                                            const flashClass2 = isFlashBtn2Up ? 'bg-[#00e700] border-[#00e700] shadow-[0_0_8px_#00e700]' : isFlashBtn2Down ? 'bg-red-500 border-red-500 shadow-[0_0_8px_red]' : '';
+                                                            const flashClass2 = isFlashBtn2Up ? 'bg-[#00e700] text-black shadow-inner' : isFlashBtn2Down ? 'bg-red-500 text-white shadow-inner' : '';
 
                                                             return (
-                                                                <div key={game.id} className="flex flex-col border-b border-[#2a3038] last:border-b-0 hover:bg-[#24292e] transition-colors">
-                                                                    <div className="flex items-stretch min-h-[54px] py-0.5">
-                                                                        <div className="w-12 sm:w-16 flex flex-col justify-center items-center text-[9px] sm:text-[10px] border-r border-[#2a3038] text-slate-400 font-medium shrink-0 bg-[#1a1f24]/50">
-                                                                            <span>{matchDate.getDate()}/{matchDate.getMonth() + 1}</span>
-                                                                            <span className="text-[#ffcc00] font-bold">{matchDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                                                        </div>
+                                                                <div key={game.id} className="flex border-b border-[#2a3038] last:border-b-0 hover:bg-[#24292e] transition-colors bg-[#1a1f24]">
+                                                                    <div className="w-[50px] sm:w-[60px] flex flex-col justify-center items-center text-[11px] sm:text-[12px] font-bold text-slate-400 border-r border-[#2a3038] shrink-0 bg-[#16191c]/50 leading-tight py-1">
+                                                                        <span>{matchDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }).split(' ')[0]}</span>
+                                                                        <span className="text-[9px] mt-[1px]">{matchDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }).split(' ')[1]}</span>
+                                                                    </div>
 
-                                                                        <div className="flex-1 flex items-center gap-0.5 sm:gap-1 p-1 sm:p-1.5 min-w-0">
-                                                                            <button onClick={() => toggleSelection(game, btn1, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`flex-1 h-full min-h-[44px] flex justify-between items-center px-1.5 sm:px-3 rounded transition-all duration-500 border ${flashClass1 !== '' ? flashClass1 : betSlip.some((item: any) => item.odd_id === btn1.odd_id) ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] border-[#3b4148] hover:border-[#ffcc00] shadow-sm'} ${btn1.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                                                                                <span className={`text-[9.5px] sm:text-[11px] font-semibold truncate max-w-[50px] sm:max-w-[90px] ${flashClass1 !== '' ? (isFlashBtn1Up ? 'text-black' : 'text-white') : betSlip.some((item: any) => item.odd_id === btn1.odd_id) ? 'text-black' : 'text-slate-300'}`}>{mainMarketView === '1X2' ? game.home_team : '1X'}</span>
-                                                                                <span className={`font-black text-[11px] sm:text-[12px] ${flashClass1 !== '' ? (isFlashBtn1Up ? 'text-black' : 'text-white') : betSlip.some((item: any) => item.odd_id === btn1.odd_id) ? 'text-black' : 'text-[#ffcc00]'}`}>{btn1?.value !== "0.00" ? btn1?.value : "-"}</span>
-                                                                            </button>
-                                                                            <button onClick={() => toggleSelection(game, btnX, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-10 sm:w-16 shrink-0 h-full min-h-[44px] flex flex-col sm:flex-row justify-center sm:justify-between items-center px-1 sm:px-2 rounded transition-all duration-500 border ${flashClassX !== '' ? flashClassX : betSlip.some((item: any) => item.odd_id === btnX.odd_id) ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] border-[#3b4148] hover:border-[#ffcc00] shadow-sm'} ${btnX.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                                                                                {mainMarketView === 'DC' && <span className={`text-[9.5px] sm:text-[11px] font-semibold mb-0.5 sm:mb-0 ${flashClassX !== '' ? (isFlashBtnXUp ? 'text-black' : 'text-white') : betSlip.some((item: any) => item.odd_id === btnX.odd_id) ? 'text-black' : 'text-slate-300'}`}>12</span>}
-                                                                                <span className={`font-black text-[11px] sm:text-[12px] ${flashClassX !== '' ? (isFlashBtnXUp ? 'text-black' : 'text-white') : betSlip.some((item: any) => item.odd_id === btnX.odd_id) ? 'text-black' : 'text-slate-300'}`}>{btnX?.value !== "0.00" ? btnX?.value : "-"}</span>
-                                                                            </button>
-                                                                            <button onClick={() => toggleSelection(game, btn2, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`flex-1 h-full min-h-[44px] flex justify-between items-center px-1.5 sm:px-3 rounded transition-all duration-500 border ${flashClass2 !== '' ? flashClass2 : betSlip.some((item: any) => item.odd_id === btn2.odd_id) ? 'bg-[#ffcc00] border-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] border-[#3b4148] hover:border-[#ffcc00] shadow-sm'} ${btn2.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                                                                                <span className={`font-black text-[11px] sm:text-[12px] ${flashClass2 !== '' ? (isFlashBtn2Up ? 'text-black' : 'text-white') : betSlip.some((item: any) => item.odd_id === btn2.odd_id) ? 'text-black' : 'text-[#ffcc00]'}`}>{btn2?.value !== "0.00" ? btn2?.value : "-"}</span>
-                                                                                <span className={`text-[9.5px] sm:text-[11px] font-semibold truncate max-w-[50px] sm:max-w-[90px] ${flashClass2 !== '' ? (isFlashBtn2Up ? 'text-black' : 'text-white') : betSlip.some((item: any) => item.odd_id === btn2.odd_id) ? 'text-black' : 'text-slate-300'}`}>{mainMarketView === '1X2' ? game.away_team : 'X2'}</span>
-                                                                            </button>
+                                                                    <div onClick={() => setSelectedMatch(game)} className="flex-1 flex flex-col justify-center px-2 py-2 min-w-0 cursor-pointer hover:bg-[#2a3038]/50 transition-colors">
+                                                                        <div className="flex items-center gap-1.5 mb-1">
+                                                                            {game.home_team_logo && <img src={game.home_team_logo} alt={game.home_team} className="w-3.5 h-3.5 sm:w-4 sm:h-4 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
+                                                                            <span className="text-[11.5px] sm:text-[13px] font-bold text-white truncate">{game.home_team}</span>
                                                                         </div>
-
-                                                                        <div className="w-10 sm:w-14 flex items-center justify-center border-l border-[#2a3038] shrink-0 bg-[#1a1f24]/50">
-                                                                            <button onClick={() => setSelectedMatch(game)} className={`w-full h-full text-[10px] font-bold transition-colors flex flex-col items-center justify-center ${hasSelectionInGame ? 'bg-[#ffcc00] text-black shadow-inner' : 'text-slate-400 hover:text-white hover:bg-[#2a3038]'}`}>
-                                                                                <span className={`text-xs ${hasSelectionInGame ? 'text-black' : 'text-slate-300'}`}>❯</span>
-                                                                                <span className={hasSelectionInGame ? 'text-black' : ''}>+{totalMarketsCount}</span>
-                                                                            </button>
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            {game.away_team_logo && <img src={game.away_team_logo} alt={game.away_team} className="w-3.5 h-3.5 sm:w-4 sm:h-4 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
+                                                                            <span className="text-[11.5px] sm:text-[13px] font-bold text-white truncate">{game.away_team}</span>
                                                                         </div>
                                                                     </div>
+
+                                                                    <div className="flex items-stretch shrink-0 bg-[#2a3038] gap-[1px]">
+                                                                        <button onClick={() => toggleSelection(game, btn1, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center text-[11px] sm:text-[13px] font-black transition-colors ${flashClass1 !== '' ? flashClass1 : betSlip.some((item: any) => item.odd_id === btn1.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btn1.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                                            {btn1?.value !== "0.00" ? btn1?.value : "-"}
+                                                                        </button>
+                                                                        <button onClick={() => toggleSelection(game, btnX, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center text-[11px] sm:text-[13px] font-black transition-colors ${flashClassX !== '' ? flashClassX : betSlip.some((item: any) => item.odd_id === btnX.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btnX.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                                            {btnX?.value !== "0.00" ? btnX?.value : "-"}
+                                                                        </button>
+                                                                        <button onClick={() => toggleSelection(game, btn2, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center text-[11px] sm:text-[13px] font-black transition-colors ${flashClass2 !== '' ? flashClass2 : betSlip.some((item: any) => item.odd_id === btn2.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btn2.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                                            {btn2?.value !== "0.00" ? btn2?.value : "-"}
+                                                                        </button>
+                                                                    </div>
+
+                                                                    <button onClick={() => setSelectedMatch(game)} className={`w-10 sm:w-12 flex items-center justify-center text-[18px] sm:text-[22px] font-black transition-colors ml-[1px] bg-[#1a1f24] hover:bg-[#2a3038] ${hasSelectionInGame ? 'text-[#ffcc00]' : 'text-slate-400 hover:text-white'}`}>
+                                                                        +
+                                                                    </button>
                                                                 </div>
                                                             )
                                                         })}
@@ -1267,7 +1348,7 @@ export default function Home() {
                     )}
                 </main>
 
-                <aside className={`fixed inset-y-0 right-0 z-50 w-full sm:w-[320px] bg-[#1e2328] border-l border-[#2a3038] overflow-hidden flex flex-col transform transition-transform duration-300 ${isMobileBetSlipOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:translate-x-0 lg:w-[300px] shrink-0 shadow-[-4px_0_15px_rgba(0,0,0,0.3)] lg:shadow-none`}>
+                <aside className={`fixed top-[60px] bottom-[60px] lg:bottom-0 right-0 z-40 w-full sm:w-[320px] bg-[#1e2328] border-l border-[#2a3038] overflow-hidden flex flex-col transform transition-transform duration-300 ${isMobileBetSlipOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:top-0 lg:bottom-0 lg:translate-x-0 lg:w-[300px] shrink-0 shadow-[-4px_0_15px_rgba(0,0,0,0.3)] lg:shadow-none`}>
                     <div className="bg-[#1e2328] p-3 border-b border-[#3b4148] z-20">
                         <div className="flex bg-[#24292e] rounded border border-[#3b4148] focus-within:border-[#ffcc00] overflow-hidden shadow-inner">
                             <input type="text" placeholder="Booking Code ያስገቡ..." value={ticketCodeInput} onChange={(e) => setTicketCodeInput(e.target.value)} className="bg-transparent text-xs text-white p-2.5 flex-1 outline-none uppercase tracking-wider" />
