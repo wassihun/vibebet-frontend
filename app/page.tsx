@@ -8,12 +8,8 @@ const MAX_STAKE = 10000;
 const MAX_WIN = 10000;
 const MIN_STAKE = 20;
 
-// NOTE: left as a literal localhost URL on purpose (not switched to an env var) —
-// just centralized into one constant so it isn't repeated 5 times across the file.
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-// ---------- Basic shared types (state boundaries only; raw odds-feed parsing stays "any" on purpose,
-// since that shape is dynamic/foreign and forcing strict types on it would be guesswork). ----------
 interface OddOption {
     odd_id: string;
     option: string;
@@ -47,7 +43,6 @@ interface Fixture {
     total_markets_count: number;
 }
 
-// ---------- Shared odds/id helpers ----------
 const sanitizeIdPart = (s: any) => String(s ?? '').trim().replace(/[^a-zA-Z0-9+\-.]/g, '_');
 
 const getMarketKind = (mkt: any): 'h2h' | 'dc' | 'other' => {
@@ -88,8 +83,6 @@ const escapeHtml = (str: any) =>
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
 
-// Renders a CODE128 barcode into an inline <svg>. jsbarcode is imported dynamically inside the
-// effect (client-only) so it never runs during server rendering.
 function BarcodeSVG({ value, lineColor = '#000000', className }: { value: string; lineColor?: string; className?: string }) {
     const svgRef = useRef<SVGSVGElement>(null);
     useEffect(() => {
@@ -108,7 +101,6 @@ function BarcodeSVG({ value, lineColor = '#000000', className }: { value: string
                     lineColor
                 });
             } catch (e) {
-                // value has characters CODE128 can't encode — leave the svg empty rather than crash
             }
         });
         return () => { cancelled = true; };
@@ -116,7 +108,6 @@ function BarcodeSVG({ value, lineColor = '#000000', className }: { value: string
     return <svg ref={svgRef} className={className} />;
 }
 
-// "Sat, Sep 12 5:00 PM" style formatting for each pick on the receipt.
 const formatMatchDateTime = (iso: string) => {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return '';
@@ -408,11 +399,12 @@ export default function Home() {
 
     const handleMarketSelection = (game: any, odd: any, marketName: string) => {
         toggleSelection(game, odd, marketName);
+        setSelectedMatch(null); // 🌟 ተጫዋቹ ከመረጠ በኋላ ወደ ዋናው ገጽ እንዲመለስ ተደርጓል
     };
 
     const totalOdds = betSlip.reduce((total: number, item: any) => total * (item.odd_value || 1), 1).toFixed(2);
     const safeStake = Number.isFinite(stake) ? stake : 0;
-    const grossWin = parseFloat(totalOdds) * safeStake;
+    const grossWin = Number((parseFloat(totalOdds) * safeStake).toFixed(2));
 
     const isUnderStake = safeStake < MIN_STAKE;
     const isOverStake = safeStake > MAX_STAKE;
@@ -480,18 +472,53 @@ export default function Home() {
     };
 
     const handleLoadTicket = async () => {
-        const success = await loadTicketByCode(ticketCodeInput);
+        const cleanCode = ticketCodeInput.trim();
+        if (!cleanCode || !/^\d{5,10}$/.test(cleanCode)) {
+            setTicketLoadError('እባክዎ ትክክለኛ የቡኪንግ ኮድ ያስገቡ!');
+            return;
+        }
+        const success = await loadTicketByCode(cleanCode);
         if (success) { setTicketCodeInput(''); setTicketLoadError(null); }
     };
 
     const handleCheckCustomerTicket = async (e: React.FormEvent) => {
         e.preventDefault();
         const cleanCode = checkInputCode.trim();
-        if (!cleanCode) return;
+        if (!cleanCode || !/^\d{5,12}$/.test(cleanCode)) {
+            setCheckTicketError('እባክዎ ትክክለኛ የትኬት ቁጥር ብቻ ያስገቡ!');
+            return;
+        }
         setIsCheckingTicket(true); setCheckTicketError(null); setCheckedTicketData(null);
         try {
             const response = await axios.get(`${API_BASE}/api/tickets/check/${cleanCode}`);
-            if (response.data.success) setCheckedTicketData(response.data.data);
+            if (response.data.success) {
+                const data = response.data.data;
+                if (data.status === 'active' || data.status === 'pending') {
+                    let isLost = false;
+                    let isPending = false;
+                    let calculatedOdds = 1;
+
+                    data.selections.forEach((item: any) => {
+                        if (item.match_status === 'lost') {
+                            isLost = true;
+                        } else if (item.match_status === 'won') {
+                            calculatedOdds *= parseFloat(item.odd_value);
+                        } else if (item.match_status === 'postponed' || item.match_status === 'cancelled' || item.match_status === 'abandoned' || item.match_status === 'PST' || item.match_status === 'CANC') {
+                            calculatedOdds *= 1; 
+                        } else {
+                            isPending = true; 
+                        }
+                    });
+
+                    if (isLost) data.status = 'lost';
+                    else if (isPending) data.status = 'pending';
+                    else {
+                        data.status = 'won';
+                        data.potential_win = (calculatedOdds * parseFloat(data.stake_amount)).toFixed(2);
+                    }
+                }
+                setCheckedTicketData(data);
+            }
         } catch (err: any) { setCheckTicketError(err.response?.data?.message || 'ይህ ትኬት አልተገኘም!'); } finally { setIsCheckingTicket(false); }
     };
 
@@ -541,7 +568,6 @@ export default function Home() {
         setOpenAccordions((prev: string[]) => prev.includes(id) ? prev.filter((t: string) => t !== id) : [...prev, id]);
     };
 
-    // 🌟 እጅግ ጥብቅ የሆነው የማርኬት አመዳደብ፣ ማጣሪያ እና ሎጂክ 🌟
     const getCategorizedMarkets = (game: any) => {
         const rawBets = game?.raw_markets || [];
         const categories: Record<string, any[]> = { "MAIN": [], "TOTALS": [], "HALF": [], "HANDICAPS": [], "COMBOS": [], "PLAYERS": [], "ALL": [] };
@@ -807,6 +833,7 @@ export default function Home() {
         );
     };
 
+    // 🌟 እጅግ ጥብቅ እና ስህተት አልባ የሆነ የሊግ ማጣሪያ 🌟
     const getLeagueDetails = (key: string, flagFromApi?: string) => {
         if (!key || typeof key !== 'string') return { country: 'World', flag: 'https://media.api-sports.io/flags/un.svg', name: 'Soccer', isTop: false };
         
@@ -823,62 +850,33 @@ export default function Home() {
 
         const nameLower = name.toLowerCase().trim();
         const countryLower = country.toLowerCase().trim();
-        const keyLower = key.toLowerCase().trim();
-
-        // Standardize common variations
-        if (nameLower === 'primera division' || nameLower === 'la liga' || nameLower === 'laliga') name = 'LaLiga';
-        if (nameLower === 'primeira liga' || nameLower === 'liga portugal') name = 'Liga Portugal';
-        if (nameLower === 'jupiler pro league') name = 'Pro League';
 
         let isTop = false;
 
-        // 1. Bundesliga
-        if ((name === 'Bundesliga' || nameLower === '1. bundesliga' || keyLower.includes('germany_bundesliga')) && (countryLower === 'germany' || countryLower === 'world') && !nameLower.includes('austria') && !nameLower.includes('2')) {
-            name = 'Bundesliga'; country = 'Germany'; flag = 'https://media.api-sports.io/flags/de.svg'; isTop = true;
+        // 🌟 ሀገር እና ሊግን በማጣመር ብቻ Top መሆኑን ማረጋገጥ (የዩጋንዳ ወይም ሌላ ፕሪሚየር ሊግን ያግዳል) 🌟
+        if (
+            (nameLower === 'premier league' && countryLower === 'england') ||
+            (nameLower === 'championship' && countryLower === 'england') ||
+            (nameLower === 'fa cup' && countryLower === 'england') ||
+            ((nameLower === 'la liga' || nameLower === 'primera division' || nameLower === 'laliga') && countryLower === 'spain') ||
+            (nameLower === 'serie a' && countryLower === 'italy') ||
+            ((nameLower === 'bundesliga' || nameLower === '1. bundesliga') && countryLower === 'germany') ||
+            (nameLower === 'ligue 1' && countryLower === 'france') ||
+            nameLower === 'uefa champions league' ||
+            nameLower === 'uefa europa league' ||
+            nameLower === 'uefa conference league' ||
+            nameLower === 'world cup' ||
+            nameLower === 'euro championship' ||
+            nameLower === 'copa america' ||
+            nameLower === 'africa cup of nations'
+        ) {
+            isTop = true;
         }
-        // 2. Eredivisie
-        else if ((nameLower === 'eredivisie' || keyLower.includes('netherlands_eredivisie')) && (countryLower === 'netherlands' || countryLower === 'world')) {
-            name = 'Eredivisie'; country = 'Netherlands'; flag = 'https://media.api-sports.io/flags/nl.svg'; isTop = true;
-        }
-        // 3. LaLiga
-        else if ((name === 'LaLiga' || keyLower.includes('spain_la_liga')) && (countryLower === 'spain' || countryLower === 'world')) {
-            name = 'LaLiga'; country = 'Spain'; flag = 'https://media.api-sports.io/flags/es.svg'; isTop = true;
-        }
-        // 4. Liga Portugal
-        else if ((name === 'Liga Portugal' || keyLower.includes('portugal_primeira_liga')) && (countryLower === 'portugal' || countryLower === 'world')) {
-            name = 'Liga Portugal'; country = 'Portugal'; flag = 'https://media.api-sports.io/flags/pt.svg'; isTop = true;
-        }
-        // 5. Ligue 1
-        else if ((nameLower === 'ligue 1' || keyLower.includes('france_ligue_one')) && (countryLower === 'france' || countryLower === 'world')) {
-            name = 'Ligue 1'; country = 'France'; flag = 'https://media.api-sports.io/flags/fr.svg'; isTop = true;
-        }
-        // 6. Premier League
-        else if ((nameLower === 'premier league' || keyLower === 'soccer_epl') && (countryLower === 'england' || keyLower === 'soccer_epl')) {
-            name = 'Premier League'; country = 'England'; flag = 'https://media.api-sports.io/flags/gb-eng.svg'; isTop = true;
-        }
-        // 7. Pro League
-        else if ((name === 'Pro League' || keyLower.includes('belgium_first_div')) && (countryLower === 'belgium' || countryLower === 'world')) {
-            name = 'Pro League'; country = 'Belgium'; flag = 'https://media.api-sports.io/flags/be.svg'; isTop = true;
-        }
-        // 8. Serie A
-        else if ((nameLower === 'serie a' || keyLower.includes('italy_serie_a')) && (countryLower === 'italy' || countryLower === 'world') && !nameLower.includes('brazil') && !nameLower.includes('ecuador')) {
-            name = 'Serie A'; country = 'Italy'; flag = 'https://media.api-sports.io/flags/it.svg'; isTop = true;
-        }
-        // 9. Super League
-        else if ((nameLower === 'super league' || keyLower.includes('swiss_super_league')) && (countryLower === 'switzerland' || keyLower.includes('switzerland') || keyLower.includes('switz'))) {
-            name = 'Super League'; country = 'Switzerland'; flag = 'https://media.api-sports.io/flags/ch.svg'; isTop = true;
-        }
-        // 10. Superettan
-        else if ((nameLower === 'superettan' || keyLower.includes('sweden_superettan')) && (countryLower === 'sweden' || countryLower === 'world')) {
-            name = 'Superettan'; country = 'Sweden'; flag = 'https://media.api-sports.io/flags/se.svg'; isTop = true;
-        }
-        // 11. UEFA Champions League
-        else if ((nameLower.includes('champions league') || nameLower.includes('champs league') || keyLower.includes('uefa_champs_league')) && !nameLower.includes('afc') && !nameLower.includes('caf') && !nameLower.includes('women') && !keyLower.includes('afc')) {
-            name = 'UEFA Champions League'; country = 'World'; flag = 'https://media.api-sports.io/football/leagues/2.png'; isTop = true;
-        }
-        // 12. UEFA Europa League
-        else if ((nameLower.includes('europa league') || keyLower.includes('uefa_europa_league')) && !nameLower.includes('women')) {
-            name = 'UEFA Europa League'; country = 'World'; flag = 'https://media.api-sports.io/football/leagues/3.png'; isTop = true;
+
+        // ለሌሎች ትንንሽ ሊጎች ስማቸውን ማሳመር
+        if (!isTop && !key.includes('|')) {
+            name = name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            country = country.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
         }
 
         return { country, flag, name, isTop };
@@ -1003,7 +1001,6 @@ export default function Home() {
                         </button>
                     </div>
 
-                    {/* 🌟 በምስሉ መሰረት የተቀረጸው TOP LEAGUES ዝርዝር 🌟 */}
                     {topLeagues.length > 0 && (
                         <div className="border-b border-[#2a3038]">
                             <button onClick={() => setIsTopLeaguesOpen(!isTopLeaguesOpen)} className="w-full flex items-center justify-between p-3 hover:bg-[#24292e] transition-colors">
@@ -1079,14 +1076,37 @@ export default function Home() {
                                                 </div>
                                             </button>
                                             {isCountryOpen && (
-                                                <ul className="bg-[#1a1f24] py-1 border-b border-[#2a3038]">
-                                                    {countryData.leagues.map((league: any) => (
-                                                        <li key={league.key}>
-                                                            <button onClick={() => { setSelectedLeague(league.key); setSelectedMatch(null); if (window.innerWidth < 1280) setIsMobileMenuOpen(false); }} className={`w-full flex items-center justify-between pl-12 pr-4 py-2 transition-colors ${selectedLeague === league.key ? 'text-[#ffcc00] font-bold' : 'text-slate-400 hover:text-white hover:bg-[#24292e]'}`}>
-                                                                <span>{league.name}</span><span className="text-[10px] opacity-60">{league.count}</span>
-                                                            </button>
-                                                        </li>
-                                                    ))}
+                                                <ul className="bg-[#1a1f24] py-1.5 border-b border-[#2a3038]">
+                                                    {countryData.leagues.map((league: any) => {
+                                                        const isSelected = selectedLeague === league.key;
+                                                        return (
+                                                            <li key={league.key}>
+                                                                <button 
+                                                                    onClick={() => { 
+                                                                        setSelectedLeague(league.key); 
+                                                                        setSelectedMatch(null); 
+                                                                        if (window.innerWidth < 1280) setIsMobileMenuOpen(false); 
+                                                                    }} 
+                                                                    className={`w-full flex items-center justify-between pl-11 pr-4 py-2.5 transition-all duration-200 border-l-[3px] ${
+                                                                        isSelected 
+                                                                            ? 'bg-[#24292e] border-[#ffcc00] text-[#ffcc00] font-bold' 
+                                                                            : 'border-transparent text-slate-400 hover:text-white hover:bg-[#24292e]'
+                                                                    }`}
+                                                                >
+                                                                    <span className="text-left text-[12px] leading-snug pr-3 flex-1 break-words">
+                                                                        {league.name}
+                                                                    </span>
+                                                                    <span className={`text-[10px] font-semibold min-w-[22px] text-center rounded px-1.5 py-0.5 shrink-0 ${
+                                                                        isSelected 
+                                                                            ? 'bg-[#ffcc00]/10 text-[#ffcc00]' 
+                                                                            : 'bg-[#16191c] text-slate-500 shadow-inner'
+                                                                    }`}>
+                                                                        {league.count}
+                                                                    </span>
+                                                                </button>
+                                                            </li>
+                                                        );
+                                                    })}
                                                 </ul>
                                             )}
                                         </div>
@@ -1366,33 +1386,42 @@ export default function Home() {
                         {betSlip.length === 0 ? (
                             <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-60"><span className="text-4xl mb-2">📋</span><p className="text-xs font-bold text-white mb-1">ምንም አልመረጡም</p></div>
                         ) : (
-                            <div className="flex flex-col p-2 space-y-2">
+                            <div className="flex flex-col p-1.5 space-y-1.5">
                                 {betSlip.map((item: any) => {
                                     const isStarted = new Date(item.match_time).getTime() < new Date().getTime();
                                     const isFlashingUp = flashingOdds[item.odd_id] === 'up';
                                     const isFlashingDown = flashingOdds[item.odd_id] === 'down';
                                     
                                     return (
-                                        <div key={item.odd_id} className={`bg-[#1e2328] border ${isStarted ? 'border-red-500 shadow-[0_0_5px_rgba(239,68,68,0.3)]' : isFlashingUp ? 'border-[#00e700] shadow-[0_0_5px_rgba(0,231,0,0.3)]' : isFlashingDown ? 'border-red-500 shadow-[0_0_5px_rgba(239,68,68,0.3)]' : 'border-[#2a3038] hover:border-[#3b4148]'} rounded-md p-3 relative group transition-colors shadow-sm`}>
-                                            <button onClick={() => toggleSelection({ id: item.fixture_id }, { odd_id: item.odd_id })} className="absolute top-2 right-2 text-slate-500 hover:text-red-500 text-lg leading-none transition-colors">✕</button>
-                                            <div className="flex justify-between items-center mb-1.5 pr-4">
-                                                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider truncate mr-2">{item.league_name}</span>
-                                                <span className={`text-[10px] font-black shrink-0 ${isStarted ? 'text-red-500 animate-pulse' : 'text-[#ffcc00]'}`}>
-                                                    {new Date(item.match_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        <div key={item.odd_id} className={`bg-[#1e2328] border ${isStarted ? 'border-red-500 shadow-[0_0_5px_rgba(239,68,68,0.3)]' : isFlashingUp ? 'border-[#00e700] shadow-[0_0_5px_rgba(0,231,0,0.3)]' : isFlashingDown ? 'border-red-500 shadow-[0_0_5px_rgba(239,68,68,0.3)]' : 'border-[#3b4148] hover:border-[#ffcc00]/50'} rounded-lg p-2 relative group transition-colors shadow-sm`}>
+                                            <button onClick={() => toggleSelection({ id: item.fixture_id }, { odd_id: item.odd_id })} className="absolute top-2 right-2.5 text-slate-500 hover:text-red-500 text-base leading-none transition-colors">✕</button>
+                                            
+                                            <div className="flex justify-between items-start mb-0.5 pr-5">
+                                                <h3 className={`text-xs font-bold leading-tight ${isStarted ? 'text-slate-400 line-through' : 'text-white'}`}>
+                                                    {item.home_team} <span className="text-slate-500 font-normal px-1">v</span> {item.away_team}
+                                                </h3>
+                                            </div>
+
+                                            <div className="mb-2">
+                                                <span className={`text-[9px] ${isStarted ? 'text-red-500 animate-pulse' : 'text-slate-400'} block truncate`}>
+                                                    {new Date(item.match_time).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}, {new Date(item.match_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {item.league_name}
                                                 </span>
                                             </div>
-                                            <div className="pr-5 mb-2">
-                                                <p className={`text-[11px] font-bold leading-snug ${isStarted ? 'text-slate-400 line-through' : 'text-white'}`}>
-                                                    {item.home_team} <span className="text-slate-500 font-normal px-1">vs</span> {item.away_team}
-                                                </p>
+
+                                            <div className={`flex justify-between items-center bg-[#1a1f24] px-2 py-1.5 rounded-md border ${isStarted ? 'border-red-500/30' : isFlashingUp ? 'border-[#00e700]/50 bg-[#00e700]/10' : isFlashingDown ? 'border-red-500/50 bg-red-500/10' : 'border-[#2a3038]'}`}>
+                                                <div className="flex items-center gap-1.5 truncate pr-2">
+                                                    <span className="text-[11px] text-slate-300 font-medium truncate">{item.market_name.toLowerCase()}</span>
+                                                    <span className="text-slate-500 text-[10px]">→</span>
+                                                    <span className="text-[11px] font-black text-[#ffcc00] truncate">{item.odd_name}</span>
+                                                </div>
+                                                <div className={`px-2 py-0.5 rounded text-xs font-black shrink-0 shadow-sm ${isFlashingUp ? 'bg-[#00e700] text-black' : isFlashingDown ? 'bg-red-500 text-white' : 'bg-[#ffcc00] text-black'}`}>
+                                                    {Number(item.odd_value).toFixed(2)}
+                                                </div>
                                             </div>
-                                            <div className={`flex justify-between items-center bg-[#1a1f24] p-1.5 rounded border ${isStarted ? 'border-red-500/30' : isFlashingUp ? 'border-[#00e700]/50 bg-[#00e700]/10' : isFlashingDown ? 'border-red-500/50 bg-red-500/10' : 'border-[#2a3038]'}`}>
-                                                <span className="text-[11px] text-[#ffcc00] font-bold">{item.odd_name}</span>
-                                                <span className={`text-[13px] font-black ${isFlashingUp ? 'text-[#00e700]' : isFlashingDown ? 'text-red-500' : 'text-white'}`}>{Number(item.odd_value).toFixed(2)}</span>
-                                            </div>
+
                                             {isStarted && (
-                                                <div className="mt-2 bg-red-500/10 text-red-500 text-[10px] font-bold p-1.5 rounded border border-red-500/20 text-center">
-                                                    ⚠️ ይህ ጨዋታ ጀምሯል (አልፏል)
+                                                <div className="mt-1.5 bg-red-500/10 text-red-500 text-[9px] font-bold p-1 rounded border border-red-500/20 text-center">
+                                                    ⚠️ ይህ ጨዋታ ጀምሯል
                                                 </div>
                                             )}
                                         </div>
@@ -1676,8 +1705,8 @@ export default function Home() {
                         </div>
 
                         {/* Barcode bottom */}
-                        <div className="mt-6 flex flex-col items-center opacity-80 px-8">
-                            <BarcodeSVG value={bookingCode!} lineColor="#ffffff" className="h-10 w-full" />
+                        <div className="mt-3 flex flex-col items-center">
+                            <BarcodeSVG value={bookingCode!} lineColor="#ffffff" className="h-10 w-[80%]" />
                             <span className="text-[9px] text-slate-500 font-medium mt-1 tracking-widest">{bookingCode}</span>
                         </div>
                     </div>
@@ -1693,7 +1722,7 @@ export default function Home() {
                 @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
                 .animate-fade-in-down { animation: fadeInDown 0.2s ease-out forwards; }
                 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-                .animate-fade-in { animation: fadeIn 0.2s ease-out forwards; }
+                .animate-fade-in { animation: fadeIn 0.2s forwards; }
             `}</style>
         </div>
     );

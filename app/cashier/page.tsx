@@ -10,6 +10,19 @@ const MIN_STAKE = 20;
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
+// 🛡️ የሴኪውሪቲ ማስተካከያ 2፡ የተበላሸ ቶከን ወይም 401/403 ሲያጋጥም አውቶማቲካሊ ሲስተሙን ይቆልፋል (Auto-Logout)
+axios.interceptors.response.use(
+    response => response,
+    error => {
+        if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+            localStorage.removeItem('cashierToken');
+            localStorage.removeItem('cashierUsername');
+            window.location.reload();
+        }
+        return Promise.reject(error);
+    }
+);
+
 function BarcodeSVG({ value, lineColor = '#000000', className }: { value: string; lineColor?: string; className?: string }) {
     const svgRef = useRef<SVGSVGElement>(null);
     useEffect(() => {
@@ -94,13 +107,54 @@ export default function CashierDashboard() {
     const [bookingCode, setBookingCode] = useState<string | null>(null);
     const [codeCopied, setCodeCopied] = useState(false);
 
+    // 🌟 1. የተሻሻለው የትኬት አሰላሰል (1.00 Odd ለተራዘሙ ጨዋታዎች) 🌟
     let displayStatus = payoutDetails?.status;
-    const allItemsWon = payoutDetails?.selections?.length > 0 && payoutDetails.selections.every((item: any) => item.match_status === 'won');
-    const anyItemLost = payoutDetails?.selections?.some((item: any) => item.match_status === 'lost');
-    
-    if (displayStatus === 'active') {
-        if (anyItemLost) displayStatus = 'lost';
-        else if (allItemsWon) displayStatus = 'won';
+    let actualPotentialWin = parseFloat(payoutDetails?.potential_win || 0);
+
+    if (displayStatus === 'active' || displayStatus === 'pending') {
+        if (payoutDetails?.selections && payoutDetails.selections.length > 0) {
+            let isTicketLost = false;
+            let isTicketPending = false;
+            let calculatedOdds = 1;
+
+            payoutDetails.selections.forEach((s: any) => {
+                if (s.match_status === 'lost') {
+                    isTicketLost = true;
+                } else if (s.match_status === 'won') {
+                    calculatedOdds *= parseFloat(s.odd_value);
+                } else {
+                    const mTime = new Date(s.match_time || s.commence_time || Date.now()).getTime();
+                    const matchEndTime = mTime + (120 * 60 * 1000); // 2 ሰዓት ቆይታ ለጨዋታው እንሰጣለን
+
+                    if (Date.now() < matchEndTime) {
+                        isTicketPending = true; 
+                    } else {
+                        calculatedOdds *= 1; 
+                    }
+                }
+            });
+
+            if (isTicketLost) {
+                displayStatus = 'lost';
+            } else if (isTicketPending) {
+                displayStatus = 'pending';
+            } else {
+                displayStatus = 'won';
+                actualPotentialWin = Number((calculatedOdds * parseFloat(payoutDetails.stake_amount || 0)).toFixed(2));
+                payoutDetails.potential_win = actualPotentialWin.toFixed(2);
+            }
+        }
+    }
+
+    // 🌟 2. የ 3 ቀን ክፍያ ገደብ (3 Days Expiration Rule) 🌟
+    if (displayStatus === 'won') {
+        let lmt = new Date(payoutDetails?.created_at || Date.now()).getTime();
+        if (payoutDetails?.selections && payoutDetails.selections.length > 0) {
+            lmt = Math.max(...payoutDetails.selections.map((s:any) => new Date(s.match_time || s.commence_time || lmt).getTime()));
+        }
+        if (Date.now() > lmt + (3 * 24 * 60 * 60 * 1000)) {
+            displayStatus = 'expired';
+        }
     }
 
     useEffect(() => {
@@ -120,8 +174,19 @@ export default function CashierDashboard() {
         const savedToken = localStorage.getItem('cashierToken');
         const savedUsername = localStorage.getItem('cashierUsername');
         if (savedToken && savedUsername) {
-            setToken(savedToken);
-            setUsername(savedUsername);
+            // 🛡️ የሴኪውሪቲ ማስተካከያ 1፡ ዝም ብሎ ከማስገባት በፊት ቶከኑ ትክክለኛ መሆኑን ባክ-ኤንዱን ይጠይቃል (Fake Token Prevention)
+            axios.get(`${API_URL}/api/auth/verify`, {
+                headers: { Authorization: `Bearer ${savedToken}` }
+            }).then(res => {
+                if (res.data.success && (res.data.user.role === 'cashier' || res.data.user.role === 'admin')) {
+                    setToken(savedToken);
+                    setUsername(savedUsername);
+                } else {
+                    handleLogout();
+                }
+            }).catch(() => {
+                handleLogout();
+            });
         }
     }, []);
 
@@ -141,19 +206,6 @@ export default function CashierDashboard() {
     useEffect(() => {
         if (token && activeTab === 'report' && isReportUnlocked) fetchCashierReport();
     }, [token, activeTab, reportFilter, isReportUnlocked]);
-
-    useEffect(() => {
-        const interceptorId = axios.interceptors.response.use(
-            (response) => response,
-            (error) => {
-                if (error?.response?.status === 401) {
-                    handleLogout();
-                }
-                return Promise.reject(error);
-            }
-        );
-        return () => axios.interceptors.response.eject(interceptorId);
-    }, []);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -206,7 +258,9 @@ export default function CashierDashboard() {
     const fetchCashierReport = async () => {
         try {
             const res = await axios.get(`${API_URL}/api/tickets/cashier/report?filter=${reportFilter}`, { headers: { Authorization: `Bearer ${token}` } });
-            if (res.data.success) setCashierReport(res.data.data);
+            if (res.data.success) {
+                setCashierReport(res.data.data);
+            }
         } catch (err: any) { 
             console.error("Report fetch error:", err.response?.data || err.message); 
         }
@@ -243,7 +297,10 @@ export default function CashierDashboard() {
     const searchTicket = async (e: React.FormEvent) => {
         e.preventDefault();
         const cleanCode = searchCode.trim(); 
-        if (!cleanCode) return;
+        if (!cleanCode || !/^\d{5,12}$/.test(cleanCode)) {
+            setMessage({ type: 'error', text: 'እባክዎ ትክክለኛ የትኬት ቁጥር ወይም የቡኪንግ ኮድ ብቻ ያስገቡ!' });
+            return;
+        }
         setIsLoading(true); setMessage(null); setTicketData(null);
         try {
             const res = await axios.get(`${API_URL}/api/tickets/booking/${cleanCode}`, { headers: { Authorization: `Bearer ${token}` } });
@@ -284,7 +341,7 @@ export default function CashierDashboard() {
         if (ticketData.selections.length <= 1) { alert("ቢያንስ አንድ ጨዋታ መቅረት አለበት!"); return; }
         const updatedSelections = ticketData.selections.filter((_: any, idx: number) => idx !== indexToRemove);
         const newTotalOdds = updatedSelections.reduce((acc: number, curr: any) => acc * parseFloat(curr.odd_value), 1).toFixed(2);
-        const newPotentialWin = (parseFloat(newTotalOdds) * parseFloat(ticketData.stake_amount)).toFixed(2);
+        const newPotentialWin = Number((parseFloat(newTotalOdds) * parseFloat(ticketData.stake_amount)).toFixed(2)).toFixed(2);
         
         setTicketData({ 
             ...ticketData, 
@@ -297,7 +354,7 @@ export default function CashierDashboard() {
 
     const handleStakeChange = (newStakeStr: string) => {
         const newStake = parseFloat(newStakeStr) || 0;
-        const newPotentialWin = (parseFloat(ticketData.total_odds) * newStake).toFixed(2);
+        const newPotentialWin = Number((parseFloat(ticketData.total_odds) * newStake).toFixed(2)).toFixed(2);
         setTicketData({ ...ticketData, stake_amount: newStake, potential_win: newPotentialWin });
     };
 
@@ -310,7 +367,6 @@ export default function CashierDashboard() {
             const qzModule = await import('qz-tray');
             const qz = qzModule.default || qzModule;
 
-            // 🔑 1. የሰርቲፊኬት ፎርማቱን እና የቶከን አላላኩን አስተካክለናል
             if (!qz.websocket.isActive()) {
                 qz.security.setCertificatePromise(function(resolve: any, reject: any) {
                     resolve(
@@ -344,10 +400,9 @@ export default function CashierDashboard() {
                 qz.security.setSignaturePromise(function(toSign: string) {
                     return function(resolve: any, reject: any) {
                         axios.post(`${API_URL}/api/qz/sign`, { request: toSign }, {
-                            headers: { Authorization: `Bearer ${token}` } // 🔑 ቶከን እዚህ ገብቷል!
+                            headers: { Authorization: `Bearer ${token}` }
                         })
                         .then(res => {
-                            // ባክኤንዱ የሚመልሰውን ፊርማ (Signature) በትክክል ለማውጣት
                             const sig = res.data.signature || res.data.data || res.data;
                             resolve(sig);
                         })
@@ -359,8 +414,6 @@ export default function CashierDashboard() {
             }
 
             const printerName = await qz.printers.getDefault();
-
-            // 80mm thermal-printer friendly settings. Keep the payload monochrome and compact.
             const config = qz.configs.create(printerName, { encoding: 'UTF-8' });
 
             const ESC = '\x1B';
@@ -372,7 +425,6 @@ export default function CashierDashboard() {
             const normalFont = ESC + '\x4D' + '\x00';
             const lineSpacing = ESC + '\x32';
 
-            // 80mm / 48-column safe width. Use wrapping instead of losing match names.
             const COLS = 48;
             const repeatLine = (char = '-', count = COLS) => char.repeat(count);
             const clip = (value: any, max: number) => String(value ?? '').trim().slice(0, max);
@@ -425,12 +477,10 @@ export default function CashierDashboard() {
 
             const data: string[] = [];
 
-            // Initialize printer with tight line spacing.
             data.push(ESC + '\x40');
             data.push(lineSpacing);
             data.push(normalFont);
 
-            // Header: brand + ticket number. QR is small and kept on the same logical header block.
             data.push(alignCenter);
             data.push(boldOn + 'VIBEBET.ET' + boldOff + '\n');
             data.push(boldOn + 'SPORTS BETTING RECEIPT' + boldOff + '\n');
@@ -443,7 +493,6 @@ export default function CashierDashboard() {
                 const pL = String.fromCharCode(len % 256);
                 const pH = String.fromCharCode(Math.floor(len / 256));
 
-                // Store / print QR in compact module size 2.
                 data.push('\x1D\x28\x6B\x04\x00\x31\x41\x32\x00');
                 data.push('\x1D\x28\x6B\x03\x00\x31\x43\x02');
                 data.push('\x1D\x28\x6B\x03\x00\x31\x45\x31');
@@ -454,19 +503,16 @@ export default function CashierDashboard() {
             data.push(alignLeft);
             data.push(repeatLine('=') + '\n');
 
-            // Compact ticket metadata.
             data.push(boldOn + padRow('DATE', printDate) + boldOff + '\n');
             data.push(boldOn + padRow('TICKET', ticketNumber) + boldOff + '\n');
             data.push(boldOn + padRow('CASHIER', usernameText) + boldOff + '\n');
             data.push(repeatLine('-') + '\n');
 
-            // Responsible-gambling notice, kept concise.
             data.push(alignCenter);
             data.push(boldOn + '21+ ONLY  |  T&Cs APPLY' + boldOff + '\n');
             data.push(alignLeft);
             data.push(repeatLine('-') + '\n');
 
-            // Matches — preserve the API text and use compact, readable rows.
             ticketDetails.selections?.forEach((item: any, index: number) => {
                 const rawOddName = String(item.odd_name ?? '').trim();
                 let marketText = 'Match Result';
@@ -481,10 +527,9 @@ export default function CashierDashboard() {
                     pickText = (rawOddName === 'Yes' || /\bGG\b/i.test(rawOddName)) ? 'YES' : 'NO';
                     marketText = 'BTTS';
                 } else if (/\b(over|under)\b/i.test(rawOddName)) {
-                    marketText = 'TOTAL GOALS';
+                    marketText = 'TOTAL Goals';
                 }
 
-                // Prefer the backend's full match_info; only build from teams when it is absent.
                 const teamStr = String(
                     item.match_info || [item.home_team, item.away_team].filter(Boolean).join(' - ') || 'Match'
                 )
@@ -500,7 +545,6 @@ export default function CashierDashboard() {
 
                 data.push(boldOn + `${String(index + 1).padStart(2, '0')}. ${teamStr}` + boldOff + '\n');
 
-                // Keep league/date on one line when possible; otherwise wrap the league only.
                 if (leagueText.length + mTime.length <= COLS - 1) {
                     data.push(padRow(leagueText, mTime) + '\n');
                 } else {
@@ -515,7 +559,6 @@ export default function CashierDashboard() {
                 if (index < eventCount - 1) data.push(repeatLine('-') + '\n');
             });
 
-            // Summary and payment — no duplicated "possible win / winning" row.
             data.push(boldOn + padRow(`EVENTS: ${eventCount}`, `TOTAL ODDS: ${totalOdds.toFixed(2)}`) + boldOff + '\n');
             data.push(repeatLine('=') + '\n');
 
@@ -525,11 +568,10 @@ export default function CashierDashboard() {
             data.push(boldOn + padRow('POTENTIAL WIN', `${potentialWin.toFixed(2)} ETB`) + boldOff + '\n');
             data.push(repeatLine('=') + '\n');
 
-            // Barcode: compact, still easy for scanners to read.
             if (booking !== 'REBOOK') {
                 data.push(alignCenter);
-                data.push('\x1D' + '\x68' + '\x30'); // 48 dots height
-                data.push('\x1D' + '\x77' + '\x02'); // module width 2
+                data.push('\x1D' + '\x68' + '\x30'); 
+                data.push('\x1D' + '\x77' + '\x02'); 
                 data.push('\x1D' + '\x6B' + '\x49' + String.fromCharCode(booking.length + 2) + '{B' + booking);
                 data.push('\n' + boldOn + booking + boldOff + '\n');
             }
@@ -621,7 +663,9 @@ export default function CashierDashboard() {
         setIsPayingOut(true); setMessage(null);
         try {
             const res = await axios.get(`${API_URL}/api/tickets/check/${cleanCode}`, { headers: { Authorization: `Bearer ${token}` } });
-            if (res.data.success) setPayoutDetails(res.data.data);
+            if (res.data.success) {
+                setPayoutDetails(res.data.data);
+            }
         } catch (err: any) {
             setMessage({ type: 'error', text: err.response?.data?.message || 'ትኬቱ አልተገኘም' });
             setPayoutDetails(null);
@@ -631,30 +675,46 @@ export default function CashierDashboard() {
     const checkTicketDetails = (e: React.FormEvent) => {
         e.preventDefault();
         const code = payoutTicket.trim();
-        if (!/^\d{8}$/.test(code)) {
-            setMessage({ type: 'error', text: 'እባክዎ 8 ዲጂት ያለው የትኬት ቁጥር ብቻ ያስገቡ! (ቡኪንግ ኮድ አይሰራም)' });
-            setPayoutDetails(null);
+        // 🛡️ የሴኪውሪቲ ማስተካከያ 1፡ የትኬት ቁጥር ወይም ቡኪንግ ኮድ ትክክለኛነት ማጣሪያ
+        if (!code || !/^\d{5,12}$/.test(code)) {
+            setMessage({ type: 'error', text: 'እባክዎ ትክክለኛ የትኬት ቁጥር ወይም የቡኪንግ ኮድ ብቻ ያስገቡ!' });
             return;
-        }
+        } 
         fetchTicketDetailsForCheck(code);
     };
 
     const handleConfirmPayout = async () => {
         if (!payoutDetails || isPayingOut) return;
         setIsPayingOut(true);
-        const tNum = payoutDetails.ticket_number || payoutDetails.booking_code;
+        
+        const tNum = String(payoutDetails.ticket_number || payoutDetails.booking_code || payoutTicket).trim();
+        const winAmt = actualPotentialWin.toFixed(2);
+
         try {
-            const res = await axios.post(`${API_URL}/api/tickets/payout`, 
-                { ticket_number: tNum }, { headers: { Authorization: `Bearer ${token}` } });
-            setMessage({ type: 'success', text: `${res.data.message}! የተከፈለው: ${payoutDetails.potential_win} ብር` });
-            setPayoutDetails(null); setPayoutTicket('');
-        } catch (err: any) { setMessage({ type: 'error', text: err.response?.data?.message || 'ክፍያ መፈጸም አልተቻለም' }); } 
+            const response = await fetch(`${API_URL}/api/tickets/payout`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ ticket_number: tNum, payout_amount: winAmt }) 
+            });
+            const data = await response.json();
+            
+            if (!data.success) throw new Error(data.message || 'ክፍያ መፈጸም አልተቻለም');
+
+            setPayoutDetails((prev: any) => ({ ...prev, status: 'paid', potential_win: winAmt }));
+            setMessage({ type: 'success', text: `✅ ${data.message || 'ክፍያው በተሳካ ሁኔታ ተፈጽሟል'}! የተከፈለው: ${winAmt} ብር` });
+            setPayoutTicket('');
+            
+            fetchCashierReport();
+            fetchRecentTickets();
+        } catch (err: any) { 
+            setMessage({ type: 'error', text: `❌ ${err.message || 'ክፍያ መፈጸም አልተቻለም! (እባክዎ ኔትወርክዎን ያረጋግጡ)'}` }); 
+        } 
         finally { setIsPayingOut(false); }
     };
 
     const handleVoidTicket = async () => {
         if (!payoutDetails || !window.confirm("እርግጠኛ ነዎት ይህንን ትኬት መሰረዝ (Void ማድረግ) ይፈልጋሉ?")) return;
-        const tNum = payoutDetails.ticket_number || payoutDetails.booking_code;
+        const tNum = String(payoutDetails.ticket_number || payoutDetails.booking_code).trim();
         try {
             const res = await axios.post(`${API_URL}/api/tickets/void`, 
                 { ticket_number: tNum }, { headers: { Authorization: `Bearer ${token}` } });
@@ -671,7 +731,7 @@ export default function CashierDashboard() {
         if (!window.confirm(`እርግጠኛ ነዎት ትኬት ቁጥር ${ticketNum} መሰረዝ ይፈልጋሉ?`)) return;
         try {
             const res = await axios.post(`${API_URL}/api/tickets/void`, 
-                { ticket_number: ticketNum }, { headers: { Authorization: `Bearer ${token}` } });
+                { ticket_number: String(ticketNum).trim() }, { headers: { Authorization: `Bearer ${token}` } });
             setMessage({ type: 'success', text: res.data.message || "ትኬቱ ተሰርዟል!" });
             fetchRecentTickets(); 
         } catch (err: any) {
@@ -880,7 +940,7 @@ export default function CashierDashboard() {
                                 <form onSubmit={searchTicket} className="flex gap-3 mb-6 shrink-0">
                                     <input 
                                         type="text" value={searchCode} onChange={(e) => setSearchCode(e.target.value.trim().toUpperCase())}
-                                        placeholder="የቡኪንግ ኮድ (ምሳሌ: 482915)" 
+                                        placeholder="የቡኪንግ ኮድ ወይም የትኬት ቁጥር" 
                                         className="flex-1 bg-[#1a1f24] border border-[#3b4148] text-white px-5 py-3.5 rounded-xl outline-none focus:border-[#ffcc00] text-lg font-black tracking-widest transition shadow-inner uppercase"
                                     />
                                     <button type="submit" disabled={isLoading} className="bg-[#1a1f24] border border-[#3b4148] hover:bg-[#ffcc00] hover:text-black hover:border-[#ffcc00] text-white font-black px-8 rounded-xl transition active:scale-95 text-sm flex gap-2 items-center shadow-sm">
@@ -1011,8 +1071,7 @@ export default function CashierDashboard() {
                                 <form onSubmit={checkTicketDetails} className="flex gap-3 mb-6 shrink-0">
                                     <input 
                                         type="text" value={payoutTicket} onChange={(e) => setPayoutTicket(e.target.value.trim().toUpperCase())}
-                                        placeholder="የቲኬት ቁጥር (8 ዲጂት ብቻ)" 
-                                        maxLength={8}
+                                        placeholder="የትኬት ቁጥር ወይም የቡኪንግ ኮድ ያስገቡ" 
                                         className="flex-1 bg-[#1a1f24] border border-[#3b4148] text-white px-5 py-3.5 rounded-xl outline-none focus:border-[#00e700] text-lg font-black uppercase tracking-widest transition shadow-inner"
                                     />
                                     <button type="submit" disabled={isPayingOut} className="bg-[#00e700] hover:bg-green-500 text-black font-black px-8 rounded-xl transition active:scale-95 text-sm flex items-center gap-2 shadow-sm">
@@ -1036,9 +1095,9 @@ export default function CashierDashboard() {
                                                         </button>
                                                     )}
 
-                                                    <div className={`px-4 py-1.5 rounded-md border shadow-sm ${displayStatus === 'won' ? 'bg-[#00e700]/10 border-[#00e700]/50 text-[#00e700]' : displayStatus === 'paid' ? 'bg-blue-500/10 border-blue-500/50 text-blue-400' : displayStatus === 'void' ? 'bg-slate-500/10 border-slate-500/50 text-slate-400' : displayStatus === 'expired' ? 'bg-red-500/10 border-red-500/50 text-red-500' : displayStatus === 'lost' ? 'bg-red-500/10 border-red-500/50 text-red-500' : 'bg-[#1a1f24] border-[#3b4148] text-slate-300'}`}>
+                                                    <div className={`px-4 py-1.5 rounded-md border shadow-sm ${displayStatus === 'won' ? 'bg-[#00e700]/10 border-[#00e700]/50 text-[#00e700]' : displayStatus === 'paid' ? 'bg-blue-500/10 border-blue-500/50 text-blue-400' : displayStatus === 'void' ? 'bg-slate-500/10 border-slate-500/50 text-slate-400' : displayStatus === 'expired' ? 'bg-red-500/10 border-red-500/50 text-red-500' : displayStatus === 'lost' ? 'bg-red-500/10 border-red-500/50 text-red-500' : displayStatus === 'pending' ? 'bg-orange-500/10 border-orange-500/50 text-orange-400' : 'bg-[#1a1f24] border-[#3b4148] text-slate-300'}`}>
                                                         <p className="text-sm font-black uppercase tracking-widest">
-                                                            {displayStatus === 'won' ? '🎉 አሸንፏል' : displayStatus === 'paid' ? '✅ ተከፍሏል' : displayStatus === 'void' ? '🚫 ተሰርዟል' : displayStatus === 'expired' ? '⏳ EXPIRED' : displayStatus === 'lost' ? '❌ ተበልቷል' : '⏳ በመጠባበቅ'}
+                                                            {displayStatus === 'won' ? '🎉 አሸንፏል' : displayStatus === 'paid' ? '✅ ተከፍሏል' : displayStatus === 'void' ? '🚫 ተሰርዟል' : displayStatus === 'expired' ? '⏳ ጊዜው ያለፈ (EXPIRED)' : displayStatus === 'lost' ? '❌ ተበልቷል' : displayStatus === 'pending' ? '⏳ በመጠባበቅ ላይ' : '⏳ ACTIVE'}
                                                         </p>
                                                     </div>
                                                 </div>
@@ -1051,10 +1110,17 @@ export default function CashierDashboard() {
                                                     const isWon = item.match_status === 'won'; 
                                                     const isLost = item.match_status === 'lost'; 
                                                     
+                                                    const mTimeMs = new Date(item.match_time || item.commence_time || Date.now()).getTime();
+                                                    const matchEndTimeMs = mTimeMs + (120 * 60 * 1000);
+                                                    
+                                                    const isPostponed = (item.match_status === 'postponed' || item.match_status === 'cancelled' || item.match_status === 'abandoned');
+
                                                     const icon = isWon ? (
                                                         <svg className="w-5 h-5 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                                                     ) : isLost ? (
                                                         <svg className="w-5 h-5 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                                                    ) : isPostponed ? (
+                                                        <span className="text-[#ffcc00] font-black text-xs">1.00</span>
                                                     ) : (
                                                         <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" /></svg>
                                                     );
@@ -1081,7 +1147,10 @@ export default function CashierDashboard() {
                                                             <div className="flex justify-between items-center text-[10px] text-gray-600 mt-2">
                                                                 <span>{item.odd_name && ['1','X','2'].includes(item.odd_name) ? `Match Result: ${item.odd_name}` : `Pick: ${item.odd_name}`}</span>
                                                                 <div className="flex items-center gap-2 font-bold">
-                                                                    <span className="text-blue-600 text-[11px]">{parseFloat(item.odd_value).toFixed(2)}</span>
+                                                                    <span className={`text-blue-600 text-[11px] ${isPostponed ? 'line-through opacity-50' : ''}`}>
+                                                                        {parseFloat(item.odd_value).toFixed(2)}
+                                                                    </span>
+                                                                    {isPostponed && <span className="text-[#ffcc00] text-[11px]">1.00</span>}
                                                                     <span>{icon}</span>
                                                                 </div>
                                                             </div>
@@ -1098,7 +1167,7 @@ export default function CashierDashboard() {
                                             </div>
                                             <div className="text-right">
                                                 <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">የሚያሸንፈው ብር</p>
-                                                <p className={`text-2xl font-black ${displayStatus === 'lost' ? 'text-red-500 line-through' : 'text-[#00e700]'}`}>{payoutDetails.potential_win} Br</p>
+                                                <p className={`text-2xl font-black ${displayStatus === 'lost' || displayStatus === 'void' ? 'text-red-500 line-through' : 'text-[#00e700]'}`}>{actualPotentialWin.toFixed(2)} Br</p>
                                             </div>
                                         </div>
 
@@ -1108,7 +1177,7 @@ export default function CashierDashboard() {
                                                 disabled={isPayingOut || displayStatus !== 'won'} 
                                                 className={`w-full font-black py-4 rounded-xl text-lg transition active:scale-[0.98] tracking-widest flex justify-center items-center gap-2 shadow-md ${displayStatus === 'won' ? 'bg-[#00e700] hover:bg-green-500 text-black' : 'bg-[#3b4148] text-slate-500 cursor-not-allowed border border-[#555]'}`}
                                             >
-                                                {isPayingOut ? '...' : displayStatus === 'paid' ? '✅ ተከፍሏል' : displayStatus === 'won' ? `ክፈል (${payoutDetails.potential_win} Br)` : 'ክፍያ የለም'}
+                                                {isPayingOut ? '...' : displayStatus === 'paid' ? '✅ ተከፍሏል' : displayStatus === 'won' ? `ክፈል (${actualPotentialWin.toFixed(2)} Br)` : displayStatus === 'expired' ? '⏳ ጊዜው አልፏል (EXPIRED)' : 'ክፍያ የለም'}
                                             </button>
                                         </div>
                                     </div>
