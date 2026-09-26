@@ -10,11 +10,20 @@ const MIN_STAKE = 20;
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-// 🛡️ የሴኪውሪቲ ማስተካከያ 2፡ የተበላሸ ቶከን ወይም 401/403 ሲያጋጥም አውቶማቲካሊ ሲስተሙን ይቆልፋል (Auto-Logout)
 axios.interceptors.response.use(
     response => response,
     error => {
-        if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+        const requestUrl = error.config?.url || '';
+        const isAuthRequest =
+            requestUrl.includes('/api/auth/login') ||
+            requestUrl.includes('/api/auth/verify') ||
+            requestUrl.includes('/api/auth/verify-password');
+
+        if (
+            error.response &&
+            (error.response.status === 401 || error.response.status === 403) &&
+            !isAuthRequest
+        ) {
             localStorage.removeItem('cashierToken');
             localStorage.removeItem('cashierUsername');
             window.location.reload();
@@ -47,14 +56,6 @@ function BarcodeSVG({ value, lineColor = '#000000', className }: { value: string
     return <svg ref={svgRef} className={className} />;
 }
 
-const formatMatchDateTime = (iso: string) => {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return '';
-    const datePart = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    const timePart = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    return `${datePart} ${timePart}`;
-};
-
 const formatShortDateTime = (iso: string) => {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return '';
@@ -67,6 +68,162 @@ const formatMatchListDateTime = (iso: string) => {
     if (isNaN(d.getTime())) return '';
     const pad = (n: number) => n.toString().padStart(2, '0');
     return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear().toString().slice(-2)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+const getLeagueDetails = (key: string, flagFromApi?: string) => {
+    if (!key || typeof key !== 'string') return { country: 'World', flag: 'https://media.api-sports.io/flags/un.svg', name: 'Soccer', isTop: false };
+    
+    let country = 'World';
+    let name = key.replace('soccer_', '').replace(/_/g, ' ');
+    let flag = flagFromApi || 'https://media.api-sports.io/flags/un.svg';
+
+    if (key.includes('|')) {
+        const parts = key.split('|');
+        country = parts[0] || 'World';
+        name = parts[1] || name;
+        flag = parts[2] || flag;
+    }
+
+    const nameLower = name.toLowerCase().trim();
+    const countryLower = country.toLowerCase().trim();
+
+    let isTop = false;
+
+    if (
+        (nameLower === 'premier league' && countryLower === 'england') ||
+        (nameLower === 'championship' && countryLower === 'england') ||
+        (nameLower === 'fa cup' && countryLower === 'england') ||
+        ((nameLower === 'la liga' || nameLower === 'primera division' || nameLower === 'laliga') && countryLower === 'spain') ||
+        (nameLower === 'serie a' && countryLower === 'italy') ||
+        ((nameLower === 'bundesliga' || nameLower === '1. bundesliga') && countryLower === 'germany') ||
+        (nameLower === 'ligue 1' && countryLower === 'france') ||
+        nameLower === 'uefa champions league' ||
+        nameLower === 'uefa europa league' ||
+        nameLower === 'uefa conference league' ||
+        nameLower === 'world cup' ||
+        nameLower === 'euro championship' ||
+        nameLower === 'copa america' ||
+        nameLower === 'africa cup of nations'
+    ) {
+        isTop = true;
+    }
+
+    if (!isTop && !key.includes('|')) {
+        name = name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        country = country.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
+
+    return { country, flag, name, isTop };
+};
+
+const formatLeagueDisplay = (item: any, fixtures: any[]) => {
+    const matchDetails = fixtures.find((f: any) => String(f.id) === String(item.fixture_id));
+    let lName = "Soccer";
+    let countryName = ""; 
+    
+    if (matchDetails) {
+        const details = getLeagueDetails(matchDetails.sport_key || matchDetails.league);
+        lName = details.name;
+        countryName = details.country;
+    } else if (item.sport_key) {
+        const details = getLeagueDetails(item.sport_key);
+        lName = details.name;
+        countryName = details.country;
+    } else if (item.league_name) {
+        lName = item.league_name;
+    }
+
+    if (!lName || lName.toLowerCase() === "soccer" || lName.toLowerCase() === "football") return "Football";
+    
+    let fullName = lName;
+    if (countryName && countryName !== 'World' && !lName.includes(countryName)) {
+        fullName = `${countryName} - ${lName}`;
+    }
+
+    if (fullName.toLowerCase().startsWith('football')) {
+        return fullName.replace(/^football\s*\/?\s*/i, 'Football / ');
+    }
+    return `Football / ${fullName}`;
+};
+
+const getFormattedMarket = (item: any, fixtures: any[]) => {
+    let pickText = String(item.odd_name || item.pick || '').trim();
+    let marketText = String(item.market_name || item.odd_category || item.market || '').trim();
+
+    const ouMatch = pickText.match(/(over|under)\s*([\d.]+)/i);
+    if (ouMatch) {
+        const val = parseFloat(ouMatch[2]);
+        pickText = `${ouMatch[1].charAt(0).toUpperCase() + ouMatch[1].slice(1).toLowerCase()} (${val})`;
+    } else {
+        if (['1', 'x', '2'].includes(pickText.toLowerCase())) {
+            pickText = pickText === '1' ? 'W1' : pickText === '2' ? 'W2' : 'Draw';
+            if (pickText.toUpperCase() === 'X') pickText = 'Draw';
+        } else if (['1x', '12', 'x2'].includes(pickText.toLowerCase())) {
+            pickText = pickText.toUpperCase();
+        } else if (['yes', 'no'].includes(pickText.toLowerCase()) || pickText.toUpperCase().includes('GG') || pickText.toUpperCase().includes('NG')) {
+            pickText = (pickText.toLowerCase() === 'yes' || pickText.toUpperCase().includes('GG')) ? 'Yes' : 'No';
+        }
+    }
+
+    if (
+        marketText.toLowerCase() === 'undefined' ||
+        marketText.toLowerCase() === 'null' ||
+        marketText === 'Market' ||
+        marketText === 'Match Market'
+    ) {
+        marketText = '';
+    }
+
+    if (!marketText && (item.market_id || item.market_key)) {
+        const mRef = String(item.market_id || item.market_key).toLowerCase();
+
+        const CUSTOM_MAP: Record<string, string> = {
+            "1": "Match Result", "h2h": "Match Result",
+            "8": "Both Teams To Score", "btts": "Both Teams To Score",
+            "12": "Double Chance", "dc": "Double Chance", "double_chance": "Double Chance",
+            "5": "Total Goals", "totals": "Total Goals", "50": "Total Goals",
+            "16": "Home Total Goals", "17": "Away Total Goals", "6": "1st Half Total Goals",
+            "7": "Halftime/Fulltime", "11": "Highest Scoring Half", "21": "Odd/Even", "2": "Draw No Bet",
+            "10": "Correct Score", "31": "Correct Score", "38": "Exact Goals", "349": "Goal Range",
+            "295": "Corner Range", "85": "Total Corners", "25": "1X2 & Total",
+            "24": "1X2 & Both Teams To Score", "54": "10 Minutes - 1X2",
+            "92": "Anytime Goalscorer", "79": "Corner 1X2", "33": "Double Chance & Both Teams To Score",
+            "86": "Last Corner", "15": "Last Goal", "94": "Last Goalscorer",
+            "88": "Odd/Even Corners", "83": "Sending Off", "49": "Total & Both Teams To Score",
+            "62": "Which Team To Score"
+        };
+
+        if (CUSTOM_MAP[mRef]) {
+            marketText = CUSTOM_MAP[mRef];
+        } else {
+            const match = fixtures.find((f: any) => String(f.id) === String(item.fixture_id));
+            const rawMarket = match?.raw_markets?.find(
+                (m: any) =>
+                    String(m.id).toLowerCase() === mRef ||
+                    String(m.key).toLowerCase() === mRef
+            );
+            if (rawMarket) {
+                marketText = String(rawMarket.title || rawMarket.name || '').trim();
+            }
+        }
+    }
+
+    if (!marketText || marketText.toLowerCase() === 'undefined' || marketText.toLowerCase() === 'null' || marketText === 'Market' || marketText === 'Match Market') {
+        if (ouMatch) {
+            if (pickText.toLowerCase().includes('corner')) marketText = 'Total Corners';
+            else if (pickText.toLowerCase().includes('card')) marketText = 'Total Cards';
+            else marketText = 'Total Goals';
+        }
+        else if (['w1', 'w2', 'draw', '1', 'x', '2'].includes(pickText.toLowerCase())) marketText = 'Match Result';
+        else if (['1x', 'x2', '12'].includes(pickText.toLowerCase())) marketText = 'Double Chance';
+        else if (['yes', 'no'].includes(pickText.toLowerCase())) marketText = 'Both Teams To Score';
+        else marketText = 'Match Market';
+    }
+
+    if (marketText.toLowerCase() === 'total' || marketText.toLowerCase() === 'over/under') marketText = 'Total Goals';
+    if (marketText.toLowerCase() === 'match winner') marketText = 'Match Result';
+
+    return { marketText, pickText };
 };
 
 export default function CashierDashboard() {
@@ -93,6 +250,9 @@ export default function CashierDashboard() {
     const [recentTickets, setRecentTickets] = useState<any[]>([]);
     const [fixtures, setFixtures] = useState<any[]>([]);
     
+    const [sidebarSearch, setSidebarSearch] = useState('');
+    const [sidebarPage, setSidebarPage] = useState(1);
+    
     const [isReportUnlocked, setIsReportUnlocked] = useState(false);
     const [reportPassword, setReportPassword] = useState('');
     const [reportError, setReportError] = useState('');
@@ -107,55 +267,8 @@ export default function CashierDashboard() {
     const [bookingCode, setBookingCode] = useState<string | null>(null);
     const [codeCopied, setCodeCopied] = useState(false);
 
-    // 🌟 1. የተሻሻለው የትኬት አሰላሰል (1.00 Odd ለተራዘሙ ጨዋታዎች) 🌟
-    let displayStatus = payoutDetails?.status;
-    let actualPotentialWin = parseFloat(payoutDetails?.potential_win || 0);
-
-    if (displayStatus === 'active' || displayStatus === 'pending') {
-        if (payoutDetails?.selections && payoutDetails.selections.length > 0) {
-            let isTicketLost = false;
-            let isTicketPending = false;
-            let calculatedOdds = 1;
-
-            payoutDetails.selections.forEach((s: any) => {
-                if (s.match_status === 'lost') {
-                    isTicketLost = true;
-                } else if (s.match_status === 'won') {
-                    calculatedOdds *= parseFloat(s.odd_value);
-                } else {
-                    const mTime = new Date(s.match_time || s.commence_time || Date.now()).getTime();
-                    const matchEndTime = mTime + (120 * 60 * 1000); // 2 ሰዓት ቆይታ ለጨዋታው እንሰጣለን
-
-                    if (Date.now() < matchEndTime) {
-                        isTicketPending = true; 
-                    } else {
-                        calculatedOdds *= 1; 
-                    }
-                }
-            });
-
-            if (isTicketLost) {
-                displayStatus = 'lost';
-            } else if (isTicketPending) {
-                displayStatus = 'pending';
-            } else {
-                displayStatus = 'won';
-                actualPotentialWin = Number((calculatedOdds * parseFloat(payoutDetails.stake_amount || 0)).toFixed(2));
-                payoutDetails.potential_win = actualPotentialWin.toFixed(2);
-            }
-        }
-    }
-
-    // 🌟 2. የ 3 ቀን ክፍያ ገደብ (3 Days Expiration Rule) 🌟
-    if (displayStatus === 'won') {
-        let lmt = new Date(payoutDetails?.created_at || Date.now()).getTime();
-        if (payoutDetails?.selections && payoutDetails.selections.length > 0) {
-            lmt = Math.max(...payoutDetails.selections.map((s:any) => new Date(s.match_time || s.commence_time || lmt).getTime()));
-        }
-        if (Date.now() > lmt + (3 * 24 * 60 * 60 * 1000)) {
-            displayStatus = 'expired';
-        }
-    }
+    const displayStatus = payoutDetails?.status;
+    const actualPotentialWin = Number(payoutDetails?.potential_win ?? 0);
 
     useEffect(() => {
         document.title = "vibebet.et - Cashier";
@@ -174,7 +287,6 @@ export default function CashierDashboard() {
         const savedToken = localStorage.getItem('cashierToken');
         const savedUsername = localStorage.getItem('cashierUsername');
         if (savedToken && savedUsername) {
-            // 🛡️ የሴኪውሪቲ ማስተካከያ 1፡ ዝም ብሎ ከማስገባት በፊት ቶከኑ ትክክለኛ መሆኑን ባክ-ኤንዱን ይጠይቃል (Fake Token Prevention)
             axios.get(`${API_URL}/api/auth/verify`, {
                 headers: { Authorization: `Bearer ${savedToken}` }
             }).then(res => {
@@ -216,7 +328,7 @@ export default function CashierDashboard() {
                 e.preventDefault();
                 if (activeTab === 'new' && ticketData) {
                     if (!ticketData.ticket_number) {
-                        if (!isLoading) handleConfirmTicket();
+                        if (!isLoading) handleConfirmTicketValidation();
                     } else {
                         if (!isPrinting) setIsPrintPreviewOpen(true);
                     }
@@ -231,27 +343,24 @@ export default function CashierDashboard() {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [activeTab, ticketData, payoutDetails, displayStatus, isLoading, isPrinting, isPayingOut]);
 
-    const getLeagueDetails = (key: string) => {
-        if (!key) return { name: "Soccer" };
-        const mapped: Record<string, string> = {
-            'soccer_epl': 'Premier League', 'soccer_efl_champ': 'Championship', 'soccer_spain_la_liga': 'LaLiga',
-            'soccer_italy_serie_a': 'Serie A', 'soccer_germany_bundesliga': 'Bundesliga', 'soccer_france_ligue_one': 'Ligue 1',
-            'soccer_uefa_champs_league': 'Champions League', 'soccer_uefa_europa_league': 'Europa League',
-            'soccer_saudi_professional_league': 'Pro League', 'soccer_saudi_arabia_pro_league': 'Pro League',
-            'soccer_spl': 'Premiership', 'soccer_brazil_campeonato': 'Serie A'
-        };
-        if (mapped[key]) return { name: mapped[key] };
-        const parts = key.replace('soccer_', '').split('_');
-        let leagueName = parts.slice(1).join(' ').replace(/\b\w/g, l => l.toUpperCase());
-        return { name: leagueName || "Soccer" };
-    };
-
     const fetchRecentTickets = async () => {
         try {
             const res = await axios.get(`${API_URL}/api/tickets/history`, { headers: { Authorization: `Bearer ${token}` } });
-            if (res.data.success) setRecentTickets(res.data.data);
+            if (res.data.success) {
+                // 🌟 የዛሬን ትኬቶች ብቻ ለመለየት 🌟
+                const today = new Date();
+                const todaysTickets = res.data.data.filter((t: any) => {
+                    const ticketDate = new Date(t.created_at);
+                    return ticketDate.getDate() === today.getDate() &&
+                           ticketDate.getMonth() === today.getMonth() &&
+                           ticketDate.getFullYear() === today.getFullYear();
+                });
+                
+                const sorted = todaysTickets.sort((a:any, b:any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                setRecentTickets(sorted);
+            }
         } catch (err: any) { 
-            console.error("History fetch error:", err.response?.data || err.message); 
+            console.error("History fetch error:", err.message); 
         }
     };
 
@@ -262,7 +371,7 @@ export default function CashierDashboard() {
                 setCashierReport(res.data.data);
             }
         } catch (err: any) { 
-            console.error("Report fetch error:", err.response?.data || err.message); 
+            console.error("Report fetch error:", err.message); 
         }
     };
 
@@ -297,7 +406,7 @@ export default function CashierDashboard() {
     const searchTicket = async (e: React.FormEvent) => {
         e.preventDefault();
         const cleanCode = searchCode.trim(); 
-        if (!cleanCode || !/^\d{5,12}$/.test(cleanCode)) {
+        if (!cleanCode || !/^[A-Z0-9]{5,12}$/.test(cleanCode)) {
             setMessage({ type: 'error', text: 'እባክዎ ትክክለኛ የትኬት ቁጥር ወይም የቡኪንግ ኮድ ብቻ ያስገቡ!' });
             return;
         }
@@ -358,10 +467,131 @@ export default function CashierDashboard() {
         setTicketData({ ...ticketData, stake_amount: newStake, potential_win: newPotentialWin });
     };
 
-    const handleQzPrint = async (ticketDetails: any) => {
-        if (isPrinting) return;
+    const handleConfirmTicketValidation = () => {
+        if (isLoading) return; 
+        const hasStarted = ticketData.selections.some((item: any) => {
+            const startTime = item.match_time || item.commence_time;
+            return startTime && new Date(startTime) < new Date();
+        });
+        if (hasStarted) { alert("የጀመሩ ጨዋታዎች አሉ! እባክዎ ከትኬቱ ላይ ይቀንሱ።"); return; }
 
+        const stakeVal = parseFloat(ticketData.stake_amount) || 0;
+        const winVal = parseFloat(ticketData.potential_win) || 0;
+        if (stakeVal < MIN_STAKE) { alert(`ዝቅተኛው የውርርድ መጠን ${MIN_STAKE} ብር ነው!`); return; }
+        if (stakeVal > MAX_STAKE) { alert(`ከፍተኛው የውርርድ መጠን ${MAX_STAKE} ብር ነው!`); return; }
+        if (winVal > MAX_WIN) { alert(`ከፍተኛው ማሸነፊያ ${MAX_WIN} ብር ነው! እባክዎ ውርርዱን ይቀንሱ።`); return; }
+
+        if (ticketData.booking_code === 'REBOOK') {
+            const currentSig = ticketData.selections.map((s: any) => s.odd_id).sort().join('|');
+            if (currentSig === ticketData.original_signature) {
+                alert("🚫 ተመሳሳይ ትኬት ኮፒ ማድረግ አይቻልም! እባክዎ ቢያንስ አንዱን ጨዋታ ይቀንሱ (✕)።"); return;
+            }
+        }
+        
+        setIsPrintPreviewOpen(true);
+    };
+
+    const handleConfirmAndPrint = async () => {
+        if (isPrinting || !ticketData) return;
         setIsPrinting(true);
+        setIsLoading(true);
+
+        try {
+            if (ticketData.ticket_number) {
+                await handleQzPrint(ticketData);
+                return;
+            }
+
+            let res;
+            let finalTicketData = { ...ticketData };
+
+            if (ticketData.booking_code === 'REBOOK') {
+                const cleanSelections = ticketData.selections.map((s: any) => {
+                    const league = formatLeagueDisplay(s, fixtures);
+                    const { marketText } = getFormattedMarket(s, fixtures);
+                    return {
+                        fixture_id: s.fixture_id,
+                        odd_id: s.odd_id,
+                        odd_value: s.odd_value,
+                        match_info: s.match_info || (s.home_team + ' vs ' + s.away_team),
+                        odd_name: s.odd_name,
+                        market_name: s.market_name || s.market_title || marketText,
+                        league_name: league,
+                        sport_key: s.sport_key || s.sport || ''
+                    };
+                });
+                
+                const placePayload = { stake_amount: ticketData.stake_amount, is_guest: true, selections: cleanSelections };
+                const placeRes = await axios.post(`${API_URL}/api/tickets/place`, placePayload);
+                if (!placeRes.data?.success || !placeRes.data?.data?.booking_code) {
+                    throw new Error(placeRes.data?.message || 'Rebook ማስጀመር አልተቻለም');
+                }
+                const newBookingCode = placeRes.data.data.booking_code;
+                
+                const confirmPayload = { selections: cleanSelections, stake_amount: ticketData.stake_amount };
+                res = await axios.post(`${API_URL}/api/tickets/booking/${newBookingCode}/confirm`, confirmPayload, { headers: { Authorization: `Bearer ${token}` } });
+                
+                if(res.data.success) {
+                    res.data.data.booking_code = newBookingCode;
+                }
+            } else {
+                const payload = { 
+                    selections: ticketData.selections.map((s: any) => {
+                        const league = formatLeagueDisplay(s, fixtures);
+                        const { marketText } = getFormattedMarket(s, fixtures);
+                        return {
+                            ...s,
+                            market_name: s.market_name || s.market_title || marketText,
+                            league_name: league,
+                            sport_key: s.sport_key || s.sport || ''
+                        };
+                    }), 
+                    stake_amount: ticketData.stake_amount 
+                };
+                res = await axios.post(`${API_URL}/api/tickets/booking/${ticketData.booking_code}/confirm`, payload, { headers: { Authorization: `Bearer ${token}` } });
+            }
+
+            if (res.data.success) {
+                const newBookingCode = res.data.data.booking_code || ticketData.booking_code;
+                const backendSelections = res.data.data.selections || [];
+                
+                const mergedSelections = ticketData.selections.map((origSel: any, idx: number) => {
+                    const backSel = backendSelections.find((b:any) => String(b.odd_id) === String(origSel.odd_id)) || backendSelections[idx] || {};
+                    const merged = { ...origSel, ...backSel };
+                    return {
+                        ...merged,
+                        market_name:
+                            backSel.market_name ||
+                            origSel.market_name ||
+                            getFormattedMarket(merged, fixtures).marketText
+                    };
+                });
+
+                finalTicketData = { 
+                    ...ticketData, 
+                    ...res.data.data,
+                    selections: mergedSelections,
+                    ticket_number: res.data.data.ticket_number, 
+                    booking_code: newBookingCode, 
+                    status: 'active', 
+                    created_at: new Date().toISOString() 
+                };
+                
+                setTicketData(finalTicketData);
+                setBookingCode(newBookingCode);
+                
+                await handleQzPrint(finalTicketData);
+            } else {
+                throw new Error(res.data?.message || 'ትኬቱን ማረጋገጥ አልተቻለም');
+            }
+        } catch (error: any) { 
+            alert(error.response?.data?.message || error.message || "ትኬቱን ማረጋገጥ ወይም ማተም አልተቻለም");
+        } finally { 
+            setIsLoading(false); 
+        }
+    };
+
+    const handleQzPrint = async (ticketDetails: any) => {
         try {
             // @ts-ignore
             const qzModule = await import('qz-tray');
@@ -427,37 +657,11 @@ export default function CashierDashboard() {
 
             const COLS = 48;
             const repeatLine = (char = '-', count = COLS) => char.repeat(count);
-            const clip = (value: any, max: number) => String(value ?? '').trim().slice(0, max);
-
             const padRow = (left: string, right: string, width = COLS) => {
                 const l = String(left);
                 const r = String(right);
                 const space = Math.max(1, width - l.length - r.length);
                 return l.slice(0, width - r.length - 1) + ' '.repeat(space) + r.slice(-r.length);
-            };
-
-            const wrapText = (value: string, width = COLS) => {
-                const words = String(value || '').trim().split(/\s+/);
-                const lines: string[] = [];
-                let current = '';
-
-                for (const word of words) {
-                    if (!current) {
-                        if (word.length <= width) current = word;
-                        else {
-                            for (let i = 0; i < word.length; i += width) {
-                                lines.push(word.slice(i, i + width));
-                            }
-                        }
-                    } else if ((current.length + 1 + word.length) <= width) {
-                        current += ' ' + word;
-                    } else {
-                        lines.push(current);
-                        current = word;
-                    }
-                }
-                if (current) lines.push(current);
-                return lines;
             };
 
             const currentDate = new Date();
@@ -513,49 +717,28 @@ export default function CashierDashboard() {
             data.push(alignLeft);
             data.push(repeatLine('-') + '\n');
 
-            ticketDetails.selections?.forEach((item: any, index: number) => {
-                const rawOddName = String(item.odd_name ?? '').trim();
-                let marketText = 'Match Result';
-                let pickText = rawOddName || '-';
+            const sortedSelections = [...(ticketDetails.selections || [])].sort((a, b) => {
+                const timeA = new Date(a.match_time || a.commence_time || 0).getTime();
+                const timeB = new Date(b.match_time || b.commence_time || 0).getTime();
+                return timeA - timeB;
+            });
 
-                if (rawOddName === '1' || rawOddName === 'X' || rawOddName === '2') {
-                    pickText = rawOddName === '1' ? 'W1' : rawOddName === '2' ? 'W2' : 'DRAW';
-                } else if (
-                    rawOddName === 'Yes' || rawOddName === 'No' ||
-                    /\bGG\b/i.test(rawOddName) || /\bNG\b/i.test(rawOddName)
-                ) {
-                    pickText = (rawOddName === 'Yes' || /\bGG\b/i.test(rawOddName)) ? 'YES' : 'NO';
-                    marketText = 'BTTS';
-                } else if (/\b(over|under)\b/i.test(rawOddName)) {
-                    marketText = 'TOTAL Goals';
-                }
-
+            sortedSelections.forEach((item: any, index: number) => {
                 const teamStr = String(
                     item.match_info || [item.home_team, item.away_team].filter(Boolean).join(' - ') || 'Match'
-                )
-                    .replace(/\s+vs\.?\s+/gi, ' - ')
-                    .replace(/\s+/g, ' ')
-                    .trim();
+                ).replace(/\s+vs\.?\s+/gi, ' v ').replace(/\s+/g, ' ').trim();
 
-                const mTime = formatMatchListDateTime(
-                    item.match_time || item.commence_time || currentDate.toISOString()
-                );
-                const leagueText = String(item.league_name || 'Soccer').trim();
+                const fullLeagueText = formatLeagueDisplay(item, fixtures);
+                const { marketText, pickText } = getFormattedMarket(item, fixtures);
                 const oddText = Number(item.odd_value || 0).toFixed(2);
+                const mTime = formatMatchListDateTime(item.match_time || item.commence_time || currentDate.toISOString());
 
-                data.push(boldOn + `${String(index + 1).padStart(2, '0')}. ${teamStr}` + boldOff + '\n');
+                data.push(boldOn + `${teamStr}` + boldOff + '\n');
+                data.push(padRow(fullLeagueText, mTime) + '\n');
 
-                if (leagueText.length + mTime.length <= COLS - 1) {
-                    data.push(padRow(leagueText, mTime) + '\n');
-                } else {
-                    wrapText(leagueText, COLS - mTime.length - 1).slice(0, 2).forEach((line: string, i: number, arr: string[]) => {
-                        if (i === arr.length - 1) data.push(padRow(line, mTime) + '\n');
-                        else data.push(line + '\n');
-                    });
-                }
-
-                const marketPick = `${marketText}: ${pickText}`;
-                data.push(boldOn + padRow(marketPick, `@${oddText}`) + boldOff + '\n');
+                const rightSide = `${pickText}        Q: ${oddText}`;
+                data.push(boldOn + padRow(marketText, rightSide) + boldOff + '\n');
+                
                 if (index < eventCount - 1) data.push(repeatLine('-') + '\n');
             });
 
@@ -592,70 +775,10 @@ export default function CashierDashboard() {
 
         } catch (error: any) {
             console.error("Print Error:", error.message || error);
-            alert("QZ Tray አልተገኘም! እባክዎ ፕሪንተሩን እና QZ Tray ሶፍትዌር መከፈቱን ያረጋግጡ።");
+            throw new Error("QZ Tray አልተገኘም! እባክዎ ፕሪንተሩን እና QZ Tray ሶፍትዌር መከፈቱን ያረጋግጡ።");
         } finally {
             setIsPrinting(false);
         }
-    };
-
-    const handleConfirmTicket = async () => {
-        if (isLoading) return; 
-        const hasStarted = ticketData.selections.some((item: any) => item.commence_time && new Date(item.commence_time) < new Date());
-        if (hasStarted) { alert("የጀመሩ ጨዋታዎች አሉ! እባክዎ ከትኬቱ ላይ ይቀንሱ።"); return; }
-
-        const stakeVal = parseFloat(ticketData.stake_amount) || 0;
-        const winVal = parseFloat(ticketData.potential_win) || 0;
-        if (stakeVal < MIN_STAKE) { alert(`ዝቅተኛው የውርርድ መጠን ${MIN_STAKE} ብር ነው!`); return; }
-        if (stakeVal > MAX_STAKE) { alert(`ከፍተኛው የውርርድ መጠን ${MAX_STAKE} ብር ነው!`); return; }
-        if (winVal > MAX_WIN) { alert(`ከፍተኛው ማሸነፊያ ${MAX_WIN} ብር ነው! እባክዎ ውርርዱን ይቀንሱ።`); return; }
-
-        if (ticketData.booking_code === 'REBOOK') {
-            const currentSig = ticketData.selections.map((s: any) => s.odd_id).sort().join('|');
-            if (currentSig === ticketData.original_signature) {
-                alert("🚫 ተመሳሳይ ትኬት ኮፒ ማድረግ አይቻልም! እባክዎ ቢያንስ አንዱን ጨዋታ ይቀንሱ (✕)።"); return;
-            }
-        }
-        setIsLoading(true);
-        try {
-            let res;
-            if (ticketData.booking_code === 'REBOOK') {
-                const cleanSelections = ticketData.selections.map((s: any) => ({
-                    fixture_id: s.fixture_id,
-                    odd_id: s.odd_id,
-                    odd_value: s.odd_value,
-                    match_info: s.match_info || (s.home_team + ' vs ' + s.away_team),
-                    odd_name: s.odd_name
-                }));
-                const placePayload = { stake_amount: ticketData.stake_amount, is_guest: true, selections: cleanSelections };
-                const placeRes = await axios.post(`${API_URL}/api/tickets/place`, placePayload);
-                const newBookingCode = placeRes.data.data.booking_code;
-                
-                const confirmPayload = { selections: cleanSelections, stake_amount: ticketData.stake_amount };
-                res = await axios.post(`${API_URL}/api/tickets/booking/${newBookingCode}/confirm`, confirmPayload, { headers: { Authorization: `Bearer ${token}` } });
-                
-                if(res.data.success) {
-                    res.data.data.booking_code = newBookingCode;
-                }
-            } else {
-                const payload = { selections: ticketData.selections, stake_amount: ticketData.stake_amount };
-                res = await axios.post(`${API_URL}/api/tickets/booking/${ticketData.booking_code}/confirm`, payload, { headers: { Authorization: `Bearer ${token}` } });
-            }
-
-            if (res.data.success) {
-                const newBookingCode = res.data.data.booking_code || ticketData.booking_code;
-                const finalTicket = { 
-                    ...ticketData, 
-                    ticket_number: res.data.data.ticket_number, 
-                    booking_code: newBookingCode, 
-                    status: 'active', 
-                    created_at: new Date().toISOString() 
-                };
-                
-                setTicketData(finalTicket);
-                setBookingCode(newBookingCode);
-            }
-        } catch (error: any) { alert(error.response?.data?.message || "ክፍያ ማረጋገጥ አልተቻለም"); } 
-        finally { setIsLoading(false); }
     };
 
     const fetchTicketDetailsForCheck = async (code: string) => {
@@ -675,9 +798,8 @@ export default function CashierDashboard() {
     const checkTicketDetails = (e: React.FormEvent) => {
         e.preventDefault();
         const code = payoutTicket.trim();
-        // 🛡️ የሴኪውሪቲ ማስተካከያ 1፡ የትኬት ቁጥር ወይም ቡኪንግ ኮድ ትክክለኛነት ማጣሪያ
-        if (!code || !/^\d{5,12}$/.test(code)) {
-            setMessage({ type: 'error', text: 'እባክዎ ትክክለኛ የትኬት ቁጥር ወይም የቡኪንግ ኮድ ብቻ ያስገቡ!' });
+        if (!code || !/^\d{8}$/.test(code)) {
+            setMessage({ type: 'error', text: 'እባክዎ ትክክለኛ 8 ዲጂት የትኬት ቁጥር ብቻ ያስገቡ!' });
             return;
         } 
         fetchTicketDetailsForCheck(code);
@@ -688,20 +810,29 @@ export default function CashierDashboard() {
         setIsPayingOut(true);
         
         const tNum = String(payoutDetails.ticket_number || payoutDetails.booking_code || payoutTicket).trim();
-        const winAmt = actualPotentialWin.toFixed(2);
-
         try {
             const response = await fetch(`${API_URL}/api/tickets/payout`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ ticket_number: tNum, payout_amount: winAmt }) 
+                body: JSON.stringify({ ticket_number: tNum })
             });
             const data = await response.json();
             
             if (!data.success) throw new Error(data.message || 'ክፍያ መፈጸም አልተቻለም');
 
-            setPayoutDetails((prev: any) => ({ ...prev, status: 'paid', potential_win: winAmt }));
-            setMessage({ type: 'success', text: `✅ ${data.message || 'ክፍያው በተሳካ ሁኔታ ተፈጽሟል'}! የተከፈለው: ${winAmt} ብር` });
+            const serverPayoutAmount = Number(
+                data.payout_amount ??
+                data.data?.payout_amount ??
+                actualPotentialWin
+            );
+            const paidAmount = serverPayoutAmount.toFixed(2);
+
+            setPayoutDetails((prev: any) => ({
+                ...prev,
+                status: 'paid',
+                potential_win: paidAmount
+            }));
+            setMessage({ type: 'success', text: `✅ ${data.message || 'ክፍያው በተሳካ ሁኔታ ተፈጽሟል'}! የተከፈለው: ${paidAmount} ብር` });
             setPayoutTicket('');
             
             fetchCashierReport();
@@ -758,13 +889,16 @@ export default function CashierDashboard() {
         }
     };
 
-    const isWithin5Minutes = (createdAt: string) => {
-        const diff = new Date().getTime() - new Date(createdAt).getTime();
-        return diff <= 5 * 60 * 1000;
+    const isWithin20Minutes = (createdAt: string) => {
+        const diff = Date.now() - new Date(createdAt).getTime();
+        return diff >= 0 && diff <= 20 * 60 * 1000;
     };
 
-    const tenMinsAgo = new Date().getTime() - 10 * 60 * 1000;
-    const validRecentTickets = recentTickets.filter(t => new Date(t.created_at).getTime() >= tenMinsAgo);
+    const filteredSidebarTickets = recentTickets.filter(t => 
+        t.ticket_number && t.ticket_number.includes(sidebarSearch)
+    );
+    const totalSidebarPages = Math.ceil(filteredSidebarTickets.length / 10);
+    const paginatedRecentTickets = filteredSidebarTickets.slice((sidebarPage - 1) * 10, sidebarPage * 10);
 
     const bookingShareUrl = bookingCode ? `${typeof window !== 'undefined' ? window.location.origin : ''}?booking=${bookingCode}` : '';
 
@@ -836,7 +970,10 @@ export default function CashierDashboard() {
         );
     }
 
-    const hasStartedGames = ticketData?.selections?.some((item: any) => item.commence_time && new Date(item.commence_time) < new Date());
+    const hasStartedGames = ticketData?.selections?.some((item: any) => {
+        const startTime = item.match_time || item.commence_time;
+        return startTime && new Date(startTime) < new Date();
+    });
 
     const stakeError = (() => {
         if (!ticketData || ticketData.ticket_number) return null;
@@ -850,7 +987,6 @@ export default function CashierDashboard() {
     })();
 
     const betSlip = ticketData?.selections || [];
-    const totalOdds = ticketData?.total_odds || 0;
     const safeStake = parseFloat(ticketData?.stake_amount) || 0;
     const grossWin = parseFloat(ticketData?.potential_win) || 0;
 
@@ -895,15 +1031,23 @@ export default function CashierDashboard() {
 
                 <div className="flex-1 flex max-w-[1400px] w-full mx-auto p-4 gap-4">
                     
-                    <aside className="w-[280px] bg-[#24292e] border border-[#3b4148] rounded-xl flex flex-col overflow-hidden shadow-sm shrink-0 h-[calc(100vh-90px)] sticky top-[75px]">
-                        <div className="p-4 border-b border-[#3b4148] bg-[#1a1f24]">
-                            <h3 className="font-black text-white flex items-center gap-2 text-xs uppercase tracking-widest">⏱ በቅርብ የተቆረጡ</h3>
+                    <aside className="w-[300px] bg-[#24292e] border border-[#3b4148] rounded-xl flex flex-col overflow-hidden shadow-sm shrink-0 h-[calc(100vh-90px)] sticky top-[75px]">
+                        <div className="p-3 border-b border-[#3b4148] bg-[#1a1f24]">
+                            <h3 className="font-black text-white flex items-center gap-2 text-xs uppercase tracking-widest mb-3">⏱ የቀኑ ትኬቶች</h3>
+                            <input 
+                                type="text" 
+                                placeholder="በትኬት ቁጥር ፈልግ..." 
+                                value={sidebarSearch}
+                                onChange={(e) => {setSidebarSearch(e.target.value.trim()); setSidebarPage(1);}}
+                                className="w-full bg-[#1c2024] border border-[#3b4148] text-white text-xs px-3 py-2 rounded-md outline-none focus:border-[#ffcc00] transition"
+                            />
                         </div>
+                        
                         <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2.5 bg-[#1c2024]">
-                            {validRecentTickets.length === 0 ? (
-                                <p className="text-xs text-slate-500 text-center py-10 font-bold">ባለፉት 10 ደቂቃዎች ምንም ትኬት አልተቆረጠም</p>
+                            {paginatedRecentTickets.length === 0 ? (
+                                <p className="text-xs text-slate-500 text-center py-10 font-bold">ምንም ትኬት አልተገኘም</p>
                             ) : (
-                                validRecentTickets.slice(0, 15).map((t, i) => (
+                                paginatedRecentTickets.map((t, i) => (
                                     <div key={i} onClick={() => handleRebookTicket(t.ticket_number)} className={`bg-[#24292e] border ${t.status === 'void' ? 'border-red-500/30 opacity-60' : 'border-[#3b4148]'} p-3 rounded-lg hover:border-[#ffcc00] transition cursor-pointer group relative overflow-hidden shadow-sm`}>
                                         <div className="absolute inset-0 bg-gradient-to-r from-[#ffcc00]/5 to-transparent opacity-0 group-hover:opacity-100 transition"></div>
                                         <div className="flex justify-between items-center mb-1.5 relative z-10">
@@ -915,9 +1059,11 @@ export default function CashierDashboard() {
                                             {t.status === 'void' ? <span className="text-red-400">VOID</span> : (
                                                 <div className="flex items-center gap-2">
                                                     <span className="text-[#00e700]">Win: {t.potential_win}</span>
-                                                    <button onClick={(e) => handleVoidRecentTicket(e, t.ticket_number)} className="bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-white rounded px-1.5 py-0.5 transition-colors text-[10px]">
-                                                        🗑️
-                                                    </button>
+                                                    {isWithin20Minutes(t.created_at) && (
+                                                        <button onClick={(e) => handleVoidRecentTicket(e, t.ticket_number)} className="bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-white rounded px-1.5 py-0.5 transition-colors text-[10px]" title="ሰርዝ">
+                                                            🗑️
+                                                        </button>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
@@ -925,6 +1071,26 @@ export default function CashierDashboard() {
                                 ))
                             )}
                         </div>
+
+                        {totalSidebarPages > 1 && (
+                            <div className="p-3 border-t border-[#3b4148] bg-[#1a1f24] flex justify-between items-center text-xs">
+                                <button 
+                                    disabled={sidebarPage === 1} 
+                                    onClick={() => setSidebarPage(p => p - 1)}
+                                    className="px-3 py-1.5 bg-[#3b4148] text-white rounded hover:bg-[#4b5158] disabled:opacity-50 transition"
+                                >
+                                    ◀ በፊት
+                                </button>
+                                <span className="text-slate-400 font-bold">{sidebarPage} / {totalSidebarPages}</span>
+                                <button 
+                                    disabled={sidebarPage === totalSidebarPages} 
+                                    onClick={() => setSidebarPage(p => p + 1)}
+                                    className="px-3 py-1.5 bg-[#3b4148] text-white rounded hover:bg-[#4b5158] disabled:opacity-50 transition"
+                                >
+                                    ቀጣይ ▶
+                                </button>
+                            </div>
+                        )}
                     </aside>
 
                     <main className="flex-1 flex flex-col">
@@ -993,34 +1159,30 @@ export default function CashierDashboard() {
                                         <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 mb-2 space-y-1">
                                             {ticketData.selections?.map((item: any, idx: number) => {
                                                 const now = new Date();
-                                                const matchTime = item.commence_time ? new Date(item.commence_time) : null;
+                                                const matchTimeValue = item.match_time || item.commence_time;
+                                                const matchTime = matchTimeValue ? new Date(matchTimeValue) : null;
                                                 const hasStarted = matchTime && matchTime < now;
 
-                                                const matchDetails = fixtures.find((f: any) => f.id === item.fixture_id);
-                                                let lName = "Soccer";
-                                                let mTime = "";
-                                                if (matchDetails) {
-                                                    lName = getLeagueDetails(matchDetails.sport_key || matchDetails.league).name;
-                                                    mTime = new Date(matchDetails.commence_time || matchDetails.match_time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' });
-                                                } else if (item.match_time || item.commence_time) {
-                                                    mTime = new Date(item.match_time || item.commence_time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' });
-                                                    lName = item.league_name || "Soccer";
-                                                }
+                                                const fullLeagueText = formatLeagueDisplay(item, fixtures);
+                                                const { marketText, pickText } = getFormattedMarket(item, fixtures);
+
+                                                let mTime = formatMatchListDateTime(item.match_time || item.commence_time || new Date().toISOString());
+                                                let teamStr = item.match_info || (item.home_team + ' vs ' + item.away_team);
 
                                                 return (
                                                     <div key={idx} className={`p-1.5 rounded border flex justify-between items-center transition shadow-sm ${hasStarted && !ticketData.ticket_number ? 'bg-red-50 border-red-300' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
                                                         <div className="w-full flex-1">
                                                             <div className="flex justify-between items-center mb-0.5">
-                                                                <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider truncate max-w-[70%]">{lName}</span>
+                                                                <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider truncate max-w-[70%]">{fullLeagueText}</span>
                                                                 <span className="text-[9px] text-gray-800 font-black shrink-0">{mTime}</span>
                                                             </div>
                                                             <div className="flex justify-between items-center">
                                                                 <p className="font-bold text-[11px] text-black flex items-center gap-1">
-                                                                    {item.match_info || item.home_team + ' vs ' + item.away_team}
+                                                                    {teamStr}
                                                                     {hasStarted && !ticketData.ticket_number && <span className="text-[8px] text-white bg-red-500 px-1 rounded uppercase font-black animate-pulse">Started</span>}
                                                                 </p>
                                                             </div>
-                                                            <p className="text-[10px] text-gray-600 font-bold mt-0.5">Pick: <span className="text-black font-black">{item.odd_name}</span> <span className="text-gray-500">(@{item.odd_value})</span></p>
+                                                            <p className="text-[10px] text-gray-600 font-bold mt-0.5">{marketText}: <span className="text-black font-black">{pickText}</span> <span className="text-gray-500">(@{parseFloat(item.odd_value).toFixed(2)})</span></p>
                                                         </div>
                                                         {!ticketData.ticket_number && (
                                                             <button onClick={() => handleRemoveGame(idx)} className="ml-2 shrink-0 w-6 h-6 rounded bg-gray-100 border border-gray-300 text-gray-500 hover:bg-red-50 hover:text-red-500 flex justify-center items-center font-black text-xs transition">✕</button>
@@ -1044,7 +1206,7 @@ export default function CashierDashboard() {
                                         <div className="shrink-0">
                                             {!ticketData.ticket_number ? (
                                                 <button 
-                                                    onClick={handleConfirmTicket} 
+                                                    onClick={handleConfirmTicketValidation} 
                                                     disabled={isLoading || !!stakeError}
                                                     className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:text-gray-200 text-white font-black py-2.5 rounded text-sm transition transform active:scale-[0.98] tracking-widest flex items-center justify-center gap-2 shadow-md"
                                                 >
@@ -1071,7 +1233,7 @@ export default function CashierDashboard() {
                                 <form onSubmit={checkTicketDetails} className="flex gap-3 mb-6 shrink-0">
                                     <input 
                                         type="text" value={payoutTicket} onChange={(e) => setPayoutTicket(e.target.value.trim().toUpperCase())}
-                                        placeholder="የትኬት ቁጥር ወይም የቡኪንግ ኮድ ያስገቡ" 
+                                        placeholder="8 ዲጂት የትኬት ቁጥር ያስገቡ" 
                                         className="flex-1 bg-[#1a1f24] border border-[#3b4148] text-white px-5 py-3.5 rounded-xl outline-none focus:border-[#00e700] text-lg font-black uppercase tracking-widest transition shadow-inner"
                                     />
                                     <button type="submit" disabled={isPayingOut} className="bg-[#00e700] hover:bg-green-500 text-black font-black px-8 rounded-xl transition active:scale-95 text-sm flex items-center gap-2 shadow-sm">
@@ -1080,16 +1242,16 @@ export default function CashierDashboard() {
                                 </form>
 
                                 {payoutDetails && (
-                                    <div className="flex-1 flex flex-col bg-[#1c2024] border border-[#3b4148] rounded-xl p-5 animate-fade-in-down shadow-inner overflow-hidden max-w-3xl mx-auto w-full">
+                                    <div className="flex-1 flex flex-col bg-[#1c2024] border border-[#3b4148] rounded-xl p-5 animate-fade-in-down shadow-inner overflow-hidden max-w-4xl mx-auto w-full">
                                         <div className="flex justify-between items-end border-b border-[#3b4148] pb-4 mb-4 shrink-0">
                                             <div>
                                                 <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1">Ticket Number</p>
-                                                <p className="text-2xl font-mono font-black text-[#ffcc00] tracking-widest bg-[#ffcc00]/10 px-3 py-1 rounded-md border border-[#ffcc00]/20 inline-block">{payoutDetails.ticket_number || payoutDetails.booking_code}</p>
+                                                <p className="text-2xl font-mono font-black text-[#ffcc00] tracking-widest bg-[#ffcc00]/10 px-3 py-1 rounded-md border border-[#ffcc00]/20 inline-block">{payoutDetails.ticket_number}</p>
                                             </div>
                                             <div className="text-right">
                                                 <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">ሁኔታ (Status)</p>
                                                 <div className="flex items-center gap-3">
-                                                    {displayStatus === 'active' && isWithin5Minutes(payoutDetails.created_at) && (
+                                                    {displayStatus === 'active' && isWithin20Minutes(payoutDetails.created_at) && (
                                                         <button onClick={handleVoidTicket} className="bg-red-500 hover:bg-red-600 text-white font-bold px-3 py-1.5 text-xs rounded-md border border-red-700 transition shadow-sm">
                                                             🗑️ ትኬት ሰርዝ
                                                         </button>
@@ -1109,10 +1271,6 @@ export default function CashierDashboard() {
                                                 {payoutDetails.selections?.map((item: any, i: number) => {
                                                     const isWon = item.match_status === 'won'; 
                                                     const isLost = item.match_status === 'lost'; 
-                                                    
-                                                    const mTimeMs = new Date(item.match_time || item.commence_time || Date.now()).getTime();
-                                                    const matchEndTimeMs = mTimeMs + (120 * 60 * 1000);
-                                                    
                                                     const isPostponed = (item.match_status === 'postponed' || item.match_status === 'cancelled' || item.match_status === 'abandoned');
 
                                                     const icon = isWon ? (
@@ -1132,27 +1290,31 @@ export default function CashierDashboard() {
                                                     const score = item.score || (isWon || isLost ? 'FT' : '-:-');
                                                     const mTime = new Date(item.match_time || new Date()).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute:'2-digit' }).replace(',', '');
 
+                                                    const { marketText, pickText } = getFormattedMarket(item, fixtures);
+
                                                     return (
-                                                        <div key={i} className="border-b-2 border-gray-300 last:border-b-0 p-2.5">
-                                                            <div className="flex justify-between items-center text-[11px] font-black text-gray-800 uppercase">
-                                                                <span>{homeTeam}</span>
-                                                                <span className="font-normal text-[10px] text-gray-500">{mTime}</span>
-                                                            </div>
-                                                            <div className="flex justify-between items-center text-[11px] font-black text-gray-800 uppercase mt-0.5">
-                                                                <span>{awayTeam}</span>
-                                                                <span className={`mx-2 text-[10px] px-2 py-0.5 rounded shrink-0 font-black border ${item.score && item.score !== '-:-' ? 'bg-[#ffcc00] text-black border-[#e6b800] shadow-sm' : 'bg-[#24292e] text-slate-400 border-[#3b4148]'}`}>
-                                                                    {item.score && item.score !== '-:-' ? item.score : 'vs'}
-                                                                </span>
-                                                            </div>
-                                                            <div className="flex justify-between items-center text-[10px] text-gray-600 mt-2">
-                                                                <span>{item.odd_name && ['1','X','2'].includes(item.odd_name) ? `Match Result: ${item.odd_name}` : `Pick: ${item.odd_name}`}</span>
-                                                                <div className="flex items-center gap-2 font-bold">
-                                                                    <span className={`text-blue-600 text-[11px] ${isPostponed ? 'line-through opacity-50' : ''}`}>
-                                                                        {parseFloat(item.odd_value).toFixed(2)}
-                                                                    </span>
-                                                                    {isPostponed && <span className="text-[#ffcc00] text-[11px]">1.00</span>}
-                                                                    <span>{icon}</span>
+                                                        <div key={i} className={`border-b-2 border-gray-200 last:border-b-0 p-3 flex items-center justify-between transition-colors ${isWon ? 'bg-green-50' : isLost ? 'bg-red-50' : 'bg-white hover:bg-gray-50'}`}>
+                                                            <div className="flex-1">
+                                                                <div className="flex items-center gap-3 mb-1">
+                                                                    <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{mTime}</span>
+                                                                    <span className="text-[11px] font-black text-gray-800 uppercase flex-1">{homeTeam} <span className="text-gray-400 mx-1">vs</span> {awayTeam}</span>
                                                                 </div>
+                                                                <div className="flex items-center gap-2 mt-1">
+                                                                    <span className="text-[11px] text-gray-600 font-bold bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
+                                                                        {marketText}: <span className="text-black font-black">{pickText}</span>
+                                                                    </span>
+                                                                    <span className="text-blue-600 font-black text-[11px]">@{parseFloat(item.odd_value).toFixed(2)}</span>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="flex items-center gap-4 shrink-0 pl-4 border-l border-gray-200 ml-4">
+                                                                <div className="text-center">
+                                                                    <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Score</p>
+                                                                    <span className={`text-[12px] px-2 py-0.5 rounded shrink-0 font-black border ${item.score && item.score !== '-:-' ? 'bg-[#ffcc00] text-black border-[#e6b800] shadow-sm' : 'bg-gray-100 text-gray-500 border-gray-300'}`}>
+                                                                        {item.score && item.score !== '-:-' ? item.score : 'vs'}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="w-8 flex justify-center">{icon}</div>
                                                             </div>
                                                         </div>
                                                     );
@@ -1274,16 +1436,21 @@ export default function CashierDashboard() {
                 </div>
             </div>
             
-            {/* 🌟 1. Print Preview Modal (Matches Photo Exactly) 🌟 */}
+            {/* 🌟 1. ማረጋገጫ (Print Preview) Modal */}
             {isPrintPreviewOpen && ticketData && (
-                <div className="fixed inset-0 z-[120] flex flex-col items-center justify-center bg-black/80 overflow-y-auto animate-fade-in p-4 backdrop-blur-sm">
-                    <div className="w-full max-w-[340px] mb-3 flex justify-end shrink-0">
-                        <button onClick={() => setIsPrintPreviewOpen(false)} className="text-white font-bold bg-red-500 px-4 py-2 rounded-lg hover:bg-red-600 transition shadow-md">✕ CLOSE</button>
+                <div className="fixed inset-0 z-[120] flex flex-col items-center bg-black/80 overflow-y-auto animate-fade-in p-4 py-10 backdrop-blur-sm">
+                    <div className="w-full max-w-[340px] mb-3 flex justify-end shrink-0 sticky top-0 z-50">
+                        <button 
+                            onClick={() => setIsPrintPreviewOpen(false)} 
+                            className="text-white text-[10px] font-black tracking-widest bg-black/60 backdrop-blur-md border border-white/10 hover:bg-red-500 hover:border-red-400 px-4 py-2.5 rounded-full transition-all flex items-center gap-1.5 shadow-[0_4px_12px_rgba(0,0,0,0.5)]"
+                        >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            CLOSE
+                        </button>
                     </div>
 
                     <div className="w-full max-w-[340px] bg-white text-black rounded-sm overflow-hidden pb-2 shadow-2xl relative shrink-0 border border-gray-300 font-sans">
                         
-                        {/* Header */}
                         <div className="flex justify-between items-center px-4 py-2">
                             <div className="flex items-center gap-2">
                                 <h1 className="text-lg font-black leading-none tracking-tight">
@@ -1298,7 +1465,6 @@ export default function CashierDashboard() {
                             )}
                         </div>
 
-                        {/* Info Box */}
                         <div className="border-y-2 border-black p-2 text-[11px] font-bold mx-3 mb-2">
                             <div className="flex justify-between mb-0.5"><span>DATE</span><span>{formatShortDateTime(new Date().toISOString())}</span></div>
                             <div className="flex justify-between mb-0.5"><span>TICKET</span><span>{ticketData.ticket_number || 'PENDING'}</span></div>
@@ -1306,7 +1472,6 @@ export default function CashierDashboard() {
                             <div className="flex justify-between"><span>USERNAME</span><span>{username.toUpperCase()}</span></div>
                         </div>
 
-                        {/* 21+ Box */}
                         <div className="border border-black flex items-center p-1 mx-3 mb-1.5">
                             <div className="border-2 border-black rounded-full w-8 h-8 flex items-center justify-center font-black text-sm shrink-0">21+</div>
                             <div className="text-[10px] font-bold text-center w-full leading-tight">
@@ -1314,51 +1479,37 @@ export default function CashierDashboard() {
                             </div>
                         </div>
 
-                        {/* Matches List */}
                         <div className="px-3 mb-2 max-h-[40vh] overflow-y-auto custom-scrollbar">
                             {ticketData.selections?.map((item: any, idx: number) => {
+                                const fullLeagueText = formatLeagueDisplay(item, fixtures);
+                                const { marketText, pickText } = getFormattedMarket(item, fixtures);
+
                                 let mTime = formatMatchListDateTime(item.match_time || item.commence_time || new Date().toISOString());
                                 let teamStr = item.match_info || (item.home_team + ' - ' + item.away_team);
-                                teamStr = teamStr.replace(' vs ', ' v ');
-
-                                let pickText = item.odd_name;
-                                let marketText = 'Match Result';
-                                if (['1', 'X', '2'].includes(item.odd_name)) {
-                                    pickText = item.odd_name === '1' ? 'W1' : item.odd_name === '2' ? 'W2' : item.odd_name === 'X' ? 'Draw' : item.odd_name;
-                                } else if (['Yes', 'No'].includes(item.odd_name) || item.odd_name.includes('GG') || item.odd_name.includes('NG')) {
-                                    pickText = (item.odd_name === 'Yes' || item.odd_name.includes('GG')) ? 'Yes' : 'No';
-                                    marketText = 'Both Teams To Score';
-                                } else if (item.odd_name.toLowerCase().includes('over') || item.odd_name.toLowerCase().includes('under')) {
-                                    marketText = 'Total Goals';
-                                }
-
-                                let leagueText = 'Football / Soccer';
-                                if (item.league_name) leagueText = 'Football / ' + item.league_name;
+                                teamStr = teamStr.replace(/\s+vs\.?\s+/gi, ' v ');
 
                                 return (
-                                    <div key={idx} className="border-b border-gray-300 py-1 last:border-b-0">
-                                        <h3 className="text-[12px] font-black">{teamStr}</h3>
-                                        <div className="flex justify-between items-center text-[10px] mb-0.5">
-                                            <span>{leagueText}</span>
-                                            <span>{mTime}</span>
+                                    <div key={idx} className="border-b-[1.5px] border-black py-1.5 last:border-b-0">
+                                        <h3 className="text-[12px] font-black text-black leading-tight mb-0.5">{teamStr}</h3>
+                                        <div className="flex justify-between items-center text-[10px] text-gray-700 mb-0.5 font-medium">
+                                            <span className="truncate pr-2">{fullLeagueText}</span>
+                                            <span className="shrink-0 text-black font-medium">{mTime}</span>
                                         </div>
-                                        <div className="flex justify-between items-center text-[11px] font-bold">
-                                            <span className="w-1/3 truncate">{marketText}</span>
-                                            <span className="w-1/3 text-center">{pickText}</span>
-                                            <span className="w-1/3 text-right">Q: {parseFloat(item.odd_value).toFixed(2)}</span>
+                                        <div className="flex items-center text-[11px] font-black text-black">
+                                            <span className="flex-1 truncate">{marketText}</span>
+                                            <span className="shrink-0 text-right pr-6">{pickText}</span>
+                                            <span className="shrink-0 text-right w-[45px]">Q: {parseFloat(item.odd_value).toFixed(2)}</span>
                                         </div>
                                     </div>
                                 );
                             })}
                         </div>
 
-                        {/* Summary Box */}
                         <div className="border-y-2 border-black flex justify-between px-3 py-1 text-[11px] font-black mx-3 mb-1.5">
                             <span>NR EVENTS: {ticketData.selections?.length}</span>
                             <span>ODDS TOTAL: {parseFloat(ticketData.total_odds).toFixed(2)}</span>
                         </div>
 
-                        {/* Financial Box */}
                         <div className="border-2 border-black p-2 mx-3 mb-2 text-[10px] font-black leading-tight">
                             <div className="flex justify-between"><span>STAKE</span><span>{parseFloat(ticketData.stake_amount).toFixed(2)} ETB</span></div>
                             <div className="flex justify-between"><span>SERVICE FEE</span><span>10.00 ETB</span></div>
@@ -1366,7 +1517,6 @@ export default function CashierDashboard() {
                             <div className="flex justify-between"><span>POTENTIAL WIN</span><span>{parseFloat(ticketData.potential_win).toFixed(2)} ETB</span></div>
                         </div>
 
-                        {/* Barcode bottom */}
                         {ticketData.booking_code && ticketData.booking_code !== 'REBOOK' && (
                             <div className="mt-1 flex flex-col items-center">
                                 <BarcodeSVG value={ticketData.booking_code} lineColor="#000000" className="h-10 w-[80%]" />
@@ -1380,31 +1530,38 @@ export default function CashierDashboard() {
                         </div>
                     </div>
 
-                    <div className="w-full max-w-[340px] mt-4 shrink-0 flex gap-3">
+                    <div className="w-full max-w-[340px] mt-4 shrink-0 flex gap-3 sticky bottom-4 z-50">
                         <button 
-                            onClick={() => { 
-                                setIsPrintPreviewOpen(false);
-                                handleQzPrint(ticketData); 
-                            }} 
-                            disabled={isPrinting}
-                            className="flex-1 bg-[#00e700] text-black py-3.5 rounded-xl font-black hover:bg-green-500 transition shadow-lg uppercase tracking-widest"
+                            onClick={handleConfirmAndPrint} 
+                            disabled={isPrinting || isLoading}
+                            className="flex-1 bg-gradient-to-r from-[#00e700] to-[#00c800] text-black py-4 rounded-xl font-black hover:shadow-[0_0_20px_rgba(0,231,0,0.5)] transition-all transform active:scale-[0.98] uppercase tracking-[0.1em] flex justify-center items-center gap-2 text-[13px] border-t border-white/40 shadow-xl disabled:opacity-70 disabled:cursor-not-allowed"
                         >
-                            {isPrinting ? '...' : '🖨️ PRINT TICKET'}
+                            {isPrinting || isLoading ? (
+                                <span className="flex items-center gap-2">
+                                    <svg className="animate-spin h-4 w-4 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                    እባክዎ ይጠብቁ...
+                                </span>
+                            ) : (
+                                <>
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                                    PRINT TICKET
+                                </>
+                            )}
                         </button>
                     </div>
                 </div>
             )}
 
-            {/* 🌟 2. Check Ticket Modal (Matches Photo Exactly) 🌟 */}
+            {/* 🌟 2. ውጤት ማረጋገጫ (Check/Saved Ticket) Modal */}
             {isBookingPreviewOpen && bookingCode && (
-                <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/80 overflow-y-auto animate-fade-in p-4 backdrop-blur-sm">
-                    <div className="w-full max-w-[340px] mb-3 flex justify-between items-center shrink-0 pt-2">
+                <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/80 overflow-y-auto animate-fade-in p-4 py-10 backdrop-blur-sm">
+                    <div className="w-full max-w-[340px] mb-3 flex justify-between items-center shrink-0 pt-2 sticky top-0 z-50">
                         <button onClick={() => setIsBookingPreviewOpen(false)} className="text-gray-800 hover:text-black flex items-center gap-1.5 font-bold text-xs px-3 py-2 bg-white rounded-lg border border-gray-200 shadow-sm transition-colors">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg> Back
                         </button>
                         <div className="flex gap-2">
                             <button onClick={handleSaveReceipt} className="text-gray-800 hover:text-[#e6b800] bg-white rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> Save
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> Save
                             </button>
                             <button onClick={handleShareBooking} className="text-black bg-[#ffcc00] hover:bg-[#e6b800] rounded-lg px-4 py-2 text-xs font-black flex items-center gap-1.5 shadow-sm transition-colors">
                                 Share
@@ -1413,7 +1570,6 @@ export default function CashierDashboard() {
                     </div>
 
                     <div ref={receiptRef} className="w-full max-w-[340px] bg-white text-black rounded-sm overflow-hidden pb-4 shadow-2xl relative shrink-0 border border-gray-300 font-sans">
-                        
                         {/* Header */}
                         <div className="flex justify-between items-center px-4 py-3">
                             <div className="flex flex-col">
@@ -1443,40 +1599,30 @@ export default function CashierDashboard() {
                         {/* Matches List */}
                         <div className="px-3 mb-2">
                             {betSlip.map((item: any, idx: number) => {
-                                let marketText = 'Match Result';
-                                let pickText = item.odd_name;
-                                if (['1', 'X', '2'].includes(item.odd_name)) {
-                                    pickText = item.odd_name === '1' ? 'W1' : item.odd_name === '2' ? 'W2' : item.odd_name === 'X' ? 'Draw' : item.odd_name;
-                                } else if (['Yes', 'No'].includes(item.odd_name) || item.odd_name.includes('GG') || item.odd_name.includes('NG')) {
-                                    pickText = (item.odd_name === 'Yes' || item.odd_name.includes('GG')) ? 'Yes' : 'No';
-                                    marketText = 'Both Teams To Score';
-                                } else if (item.odd_name.toLowerCase().includes('over') || item.odd_name.toLowerCase().includes('under')) {
-                                    marketText = 'Total Goals';
-                                }
+                                const fullLeagueText = formatLeagueDisplay(item, fixtures);
+                                const { marketText, pickText } = getFormattedMarket(item, fixtures);
 
+                                let mTime = formatMatchListDateTime(item.match_time || item.commence_time || new Date().toISOString());
                                 let teamStr = item.match_info || (item.home_team + ' - ' + item.away_team);
-                                teamStr = teamStr.replace(' vs ', ' - ');
+                                teamStr = teamStr.replace(/\s+vs\.?\s+/gi, ' v ');
 
                                 return (
-                                    <div key={idx} className="border-b border-gray-300 py-1.5 last:border-0">
-                                        <p className="text-[9px] text-gray-500 font-bold mb-0.5">{formatMatchListDateTime(item.match_time)}</p>
-                                        <div className="flex justify-between items-start mb-0.5">
-                                            <div className="flex items-start gap-1 flex-1 pr-2">
-                                                <span className="text-gray-400 text-[11px] leading-tight">⚽</span>
-                                                <h3 className="text-[11px] font-black text-black leading-tight">{teamStr}</h3>
-                                            </div>
-                                            <span className="text-[12px] font-black text-black shrink-0">{parseFloat(item.odd_value).toFixed(2)}</span>
+                                    <div key={idx} className="border-b-[1.5px] border-black py-1.5 last:border-0">
+                                        <h3 className="text-[12px] font-black text-black leading-tight mb-0.5">{teamStr}</h3>
+                                        <div className="flex justify-between items-center text-[10px] text-gray-700 mb-0.5 font-medium">
+                                            <span className="truncate pr-2">{fullLeagueText}</span>
+                                            <span className="shrink-0 text-black font-medium">{mTime}</span>
                                         </div>
-                                        <div className="flex justify-between items-center pl-[18px]">
-                                            <span className="text-[9px] text-gray-600 font-bold">{marketText}</span>
-                                            <span className="text-[10px] font-black text-black text-right">{pickText}</span>
+                                        <div className="flex items-center text-[11px] font-black text-black">
+                                            <span className="flex-1 truncate">{marketText}</span>
+                                            <span className="shrink-0 text-right pr-6">{pickText}</span>
+                                            <span className="shrink-0 text-right w-[45px]">Q: {parseFloat(item.odd_value).toFixed(2)}</span>
                                         </div>
                                     </div>
                                 );
                             })}
                         </div>
 
-                        {/* Footer summary */}
                         <div className="border border-black p-2 text-[10px] font-black mx-3 mb-2 bg-gray-50">
                             <div className="flex justify-between mb-0.5"><span>BET AMOUNT</span><span>{safeStake.toFixed(2)} ETB</span></div>
                             <div className="flex justify-between mb-1"><span>POSSIBLE WIN</span><span>{grossWin.toFixed(2)} ETB</span></div>
@@ -1486,7 +1632,6 @@ export default function CashierDashboard() {
                             </div>
                         </div>
 
-                        {/* Barcode bottom */}
                         <div className="mt-3 flex flex-col items-center">
                             <BarcodeSVG value={bookingCode!} lineColor="#000000" className="h-10 w-[80%]" />
                             <span className="text-[9px] text-black font-bold mt-0.5 tracking-widest">{bookingCode}</span>

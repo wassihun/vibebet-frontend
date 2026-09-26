@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { QRCodeSVG } from 'qrcode.react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -125,7 +126,7 @@ export default function AdminDashboard() {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if (res.data.success) {
-                setAllTickets(res.data.data);
+                setAllTickets(res.data.data || []);
             }
         } catch (err) {
             console.log("ትኬቶችን ማምጣት አልተቻለም (API قد ይዘገያል)");
@@ -163,11 +164,13 @@ export default function AdminDashboard() {
 
     const fetchStaffList = async () => {
         try {
+            // 🌟 የሊንክ ማስተካከያ፡ ወደ ትክክለኛው /api/tickets/staff-list ተቀይሯል 🌟
             const res = await axios.get(`${API_BASE}/api/tickets/staff-list`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if (res.data.success) {
-                setStaffList(res.data.data);
+                setStaffList(res.data.data || []);
+                if (staffMsg?.type === 'error') setStaffMsg(null); 
             }
         } catch (err) {
             console.log("ሰራተኞችን ማምጣት አልተቻለም (API قد ይዘገያል)");
@@ -281,49 +284,52 @@ export default function AdminDashboard() {
     let currentRisk = 0;
     let totalPaidOut = 0;
 
-    let computedTickets = allTickets.map(t => {
-        let ticketStatus = t.status;
-        let actualPotentialWin = parseFloat(t.potential_win) || 0;
+    // 🌟 ማስተካከያ: የትኬት ቁጥር (ticket_number) እና የካሼር ስም (cashier) ያላቸውን ብቻ እናመጣለን 🌟
+    let computedTickets = allTickets
+        .filter(t => t.ticket_number && t.cashier && String(t.cashier).trim() !== '') 
+        .map(t => {
+            let ticketStatus = t.status;
+            let actualPotentialWin = parseFloat(t.potential_win) || 0;
 
-        if (ticketStatus === 'active' || ticketStatus === 'pending') {
-            if (t.selections && t.selections.length > 0) {
-                let isLost = false;
-                let isPending = false;
-                let calculatedOdds = 1;
+            if (ticketStatus === 'active' || ticketStatus === 'pending') {
+                if (t.selections && t.selections.length > 0) {
+                    let isLost = false;
+                    let isPending = false;
+                    let calculatedOdds = 1;
 
-                t.selections.forEach((s: any) => {
-                    if (s.match_status === 'lost') {
-                        isLost = true;
-                    } else if (s.match_status === 'won') {
-                        calculatedOdds *= parseFloat(s.odd_value);
-                    } else if (s.match_status === 'postponed' || s.match_status === 'cancelled' || s.match_status === 'abandoned') {
-                        calculatedOdds *= 1; 
-                    } else {
-                        isPending = true; 
+                    t.selections.forEach((s: any) => {
+                        if (s.match_status === 'lost') {
+                            isLost = true;
+                        } else if (s.match_status === 'won') {
+                            calculatedOdds *= parseFloat(s.odd_value);
+                        } else if (s.match_status === 'postponed' || s.match_status === 'cancelled' || s.match_status === 'abandoned') {
+                            calculatedOdds *= 1; 
+                        } else {
+                            isPending = true; 
+                        }
+                    });
+
+                    if (isLost) ticketStatus = 'lost';
+                    else if (isPending) ticketStatus = 'pending';
+                    else {
+                        ticketStatus = 'won';
+                        actualPotentialWin = calculatedOdds * parseFloat(t.stake_amount);
                     }
-                });
-
-                if (isLost) ticketStatus = 'lost';
-                else if (isPending) ticketStatus = 'pending';
-                else {
-                    ticketStatus = 'won';
-                    actualPotentialWin = calculatedOdds * parseFloat(t.stake_amount);
                 }
             }
-        }
 
-        if (ticketStatus === 'won') {
-            let lmt = new Date(t.created_at).getTime();
-            if (t.selections && t.selections.length > 0) {
-                lmt = Math.max(...t.selections.map((s:any) => new Date(s.match_time || s.commence_time || lmt).getTime()));
+            if (ticketStatus === 'won') {
+                let lmt = new Date(t.created_at).getTime();
+                if (t.selections && t.selections.length > 0) {
+                    lmt = Math.max(...t.selections.map((s:any) => new Date(s.match_time || s.commence_time || lmt).getTime()));
+                }
+                if (Date.now() > lmt + (3 * 24 * 60 * 60 * 1000)) {
+                    ticketStatus = 'expired';
+                }
             }
-            if (Date.now() > lmt + (3 * 24 * 60 * 60 * 1000)) {
-                ticketStatus = 'expired';
-            }
-        }
 
-        return { ...t, displayStatus: ticketStatus, computedPotential: actualPotentialWin };
-    });
+            return { ...t, displayStatus: ticketStatus, computedPotential: actualPotentialWin };
+        });
 
     computedTickets.forEach(t => {
         const winAmt = t.computedPotential;

@@ -108,15 +108,15 @@ function BarcodeSVG({ value, lineColor = '#000000', className }: { value: string
     return <svg ref={svgRef} className={className} />;
 }
 
+// 🌟 የሰዓት መዛባት እንዳይፈጥር የተስተካከለ ማሳያ
 const formatMatchDateTime = (iso: string) => {
+    if (!iso) return 'Unknown Time';
     const d = new Date(iso);
-    if (isNaN(d.getTime())) return '';
+    if (isNaN(d.getTime())) return 'Unknown Time';
     const datePart = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     const timePart = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     return `${datePart} ${timePart}`;
 };
-
-const PLACED_SIGNATURES_KEY = 'vibebet_placed_signatures';
 
 export default function Home() {
     const [isMounted, setIsMounted] = useState(false);
@@ -134,6 +134,8 @@ export default function Home() {
 
     const [ticketCodeInput, setTicketCodeInput] = useState<string>('');
     const [ticketLoadError, setTicketLoadError] = useState<string | null>(null);
+    
+    // 🌟 የትኬት ኮፒ መከልከያ State
     const [placedBetSignatures, setPlacedBetSignatures] = useState<string[]>([]);
 
     const [selectedMatch, setSelectedMatch] = useState<Fixture | null>(null);
@@ -186,6 +188,27 @@ export default function Home() {
     const dateInputRef = useRef<HTMLInputElement>(null);
     const [isOnline, setIsOnline] = useState<boolean>(true);
 
+    // 🌟 1. ሪፍሬሽ ሲደረግ እንዳይጠፋ LocalStorage መጠቀም
+    useEffect(() => {
+        try {
+            const savedSlip = localStorage.getItem('vibebet_saved_betslip');
+            if (savedSlip) {
+                setBetSlip(JSON.parse(savedSlip));
+            }
+            const storedSigs = localStorage.getItem('vibebet_placed_signatures');
+            if (storedSigs) {
+                setPlacedBetSignatures(JSON.parse(storedSigs));
+            }
+        } catch (e) {}
+    }, []);
+
+    useEffect(() => {
+        if (isMounted) {
+            localStorage.setItem('vibebet_saved_betslip', JSON.stringify(betSlip));
+            localStorage.setItem('vibebet_placed_signatures', JSON.stringify(placedBetSignatures));
+        }
+    }, [betSlip, placedBetSignatures, isMounted]);
+
     useEffect(() => {
         setIsMounted(true);
         document.title = "vibebet.et";
@@ -199,19 +222,6 @@ export default function Home() {
             window.removeEventListener('offline', handleOffline);
         };
     }, []);
-
-    useEffect(() => {
-        try {
-            const stored = localStorage.getItem('vibebet_placed_signatures');
-            if (stored) setPlacedBetSignatures(JSON.parse(stored));
-        } catch (e) { }
-    }, []);
-
-    useEffect(() => {
-        try {
-            localStorage.setItem('vibebet_placed_signatures', JSON.stringify(placedBetSignatures));
-        } catch (e) { }
-    }, [placedBetSignatures]);
 
     useEffect(() => {
         prevFixturesRef.current = fixtures;
@@ -399,35 +409,53 @@ export default function Home() {
 
     const handleMarketSelection = (game: any, odd: any, marketName: string) => {
         toggleSelection(game, odd, marketName);
-        setSelectedMatch(null); // 🌟 ተጫዋቹ ከመረጠ በኋላ ወደ ዋናው ገጽ እንዲመለስ ተደርጓል
+        setSelectedMatch(null); 
     };
 
     const totalOdds = betSlip.reduce((total: number, item: any) => total * (item.odd_value || 1), 1).toFixed(2);
     const safeStake = Number.isFinite(stake) ? stake : 0;
+    
+    // 🌟 ታክስ ጠፍቷል፤ በቀጥታ በመቁረጫው ብቻ ይባዛል
     const grossWin = Number((parseFloat(totalOdds) * safeStake).toFixed(2));
+
+    const hasStartedGames = betSlip.some(item => {
+        if (!item.match_time) return false;
+        const d = new Date(item.match_time).getTime();
+        return !isNaN(d) && d <= new Date().getTime();
+    });
+
+    const currentBetSignature = betSlip.map((i: any) => i.odd_id).sort().join('|');
+    const isDuplicateBet = betSlip.length > 0 && placedBetSignatures.includes(currentBetSignature);
 
     const isUnderStake = safeStake < MIN_STAKE;
     const isOverStake = safeStake > MAX_STAKE;
     const isOverWin = grossWin > MAX_WIN;
-    const currentBetSignature = betSlip.map((i: any) => i.odd_id).sort().join('|');
-    const isDuplicateBet = betSlip.length > 0 && placedBetSignatures.includes(currentBetSignature);
 
     let limitWarning = null;
-    if (isUnderStake) limitWarning = `ዝቅተኛው መቁረጫ ሂሳብ ${MIN_STAKE} ብር ነው!`;
+    if (hasStartedGames) limitWarning = "ቀይ የበራበት (የጀመረ) ጨዋታ ስላለ ከዝርዝሩ ያውጡት!";
+    else if (isUnderStake) limitWarning = `ዝቅተኛው መቁረጫ ሂሳብ ${MIN_STAKE} ብር ነው!`;
     else if (isOverStake) limitWarning = `ከ ${MAX_STAKE.toLocaleString()} ብር በላይ መቁረጥ አይቻልም!`;
     else if (isOverWin) limitWarning = `ከ ${MAX_WIN.toLocaleString()} ብር በላይ ማሸነፍ አይቻልም!`;
-    else if (isDuplicateBet) limitWarning = "ይህ ምርጫ (ትኬት) ተቆርጧል! ሌላ ሰው ኮፒ ማድረግ አይችልም።";
+    else if (isDuplicateBet) limitWarning = "ይህ ትኬት አስቀድሞ ተቆርጧል! ለማደስ ቢያንስ 1 ምርጫ ይቀይሩ።";
 
     const handlePlaceBet = async () => {
         if (betSlip.length === 0 || safeStake < MIN_STAKE || limitWarning) return;
         setIsLoading(true);
         setErrorMessage(null);
         try {
+            // 🌟 ማስተካከያ፡ market_name: item.market_name ታክሏል! 🌟
             const payload = {
                 stake_amount: safeStake,
                 is_guest: true,
                 accept_odds_change: acceptOddsChange,
-                selections: betSlip.map((item: any) => ({ fixture_id: item.fixture_id, odd_id: item.odd_id, odd_value: item.odd_value, match_info: `${item.home_team} vs ${item.away_team}`, odd_name: item.odd_name }))
+                selections: betSlip.map((item: any) => ({ 
+                    fixture_id: item.fixture_id, 
+                    odd_id: item.odd_id, 
+                    odd_value: item.odd_value, 
+                    match_info: `${item.home_team} vs ${item.away_team}`, 
+                    odd_name: item.odd_name,
+                    market_name: item.market_name 
+                }))
             };
             const response = await axios.post(`${API_BASE}/api/tickets/place`, payload);
 
@@ -435,7 +463,9 @@ export default function Home() {
                 const bCode = response.data.booking_code || response.data.data?.booking_code;
                 setBookingCode(bCode);
                 setIsBookingPreviewOpen(false);
+
                 setPlacedBetSignatures((prev: any) => [...prev, currentBetSignature]);
+                localStorage.removeItem('vibebet_saved_betslip');
                 if (window.innerWidth < 1024) setIsMobileBetSlipOpen(false);
             } else {
                 setErrorMessage(response.data.message || "ትኬት መቁረጥ አልተቻለም። እባክዎ እንደገና ይሞክሩ።");
@@ -454,6 +484,11 @@ export default function Home() {
             if (response.data.success && response.data.data.selections) {
                 const loadedSelections: BetSlipItem[] = response.data.data.selections.map((s: any) => {
                     const teams = s.match_info ? String(s.match_info).split(' vs ') : [];
+                    
+                    const activeMatch = fixtures.find((f: any) => String(f.id) === String(s.fixture_id));
+                    const realMatchTime = activeMatch ? activeMatch.match_time : (s.match_time || s.commence_time || s.event_time || '');
+                    const realLeagueName = activeMatch ? getLeagueDetails(activeMatch.league).name : (s.league_name || s.league || 'Unknown League');
+
                     return {
                         fixture_id: s.fixture_id,
                         home_team: s.home_team || teams[0] || 'Home',
@@ -462,8 +497,8 @@ export default function Home() {
                         odd_id: s.odd_id,
                         odd_name: s.odd_name,
                         odd_value: parseFloat(s.odd_value || 0),
-                        match_time: s.match_time || s.commence_time || s.event_time || new Date().toISOString(),
-                        league_name: s.league_name || s.league || 'Unknown League'
+                        match_time: realMatchTime, 
+                        league_name: realLeagueName
                     };
                 });
                 setBetSlip(loadedSelections); clearBookingCode(); return true;
@@ -484,8 +519,9 @@ export default function Home() {
     const handleCheckCustomerTicket = async (e: React.FormEvent) => {
         e.preventDefault();
         const cleanCode = checkInputCode.trim();
-        if (!cleanCode || !/^\d{5,12}$/.test(cleanCode)) {
-            setCheckTicketError('እባክዎ ትክክለኛ የትኬት ቁጥር ብቻ ያስገቡ!');
+        // 🌟 በትክክል 8 ቁጥሮችን ብቻ እንዲያረጋግጥ ተስተካክሏል
+        if (!cleanCode || !/^\d{8}$/.test(cleanCode)) {
+            setCheckTicketError('እባክዎ ትክክለኛ 8 ዲጂት የትኬት ቁጥር ብቻ ያስገቡ!');
             return;
         }
         setIsCheckingTicket(true); setCheckTicketError(null); setCheckedTicketData(null);
@@ -833,7 +869,6 @@ export default function Home() {
         );
     };
 
-    // 🌟 እጅግ ጥብቅ እና ስህተት አልባ የሆነ የሊግ ማጣሪያ 🌟
     const getLeagueDetails = (key: string, flagFromApi?: string) => {
         if (!key || typeof key !== 'string') return { country: 'World', flag: 'https://media.api-sports.io/flags/un.svg', name: 'Soccer', isTop: false };
         
@@ -853,7 +888,6 @@ export default function Home() {
 
         let isTop = false;
 
-        // 🌟 ሀገር እና ሊግን በማጣመር ብቻ Top መሆኑን ማረጋገጥ (የዩጋንዳ ወይም ሌላ ፕሪሚየር ሊግን ያግዳል) 🌟
         if (
             (nameLower === 'premier league' && countryLower === 'england') ||
             (nameLower === 'championship' && countryLower === 'england') ||
@@ -873,7 +907,6 @@ export default function Home() {
             isTop = true;
         }
 
-        // ለሌሎች ትንንሽ ሊጎች ስማቸውን ማሳመር
         if (!isTop && !key.includes('|')) {
             name = name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
             country = country.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
@@ -1388,7 +1421,10 @@ export default function Home() {
                         ) : (
                             <div className="flex flex-col p-1.5 space-y-1.5">
                                 {betSlip.map((item: any) => {
-                                    const isStarted = new Date(item.match_time).getTime() < new Date().getTime();
+                                    const isStarted = item.match_time && !isNaN(new Date(item.match_time).getTime()) 
+                                        ? new Date(item.match_time).getTime() <= new Date().getTime() 
+                                        : false;
+
                                     const isFlashingUp = flashingOdds[item.odd_id] === 'up';
                                     const isFlashingDown = flashingOdds[item.odd_id] === 'down';
                                     
@@ -1404,7 +1440,7 @@ export default function Home() {
 
                                             <div className="mb-2">
                                                 <span className={`text-[9px] ${isStarted ? 'text-red-500 animate-pulse' : 'text-slate-400'} block truncate`}>
-                                                    {new Date(item.match_time).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}, {new Date(item.match_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {item.league_name}
+                                                    {formatMatchDateTime(item.match_time)} • {item.league_name}
                                                 </span>
                                             </div>
 
@@ -1421,7 +1457,7 @@ export default function Home() {
 
                                             {isStarted && (
                                                 <div className="mt-1.5 bg-red-500/10 text-red-500 text-[9px] font-bold p-1 rounded border border-red-500/20 text-center">
-                                                    ⚠️ ይህ ጨዋታ ጀምሯል
+                                                    ⚠️ ይህ ጨዋታ ጀምሯል (ከዝርዝር ያውጡት)
                                                 </div>
                                             )}
                                         </div>
@@ -1434,7 +1470,8 @@ export default function Home() {
                     {betSlip.length > 0 && (
                         <div className="bg-[#1a1f24] p-4 border-t border-[#3b4148] shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.3)] z-10">
                             <div className="flex justify-between items-center mb-1.5"><span className="text-[11px] text-slate-400">Total Odds</span><span className="text-[13px] font-black text-white">{totalOdds}</span></div>
-                            <div className="flex justify-between items-center mb-3"><span className="text-[11px] font-bold text-slate-300">Potential Win</span><span className="text-[14px] font-black text-[#00e700]">{grossWin.toFixed(2)} Br</span></div>
+                            
+                            <div className="flex justify-between items-center mb-3 mt-1.5"><span className="text-[11px] font-bold text-slate-300">Potential Win</span><span className="text-[14px] font-black text-[#00e700]">{grossWin.toFixed(2)} Br</span></div>
 
                             <label className="flex items-center gap-2 mb-2 cursor-pointer w-max">
                                 <input type="checkbox" checked={acceptOddsChange} onChange={(e) => setAcceptOddsChange(e.target.checked)} className="w-3.5 h-3.5 accent-[#ffcc00]" />
@@ -1452,7 +1489,7 @@ export default function Home() {
 
                             <div className="h-[18px] mb-2 flex items-center justify-center">{(limitWarning || errorMessage) && <p className="text-[10px] text-red-500 font-bold leading-tight text-center">{limitWarning || errorMessage}</p>}</div>
                             <div className="flex gap-2 h-[44px]">
-                                <button onClick={() => { setBetSlip([]); clearBookingCode(); }} className="bg-[#24292e] border border-[#3b4148] text-slate-400 hover:text-red-400 hover:border-red-400 text-sm font-bold w-12 rounded flex items-center justify-center transition-colors">🗑</button>
+                                <button onClick={() => { setBetSlip([]); localStorage.removeItem('vibebet_saved_betslip'); clearBookingCode(); }} className="bg-[#24292e] border border-[#3b4148] text-slate-400 hover:text-red-400 hover:border-red-400 text-sm font-bold w-12 rounded flex items-center justify-center transition-colors">🗑</button>
                                 <button onClick={handlePlaceBet} disabled={isLoading || !!limitWarning} className="flex-1 bg-[#ffcc00] hover:bg-[#e6b800] text-black font-black text-sm rounded flex items-center justify-center transition-transform active:scale-[0.98] disabled:opacity-50 disabled:bg-slate-600 disabled:text-slate-400 disabled:cursor-not-allowed shadow-md">
                                     {isLoading ? '...' : 'Book Bet'}
                                 </button>
@@ -1477,7 +1514,7 @@ export default function Home() {
                                 <input
                                     type="text"
                                     value={checkInputCode}
-                                    onChange={(e) => setCheckInputCode(e.target.value.trim())}
+                                    onChange={(e) => setCheckInputCode(e.target.value.replace(/\D/g, ''))}
                                     placeholder="የትኬት ቁጥር (8 ዲጂት ብቻ)..."
                                     maxLength={8}
                                     className="flex-1 bg-[#0d1117] border border-[#3b4148] text-white px-4 py-3 rounded-lg outline-none focus:border-[#ffcc00] text-sm font-black uppercase tracking-widest transition shadow-inner"
@@ -1563,7 +1600,7 @@ export default function Home() {
                 </div>
             )}
 
-            {/* 🌟 አዲሱ እና በምስሉ መሰረት ያጌጠው TICKET BOOKED PREVIEW 🌟 */}
+            {/* 🌟 አዲሱ TICKET BOOKED PREVIEW 🌟 */}
             {bookingCode && !isBookingPreviewOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4 overflow-y-auto">
                     <div className="bg-[#1e2328] border border-[#3b4148] w-full max-w-[360px] relative my-auto flex flex-col animate-fade-in-down rounded-2xl overflow-hidden shadow-2xl">
@@ -1699,7 +1736,7 @@ export default function Home() {
                                     <span className="text-slate-500 text-[10px] font-medium">Stake <span className="text-white font-bold ml-0.5">ETB {safeStake.toFixed(2)}</span></span>
                                 </div>
                                 <div className="flex flex-col gap-0.5 items-end">
-                                    <span className="text-slate-500 text-[10px] font-medium">Payout <span className="text-white font-bold ml-0.5">ETB {grossWin.toFixed(2)}</span></span>
+                                    <span className="text-slate-500 text-[10px] font-medium">Payout <span className="text-[#00e700] font-bold ml-0.5">ETB {grossWin.toFixed(2)}</span></span>
                                 </div>
                             </div>
                         </div>
