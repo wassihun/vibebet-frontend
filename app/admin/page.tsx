@@ -1,22 +1,31 @@
 "use client";
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { QRCodeSVG } from 'qrcode.react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-// 🛡️ የሴኪውሪቲ ማስተካከያ 2፡ የተበላሸ ቶከን ወይም ያለፈበት ሴሽን ካጋጠመ አውቶማቲካሊ ሲስተሙን ይቆልፋል (Auto-Logout)
-axios.interceptors.response.use(
-    response => response,
-    error => {
-        if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-            localStorage.removeItem('adminToken');
-            localStorage.removeItem('adminUsername');
-            window.location.reload();
+interface StaffMember {
+    id: number;
+    username: string;
+    role: 'admin' | 'cashier' | 'user';
+    created_at: string;
+}
+
+// 🛡️ የሴኪውሪቲ ማስተካከያ፡ ሁሉም የ axios ጥያቄዎች ቶከኑን በራሳቸው እንዲይዙ ማድረግ
+axios.interceptors.request.use(
+    config => {
+        if (typeof window !== 'undefined') {
+            const savedToken = localStorage.getItem('adminToken');
+            if (savedToken && config.headers && !config.headers.Authorization) {
+                config.headers.Authorization = `Bearer ${savedToken}`;
+            }
         }
-        return Promise.reject(error);
-    }
+        return config;
+    },
+    error => Promise.reject(error)
 );
 
 export default function AdminDashboard() {
@@ -33,7 +42,7 @@ export default function AdminDashboard() {
     const [newRole, setNewRole] = useState('cashier');
     const [staffMsg, setStaffMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-    const [staffList, setStaffList] = useState<any[]>([]);
+    const [staffList, setStaffList] = useState<StaffMember[]>([]);
 
     const [apiKeysList, setApiKeysList] = useState<string[]>([]);
     const [newApiKeyValue, setNewApiKeyValue] = useState('');
@@ -46,26 +55,58 @@ export default function AdminDashboard() {
     const [isSyncing, setIsSyncing] = useState(false);
     const [totalMatches, setTotalMatches] = useState<number>(0);
 
-    const [reportFilter, setReportFilter] = useState<'today' | 'month' | 'year'>('today');
-    const [reports, setReports] = useState({
+    const getTodayIsoStr = () => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
+    const [reportFilter, setReportFilter] = useState<'today' | 'week' | 'month' | 'year' | 'date'>('today');
+    const [selectedReportDate, setSelectedReportDate] = useState<string>(getTodayIsoStr);
+    const [reportTicketStatusFilter, setReportTicketStatusFilter] = useState<'all' | 'won' | 'lost' | 'paid' | 'active'>('all');
+
+    const [reports, setReports] = useState<any>({
         totalTickets: 0,
+        voidTickets: 0,
+        shopTicketsCount: 0,
+        serviceFeeTotal: 0,
         totalRevenue: 0,
+        grossCashIn: 0,
         totalPayout: 0,
+        totalPaidOut: 0,
+        totalUnpaidWon: 0,
+        totalActiveRisk: 0,
+        totalSavedFromLost: 0,
+        netCashFlow: 0,
+        netProfitAfterLiability: 0,
+        winningTicketsCount: 0,
+        paidTicketsCount: 0,
+        unpaidWonCount: 0,
+        lostTicketsCount: 0,
+        activeTicketsCount: 0,
         activeOnlineUsers: 0,
         onlineStats: { tickets_sold: 0, winning_tickets_count: 0, revenue: 0, payout: 0 },
         cashierStats: [] as any[],
-        winningTickets: [] as any[]
+        winningTickets: [] as any[],
+        periodTickets: [] as any[]
     });
     const [isFetchingReports, setIsFetchingReports] = useState(false);
 
     const [allTickets, setAllTickets] = useState<any[]>([]);
     const [isFetchingTickets, setIsFetchingTickets] = useState(false);
-    const [ticketFilter, setTicketFilter] = useState<'all' | 'won' | 'paid' | 'lost' | 'high_stake' | 'close_to_win'>('all');
+    const [ticketFilter, setTicketFilter] = useState<'all' | 'today' | 'won' | 'paid' | 'lost' | 'high_stake' | 'close_to_win'>('today');
     const [selectedManageTicket, setSelectedManageTicket] = useState<any | null>(null);
 
     const [expandedCashiers, setExpandedCashiers] = useState<string[]>([]);
     const toggleCashier = (cashierName: string) => {
         setExpandedCashiers(prev => prev.includes(cashierName) ? prev.filter(c => c !== cashierName) : [...prev, cashierName]);
+    };
+
+    const handleLogout = () => {
+        setToken(null);
+        setAdminName('');
+        delete axios.defaults.headers.common['Authorization'];
+        localStorage.removeItem('adminToken');
+        localStorage.removeItem('adminUsername');
     };
 
     useEffect(() => {
@@ -75,6 +116,7 @@ export default function AdminDashboard() {
         const savedUsername = localStorage.getItem('adminUsername');
         
         if (savedToken && savedUsername) {
+            axios.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
             // 🛡️ የሴኪውሪቲ ማስተካከያ 1፡ ዝም ብሎ ከማስገባት በፊት ቶከኑ ትክክለኛ መሆኑን ባክ-ኤንዱን ይጠይቃል (Fake Token Prevention)
             axios.get(`${API_BASE}/api/auth/verify`, {
                 headers: { Authorization: `Bearer ${savedToken}` }
@@ -85,58 +127,80 @@ export default function AdminDashboard() {
                 } else {
                     handleLogout();
                 }
-            }).catch(() => {
-                handleLogout();
+            }).catch((err) => {
+                if (err.response && (err.response.status === 401 || err.response.status === 403)) {
+                    handleLogout();
+                } else {
+                    // የኔትወርክ መቆራረጥ ከሆነ ወዲያውኑ አያስወጣም
+                    setToken(savedToken);
+                    setAdminName(savedUsername);
+                }
             });
         }
     }, []);
 
     useEffect(() => {
-        if (token && activeTab === 'settings') {
+        if (!token) return;
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+
+        if (activeTab === 'settings') {
             fetchApiKeys();
-            axios.get(`${API_BASE}/api/matches/api-usage`).then(res => {
+            axios.get(`${API_BASE}/api/matches/api-usage`, {
+                headers: { Authorization: `Bearer ${token}` }
+            }).then(res => {
                 if (res.data.success) setApiUsage(res.data.data);
             }).catch(() => {});
         }
 
-        if (token && activeTab === 'dashboard') {
-            axios.get(`${API_BASE}/api/matches/list`).then(res => {
+        if (activeTab === 'dashboard') {
+            axios.get(`${API_BASE}/api/matches/list`, {
+                headers: { Authorization: `Bearer ${token}` }
+            }).then(res => {
                 if (res.data.success) setTotalMatches(res.data.data.length);
             }).catch(() => setTotalMatches(0));
-            fetchReports(); 
-        }
-
-        if (token && activeTab === 'reports') {
             fetchReports();
+            fetchTickets();
         }
 
-        if (token && activeTab === 'staff') {
+        if (activeTab === 'reports') {
+            fetchReports();
+            fetchTickets();
             fetchStaffList();
         }
 
-        if (token && activeTab === 'tickets') {
+        if (activeTab === 'staff') {
+            fetchStaffList();
+        }
+
+        if (activeTab === 'tickets') {
             fetchTickets();
         }
-    }, [token, activeTab, reportFilter]);
+    }, [token, activeTab, reportFilter, selectedReportDate]);
 
-    const fetchTickets = async () => {
+    async function fetchTickets() {
         setIsFetchingTickets(true);
         try {
             const res = await axios.get(`${API_BASE}/api/tickets/all`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if (res.data.success) {
-                setAllTickets(res.data.data || []);
+                const list = res.data.data || [];
+                setAllTickets(list);
+                // ሁሉም የካሼር ቡድኖች ወዲያውኑ ተዘርግተው እንዲታዩ ማድረግ
+                const cashiers = Array.from(new Set(list.map((t: any) => t.cashier || (t.role === 'user' ? 'ኦንላይን ተጫዋቾች (Online)' : 'ካሼር (Shop)')))).filter(Boolean) as string[];
+                setExpandedCashiers(prev => prev.length > 0 ? Array.from(new Set([...prev, ...cashiers])) : cashiers);
             }
         } catch (err) {
-            console.log("ትኬቶችን ማምጣት አልተቻለም (API قد ይዘገያል)");
+            console.log("ትኬቶችን ማምጣት አልተቻለም (API ይዘገያል)");
         } finally {
             setIsFetchingTickets(false);
         }
     };
 
-    const fetchApiKeys = () => {
-        axios.get(`${API_BASE}/api/matches/get-api-key`).then(res => {
+    function fetchApiKeys() {
+        axios.get(`${API_BASE}/api/matches/get-api-key`, {
+            headers: { Authorization: `Bearer ${token}` }
+        }).then(res => {
             if (res.data.success && res.data.api_key) {
                 const keysArray = res.data.api_key.split(',').map((k: string) => k.trim()).filter((k: string) => k.length > 0);
                 setApiKeysList(keysArray);
@@ -146,23 +210,34 @@ export default function AdminDashboard() {
         }).catch(() => setApiKeysList([]));
     };
 
-    const fetchReports = async () => {
+    async function fetchReports() {
         setIsFetchingReports(true);
         try {
-            const res = await axios.get(`${API_BASE}/api/tickets/reports/summary?filter=${reportFilter}`, {
+            const query = reportFilter === 'date'
+                ? `filter=date&date=${encodeURIComponent(selectedReportDate)}`
+                : `filter=${encodeURIComponent(reportFilter)}`;
+            const res = await axios.get(`${API_BASE}/api/tickets/reports/summary?${query}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            if (res.data.success) {
+            if (res.data.success && res.data.data) {
                 setReports(res.data.data);
             }
         } catch (err) {
-            console.log("ሪፖርት ማምጣት አልተቻለም (API قد ይዘገያል)");
+            console.log("ሪፖርት ማምጣት አልተቻለም (ከትኬት ዝርዝር በቀጥታ ይሰላል)");
         } finally {
             setIsFetchingReports(false);
         }
     };
 
-    const fetchStaffList = async () => {
+    const shiftSelectedDate = (daysDelta: number) => {
+        const base = selectedReportDate ? new Date(`${selectedReportDate}T12:00:00`) : new Date();
+        base.setDate(base.getDate() + daysDelta);
+        const nextIso = `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`;
+        setSelectedReportDate(nextIso);
+        setReportFilter('date');
+    };
+
+    async function fetchStaffList() {
         try {
             // 🌟 የሊንክ ማስተካከያ፡ ወደ ትክክለኛው /api/tickets/staff-list ተቀይሯል 🌟
             const res = await axios.get(`${API_BASE}/api/tickets/staff-list`, {
@@ -173,7 +248,7 @@ export default function AdminDashboard() {
                 if (staffMsg?.type === 'error') setStaffMsg(null); 
             }
         } catch (err) {
-            console.log("ሰራተኞችን ማምጣት አልተቻለም (API قد ይዘገያል)");
+            console.log("ሰራተኞችን ማምጣት አልተቻለም (API ይዘገያል)");
             setStaffMsg({ type: 'error', text: 'የካሼሮች ዝርዝር ማምጣት አልተቻለም። የኔትወርክ ወይም የባክኤንድ ስህተት ሊሆን ይችላል።' });
         }
     };
@@ -182,25 +257,19 @@ export default function AdminDashboard() {
         e.preventDefault();
         setLoginError('');
         try {
-            const res = await axios.post(`${API_BASE}/api/auth/login`, { username: loginUsername, password: loginPassword });
+            const res = await axios.post(`${API_BASE}/api/auth/login`, { username: loginUsername.trim(), password: loginPassword });
             if (res.data.success && res.data.user.role === 'admin') {
-                setToken(res.data.token);
-                setAdminName(res.data.user.username);
+                axios.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
                 localStorage.setItem('adminToken', res.data.token);
                 localStorage.setItem('adminUsername', res.data.user.username);
+                setToken(res.data.token);
+                setAdminName(res.data.user.username);
             } else {
                 setLoginError('ይህን ገጽ ለመጠቀም የአድሚን ፈቃድ ያስፈልጋል!');
             }
         } catch (err: any) {
             setLoginError(err.response?.data?.message || 'ሎጊን አልተሳካም');
         }
-    };
-
-    const handleLogout = () => {
-        setToken(null);
-        setAdminName('');
-        localStorage.removeItem('adminToken');
-        localStorage.removeItem('adminUsername');
     };
 
     const handleRegisterStaff = async (e: React.FormEvent) => {
@@ -264,10 +333,14 @@ export default function AdminDashboard() {
             );
             setApiMsg({ type: 'success', text: res.data.message });
 
-            axios.get(`${API_BASE}/api/matches/list`).then(r => {
+            axios.get(`${API_BASE}/api/matches/list`, {
+                headers: { Authorization: `Bearer ${token}` }
+            }).then(r => {
                 if (r.data.success) setTotalMatches(r.data.data.length);
-            });
-            axios.get(`${API_BASE}/api/matches/api-usage`).then(r => {
+            }).catch(() => {});
+            axios.get(`${API_BASE}/api/matches/api-usage`, {
+                headers: { Authorization: `Bearer ${token}` }
+            }).then(r => {
                 if (r.data.success) setApiUsage(r.data.data);
             }).catch(() => {});
             fetchApiKeys();
@@ -284,9 +357,18 @@ export default function AdminDashboard() {
     let currentRisk = 0;
     let totalPaidOut = 0;
 
-    // 🌟 ማስተካከያ: የትኬት ቁጥር (ticket_number) እና የካሼር ስም (cashier) ያላቸውን ብቻ እናመጣለን 🌟
-    let computedTickets = allTickets
-        .filter(t => t.ticket_number && t.cashier && String(t.cashier).trim() !== '') 
+    // 🌟 ማስተካከያ: የተቆረጡ (ticket_number ያላቸው) ትኬቶችን ሁሉ ማካተት 🌟
+    const todayDateObj = new Date();
+    const isTicketFromToday = (t: any) => {
+        if (t.is_today === 1 || t.is_today === true) return true;
+        const d = new Date(t.created_at);
+        return d.getDate() === todayDateObj.getDate() &&
+               d.getMonth() === todayDateObj.getMonth() &&
+               d.getFullYear() === todayDateObj.getFullYear();
+    };
+
+    const computedTickets = allTickets
+        .filter(t => t.ticket_number) 
         .map(t => {
             let ticketStatus = t.status;
             let actualPotentialWin = parseFloat(t.potential_win) || 0;
@@ -345,6 +427,7 @@ export default function AdminDashboard() {
     });
 
     let filteredTickets = [...computedTickets];
+    if (ticketFilter === 'today') filteredTickets = filteredTickets.filter(t => isTicketFromToday(t));
     if (ticketFilter === 'won') filteredTickets = filteredTickets.filter(t => t.displayStatus === 'won');
     if (ticketFilter === 'paid') filteredTickets = filteredTickets.filter(t => t.displayStatus === 'paid');
     if (ticketFilter === 'lost') filteredTickets = filteredTickets.filter(t => t.displayStatus === 'lost' || t.displayStatus === 'expired');
@@ -369,6 +452,235 @@ export default function AdminDashboard() {
         acc[c].push(ticket);
         return acc;
     }, {} as Record<string, any[]>);
+
+    // 🌟 ለፋይናንስ ሪፖርት ታብ 100% ትክክለኛ የቀን/ሳምንት/ወር/ዓመት ስሌት (ከ computedTickets እና ከ Backend reports የተዋሃደ) 🌟
+    const toLocalIsoDate = (dateInput: any) => {
+        const d = new Date(dateInput);
+        if (Number.isNaN(d.getTime())) return '';
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
+    const doesTicketMatchReportPeriod = (t: any) => {
+        const d = new Date(t.created_at);
+        if (Number.isNaN(d.getTime())) return false;
+        const ticketIso = toLocalIsoDate(d);
+        const now = new Date();
+
+        if (reportFilter === 'today') {
+            return isTicketFromToday(t) || ticketIso === getTodayIsoStr();
+        }
+        if (reportFilter === 'date') {
+            return ticketIso === selectedReportDate;
+        }
+        if (reportFilter === 'week') {
+            const startOfWeek = new Date(now);
+            const day = startOfWeek.getDay() || 7; // Monday = 1
+            startOfWeek.setHours(0, 0, 0, 0);
+            startOfWeek.setDate(startOfWeek.getDate() - (day - 1));
+            return d.getTime() >= startOfWeek.getTime();
+        }
+        if (reportFilter === 'month') {
+            return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        }
+        if (reportFilter === 'year') {
+            return d.getFullYear() === now.getFullYear();
+        }
+        return true;
+    };
+
+    const effectiveReport = (() => {
+        const matchingTickets = computedTickets.filter(doesTicketMatchReportPeriod);
+
+        // ከ computedTickets በቀጥታ ማስላት
+        let totalTickets = 0;
+        let voidTickets = 0;
+        let shopTicketsCount = 0;
+        let totalRevenue = 0;
+        let totalPayout = 0;
+        let totalPaidOut = 0;
+        let totalUnpaidWon = 0;
+        let totalActiveRisk = 0;
+        let totalSavedFromLost = 0;
+        let winningTicketsCount = 0;
+        let paidTicketsCount = 0;
+        let unpaidWonCount = 0;
+        let lostTicketsCount = 0;
+        let activeTicketsCount = 0;
+
+        const onlineStats = {
+            tickets_sold: 0,
+            winning_tickets_count: 0,
+            lost_tickets_count: 0,
+            active_tickets_count: 0,
+            revenue: 0,
+            payout: 0,
+            paid_out: 0
+        };
+
+        const cashierMap = new Map<string, any>();
+        staffList.forEach(s => {
+            if (s.role === 'cashier') {
+                cashierMap.set(s.username, {
+                    cashier: s.username,
+                    role: s.role,
+                    tickets_sold: 0,
+                    void_tickets: 0,
+                    winning_tickets_count: 0,
+                    paid_tickets_count: 0,
+                    unpaid_tickets_count: 0,
+                    lost_tickets_count: 0,
+                    active_tickets_count: 0,
+                    revenue: 0,
+                    payout: 0,
+                    paid_out: 0,
+                    unpaid_won: 0,
+                    active_risk: 0
+                });
+            }
+        });
+
+        const winningTickets: any[] = [];
+
+        matchingTickets.forEach(t => {
+            const st = String(t.displayStatus || t.status || 'active').toLowerCase();
+            const stake = parseFloat(t.stake_amount) || 0;
+            const win = parseFloat(t.computedPotential ?? t.potential_win) || 0;
+            const isOnline = t.role === 'user';
+            const cName = t.cashier || (isOnline ? 'ኦንላይን ተጫዋች (Online)' : 'ካሼር (Shop)');
+
+            if (!isOnline && !cashierMap.has(cName)) {
+                cashierMap.set(cName, {
+                    cashier: cName,
+                    role: t.role || 'cashier',
+                    tickets_sold: 0,
+                    void_tickets: 0,
+                    winning_tickets_count: 0,
+                    paid_tickets_count: 0,
+                    unpaid_tickets_count: 0,
+                    lost_tickets_count: 0,
+                    active_tickets_count: 0,
+                    revenue: 0,
+                    payout: 0,
+                    paid_out: 0,
+                    unpaid_won: 0,
+                    active_risk: 0
+                });
+            }
+            const cStat = !isOnline ? cashierMap.get(cName) : null;
+
+            if (st === 'void') {
+                voidTickets++;
+                if (cStat) cStat.void_tickets++;
+                return;
+            }
+
+            totalTickets++;
+            totalRevenue += stake;
+
+            if (isOnline) {
+                onlineStats.tickets_sold++;
+                onlineStats.revenue += stake;
+            } else {
+                shopTicketsCount++;
+                if (cStat) {
+                    cStat.tickets_sold++;
+                    cStat.revenue += stake;
+                }
+            }
+
+            if (st === 'paid') {
+                winningTicketsCount++;
+                paidTicketsCount++;
+                totalPaidOut += win;
+                totalPayout += win;
+                winningTickets.push({ ...t, status: 'paid', potential_win: win });
+                if (isOnline) {
+                    onlineStats.winning_tickets_count++;
+                    onlineStats.payout += win;
+                    onlineStats.paid_out += win;
+                } else if (cStat) {
+                    cStat.winning_tickets_count++;
+                    cStat.paid_tickets_count++;
+                    cStat.payout += win;
+                    cStat.paid_out += win;
+                }
+            } else if (st === 'won') {
+                winningTicketsCount++;
+                unpaidWonCount++;
+                totalUnpaidWon += win;
+                totalPayout += win;
+                winningTickets.push({ ...t, status: 'won', potential_win: win });
+                if (isOnline) {
+                    onlineStats.winning_tickets_count++;
+                    onlineStats.payout += win;
+                } else if (cStat) {
+                    cStat.winning_tickets_count++;
+                    cStat.unpaid_tickets_count++;
+                    cStat.payout += win;
+                    cStat.unpaid_won += win;
+                }
+            } else if (st === 'lost' || st === 'expired') {
+                lostTicketsCount++;
+                totalSavedFromLost += win;
+                if (st === 'expired') winningTickets.push({ ...t, status: 'expired', potential_win: win });
+                if (isOnline) {
+                    onlineStats.lost_tickets_count++;
+                } else if (cStat) {
+                    cStat.lost_tickets_count++;
+                }
+            } else {
+                activeTicketsCount++;
+                totalActiveRisk += win;
+                if (isOnline) {
+                    onlineStats.active_tickets_count++;
+                } else if (cStat) {
+                    cStat.active_tickets_count++;
+                    cStat.active_risk += win;
+                }
+            }
+        });
+
+        const serviceFeeTotal = shopTicketsCount * 10;
+        const grossCashIn = totalRevenue + serviceFeeTotal;
+        const netCashFlow = grossCashIn - totalPaidOut;
+        const netProfitAfterLiability = grossCashIn - totalPayout;
+
+        const computedSummary = {
+            totalTickets,
+            voidTickets,
+            shopTicketsCount,
+            serviceFeeTotal,
+            totalRevenue,
+            grossCashIn,
+            totalPayout,
+            totalPaidOut,
+            totalUnpaidWon,
+            totalActiveRisk,
+            totalSavedFromLost,
+            netCashFlow,
+            netProfitAfterLiability,
+            winningTicketsCount,
+            paidTicketsCount,
+            unpaidWonCount,
+            lostTicketsCount,
+            activeTicketsCount,
+            activeOnlineUsers: reports.activeOnlineUsers || 0,
+            onlineStats,
+            cashierStats: Array.from(cashierMap.values()).sort((a, b) => b.revenue - a.revenue),
+            winningTickets,
+            periodTickets: matchingTickets
+        };
+
+        // computedTickets ዳታ ካለው ወይም የባክኤንድ ሪፖርት 0 ከሆነ የቀጥታ ስሌቱን ይጠቀማል
+        if (computedTickets.length > 0 || Number(reports.totalTickets || 0) === 0) {
+            return computedSummary;
+        }
+        return {
+            ...computedSummary,
+            ...reports,
+            periodTickets: reports.periodTickets?.length ? reports.periodTickets : matchingTickets
+        };
+    })();
 
 
     if (!token) {
@@ -444,35 +756,138 @@ export default function AdminDashboard() {
             <div className="flex-1 p-10 overflow-y-auto custom-scrollbar">
 
                 {activeTab === 'dashboard' && (
-                    <div className="max-w-5xl animate-fade-in-down">
-                        <h1 className="text-3xl font-black text-white mb-2">📊 ዳሽቦርድ</h1>
-                        <p className="text-slate-400 mb-8">የሲስተምዎን አጠቃላይ ሁኔታዎች እና እንቅስቃሴዎች ይከታተሉ።</p>
+                    <div className="max-w-6xl animate-fade-in-down">
+                        <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
+                            <div>
+                                <h1 className="text-3xl font-black text-white mb-1">📊 ዳሽቦርድ እና የዛሬ የገንዘብ ፍሰት</h1>
+                                <p className="text-slate-400 text-sm">የዛሬ የተቆረጡ ትኬቶችን፣ አጠቃላይ የገንዘብ እንቅስቃሴን እና የሲስተም ሁኔታን በቀጥታ ይከታተሉ።</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => { fetchReports(); fetchTickets(); }}
+                                    className="bg-[#1e2328] hover:bg-[#2a3038] text-[#ffcc00] border border-[#3b4148] px-4 py-2 rounded-lg font-bold text-xs transition flex items-center gap-1.5"
+                                >
+                                    🔄 መረጃ አድስ (Refresh)
+                                </button>
+                                <button 
+                                    onClick={() => setActiveTab('settings')}
+                                    className="bg-[#ffcc00] hover:bg-[#e6b800] text-black px-4 py-2 rounded-lg font-black text-xs transition"
+                                >
+                                    ⚙️ API አዘምን (Sync)
+                                </button>
+                            </div>
+                        </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                            <div className="bg-[#1e2328] border border-[#3b4148] p-6 rounded-xl shadow-lg relative overflow-hidden">
-                                <div className="absolute top-0 right-0 p-4 opacity-10 text-5xl">⚽</div>
-                                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">በሲስተሙ ያሉ ጨዋታዎች</h3>
-                                <p className="text-4xl font-black text-white">{totalMatches}</p>
-                                <p className="text-xs text-[#00e700] mt-2 font-bold flex items-center gap-1">
-                                    <span className="w-2 h-2 rounded-full bg-[#00e700] animate-pulse"></span> Active
+                        {/* 🌟 የዛሬ የገንዘብ ፍሰት ማጠቃለያ ካርዶች 🌟 */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                            <div className="bg-[#1e2328] border border-[#3b4148] p-5 rounded-xl shadow-lg">
+                                <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">ዛሬ የተቆረጡ ትኬቶች</h3>
+                                <p className="text-3xl font-black text-white">{computedTickets.filter(t => isTicketFromToday(t) && t.displayStatus !== 'void').length}</p>
+                                <p className="text-[11px] text-[#ffcc00] mt-1.5 font-bold">
+                                    የ10 ብር ሰርቪስ ገቢ: {(computedTickets.filter(t => isTicketFromToday(t) && t.displayStatus !== 'void' && t.role !== 'user').length * 10).toLocaleString()} Br
                                 </p>
                             </div>
 
-                            <div className="bg-[#1e2328] border border-[#3b4148] p-6 rounded-xl shadow-lg relative overflow-hidden">
-                                <div className="absolute top-0 right-0 p-4 opacity-10 text-5xl">🌐</div>
-                                <h3 className="text-xs font-bold text-[#00bfff] uppercase tracking-wider mb-2">የተመዘገቡ ኦንላይን ተጫዋቾች</h3>
-                                <p className="text-4xl font-black text-white">{reports.activeOnlineUsers}</p>
-                                <p className="text-xs text-slate-400 mt-2">በሲስተሙ ላይ የሚጫወቱ</p>
+                            <div className="bg-[#1e2328] border border-[#00e700]/30 p-5 rounded-xl shadow-lg">
+                                <h3 className="text-[11px] font-bold text-[#00e700] uppercase tracking-wider mb-1">የዛሬ ውርርድ ገቢ (Stake)</h3>
+                                <p className="text-3xl font-black text-[#00e700]">
+                                    {computedTickets.filter(t => isTicketFromToday(t) && t.displayStatus !== 'void').reduce((s, t) => s + (Number(t.stake_amount) || 0), 0).toLocaleString()} Br
+                                </p>
+                                <p className="text-[11px] text-slate-400 mt-1.5 font-bold">
+                                    ከሰርቪስ ጋር ጠቅላላ: <span className="text-white">
+                                        {(
+                                            computedTickets.filter(t => isTicketFromToday(t) && t.displayStatus !== 'void').reduce((s, t) => s + (Number(t.stake_amount) || 0), 0) +
+                                            computedTickets.filter(t => isTicketFromToday(t) && t.displayStatus !== 'void' && t.role !== 'user').length * 10
+                                        ).toLocaleString()} Br
+                                    </span>
+                                </p>
                             </div>
 
-                            <div className="bg-[#1e2328] border border-[#3b4148] p-6 rounded-xl shadow-lg relative overflow-hidden flex flex-col justify-center items-center text-center">
-                                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">ፈጣን እርምጃዎች</h3>
-                                <button 
-                                    onClick={() => setActiveTab('settings')}
-                                    className="bg-[#ffcc00]/10 hover:bg-[#ffcc00]/20 text-[#ffcc00] border border-[#ffcc00]/30 px-6 py-2 rounded-full font-bold text-xs transition-colors"
+                            <div className="bg-[#1e2328] border border-red-500/30 p-5 rounded-xl shadow-lg">
+                                <h3 className="text-[11px] font-bold text-red-400 uppercase tracking-wider mb-1">የዛሬ ወጪ (Paid / Won)</h3>
+                                <p className="text-3xl font-black text-red-400">
+                                    {computedTickets.filter(t => isTicketFromToday(t) && (t.displayStatus === 'paid' || t.displayStatus === 'won')).reduce((s, t) => s + (Number(t.computedPotential) || 0), 0).toLocaleString()} Br
+                                </p>
+                                <p className="text-[11px] text-slate-400 mt-1.5 font-bold">
+                                    የተከፈለ: <span className="text-blue-400">{computedTickets.filter(t => isTicketFromToday(t) && t.displayStatus === 'paid').reduce((s, t) => s + (Number(t.computedPotential) || 0), 0).toLocaleString()} Br</span>
+                                </p>
+                            </div>
+
+                            <div className="bg-gradient-to-br from-[#1e2328] to-[#182620] border border-[#00e700]/40 p-5 rounded-xl shadow-lg">
+                                <h3 className="text-[11px] font-bold text-[#00e700] uppercase tracking-wider mb-1">የዛሬ ንፁህ ቀሪ ካዝና</h3>
+                                <p className="text-3xl font-black text-white">
+                                    {(
+                                        computedTickets.filter(t => isTicketFromToday(t) && t.displayStatus !== 'void').reduce((s, t) => s + (Number(t.stake_amount) || 0), 0) +
+                                        computedTickets.filter(t => isTicketFromToday(t) && t.displayStatus !== 'void' && t.role !== 'user').length * 10 -
+                                        computedTickets.filter(t => isTicketFromToday(t) && t.displayStatus === 'paid').reduce((s, t) => s + (Number(t.computedPotential) || 0), 0)
+                                    ).toLocaleString()} Br
+                                </p>
+                                <p className="text-[11px] text-slate-400 mt-1.5 font-bold">
+                                    አክቲቭ ጨዋታዎች: <span className="text-[#ffcc00]">{totalMatches}</span> | ኦንላይን ተጫዋቾች: <span className="text-[#00bfff]">{reports.activeOnlineUsers}</span>
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* 🌟 ዛሬ የተቆረጡ ትኬቶች የቀጥታ ሰንጠረዥ 🌟 */}
+                        <div className="bg-[#1e2328] border border-[#3b4148] rounded-xl shadow-lg overflow-hidden">
+                            <div className="px-6 py-4 border-b border-[#3b4148] bg-[#24292e] flex justify-between items-center">
+                                <h2 className="text-base font-black text-white flex items-center gap-2">
+                                    <span>🧾</span> ዛሬ የተቆረጡ ትኬቶች እና የጨዋታዎች ዝርዝር
+                                </h2>
+                                <button
+                                    onClick={() => { setTicketFilter('today'); setActiveTab('tickets'); }}
+                                    className="text-xs font-bold text-[#ffcc00] hover:underline"
                                 >
-                                    API ያዘምኑ (Sync Now)
+                                    ሁሉንም በትኬት ማኔጅመንት እይ ❯
                                 </button>
+                            </div>
+                            <div className="overflow-x-auto max-h-[420px] overflow-y-auto custom-scrollbar">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-[#1a1f24] text-[10px] uppercase tracking-widest text-slate-400 sticky top-0">
+                                            <th className="px-4 py-3 font-black">ሰዓት</th>
+                                            <th className="px-4 py-3 font-black">ትኬት ቁጥር</th>
+                                            <th className="px-4 py-3 font-black">ካሼር / ምንጭ</th>
+                                            <th className="px-4 py-3 font-black">ጨዋታዎች</th>
+                                            <th className="px-4 py-3 font-black">Stake (+10)</th>
+                                            <th className="px-4 py-3 font-black">ሊበላ (Win)</th>
+                                            <th className="px-4 py-3 font-black">ሁኔታ</th>
+                                            <th className="px-4 py-3 font-black text-right">ድርጊት</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="text-xs divide-y divide-[#2a3038]">
+                                        {computedTickets.filter(t => isTicketFromToday(t)).length === 0 ? (
+                                            <tr>
+                                                <td colSpan={8} className="text-center py-10 text-slate-500 font-bold">ዛሬ የተቆረጠ ትኬት የለም</td>
+                                            </tr>
+                                        ) : (
+                                            computedTickets.filter(t => isTicketFromToday(t)).slice(0, 50).map((t, idx) => (
+                                                <tr key={idx} className="hover:bg-[#24292e] transition-colors">
+                                                    <td className="px-4 py-3 text-slate-400 font-bold">
+                                                        {new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    </td>
+                                                    <td className="px-4 py-3 font-mono font-black text-[#ffcc00]">#{t.ticket_number}</td>
+                                                    <td className="px-4 py-3 font-bold text-white">{t.cashier || 'Shop'}</td>
+                                                    <td className="px-4 py-3 text-slate-300 font-bold">{t.selections?.length || 0} ጨዋታ</td>
+                                                    <td className="px-4 py-3 font-bold text-[#00e700]">{Number(t.stake_amount).toLocaleString()} Br</td>
+                                                    <td className="px-4 py-3 font-black text-white">{Number(t.computedPotential).toLocaleString()} Br</td>
+                                                    <td className="px-4 py-3 font-bold">
+                                                        {t.displayStatus === 'paid' ? <span className="text-blue-400">✅ ተከፍሏል</span> :
+                                                         t.displayStatus === 'won' ? <span className="text-[#00e700]">🎉 ያሸነፈ</span> :
+                                                         t.displayStatus === 'lost' ? <span className="text-red-500">❌ የተሸነፈ</span> :
+                                                         t.displayStatus === 'void' ? <span className="text-slate-500">🚫 የተሰረዘ</span> :
+                                                         <span className="text-[#ffcc00]">⏳ በሂደት ላይ</span>}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right">
+                                                        <button onClick={() => setSelectedManageTicket(t)} className="bg-[#111418] hover:bg-[#3b4148] border border-[#3b4148] text-white px-3 py-1 rounded text-[10px] font-bold">
+                                                            ዝርዝር እይ
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
@@ -480,153 +895,426 @@ export default function AdminDashboard() {
 
                 {activeTab === 'reports' && (
                     <div className="max-w-6xl animate-fade-in-down">
-                        <div className="flex justify-between items-end mb-8">
+                        <div className="flex flex-wrap justify-between items-end gap-4 mb-6">
                             <div>
-                                <h1 className="text-3xl font-black text-white mb-2">📈 የፋይናንስ እና ስራ ሪፖርት</h1>
-                                <p className="text-slate-400">የገቢ፣ የተሸጡ ትኬቶች እና የተበሉ ሂሳቦችን በካሼር ይከታተሉ።</p>
+                                <h1 className="text-3xl font-black text-white mb-2">📈 የፋይናንስ እና የየቀኑ ሂሳብ ሪፖርት</h1>
+                                <p className="text-slate-400 text-sm">
+                                    ማንኛውንም ቀን ወይም ጊዜ በመምረጥ የተቆረጡ ትኬቶችን፣ ያሸነፉትን፣ የተሸነፉትን እና ለተጫዋቾች የተከፈለውን ብር በዝርዝር ይፈትሹ።
+                                </p>
                             </div>
-                            <div className="flex bg-[#1e2328] border border-[#3b4148] rounded-lg overflow-hidden">
-                                <button onClick={() => setReportFilter('today')} className={`px-5 py-2 text-sm font-bold transition ${reportFilter === 'today' ? 'bg-[#ffcc00] text-black' : 'text-slate-400 hover:text-white hover:bg-[#24292e]'}`}>የዛሬ</button>
-                                <button onClick={() => setReportFilter('month')} className={`px-5 py-2 text-sm font-bold border-l border-[#3b4148] transition ${reportFilter === 'month' ? 'bg-[#ffcc00] text-black' : 'text-slate-400 hover:text-white hover:bg-[#24292e]'}`}>የወሩ</button>
-                                <button onClick={() => setReportFilter('year')} className={`px-5 py-2 text-sm font-bold border-l border-[#3b4148] transition ${reportFilter === 'year' ? 'bg-[#ffcc00] text-black' : 'text-slate-400 hover:text-white hover:bg-[#24292e]'}`}>የዓመቱ</button>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                    onClick={() => { fetchReports(); fetchTickets(); fetchStaffList(); }}
+                                    className="bg-[#1e2328] hover:bg-[#24292e] border border-[#3b4148] text-[#ffcc00] px-4 py-2 rounded-lg text-xs font-bold transition"
+                                >
+                                    🔄 አድስ
+                                </button>
+                                <div className="flex bg-[#1e2328] border border-[#3b4148] rounded-lg overflow-hidden">
+                                    <button
+                                        onClick={() => { setReportFilter('today'); setSelectedReportDate(getTodayIsoStr()); }}
+                                        className={`px-4 py-2 text-xs sm:text-sm font-bold transition ${reportFilter === 'today' ? 'bg-[#ffcc00] text-black' : 'text-slate-400 hover:text-white hover:bg-[#24292e]'}`}
+                                    >
+                                        የዛሬ
+                                    </button>
+                                    <button
+                                        onClick={() => setReportFilter('week')}
+                                        className={`px-4 py-2 text-xs sm:text-sm font-bold border-l border-[#3b4148] transition ${reportFilter === 'week' ? 'bg-[#ffcc00] text-black' : 'text-slate-400 hover:text-white hover:bg-[#24292e]'}`}
+                                    >
+                                        የሳምንቱ
+                                    </button>
+                                    <button
+                                        onClick={() => setReportFilter('month')}
+                                        className={`px-4 py-2 text-xs sm:text-sm font-bold border-l border-[#3b4148] transition ${reportFilter === 'month' ? 'bg-[#ffcc00] text-black' : 'text-slate-400 hover:text-white hover:bg-[#24292e]'}`}
+                                    >
+                                        የወሩ
+                                    </button>
+                                    <button
+                                        onClick={() => setReportFilter('year')}
+                                        className={`px-4 py-2 text-xs sm:text-sm font-bold border-l border-[#3b4148] transition ${reportFilter === 'year' ? 'bg-[#ffcc00] text-black' : 'text-slate-400 hover:text-white hover:bg-[#24292e]'}`}
+                                    >
+                                        የዓመቱ
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
-                        <div className="bg-blue-500/10 border border-blue-500/30 p-4 rounded-lg mb-6 flex items-start gap-3">
-                            <span className="text-blue-400 text-xl">ℹ️</span>
-                            <p className="text-sm text-blue-200">
-                                <strong className="text-white block mb-1">የ24 ሰዓት የትኬት ህግ (Expiration Policy):</strong>
-                                ማንም ሰው በ <strong className="text-white">ገስት (Guest)</strong> ከቆረጠ ካሼሩ እስኪያረጋግጠው ድረስ ትኬቱ አይሰራም (Invalid)። ያሸነፈ ትኬት ደግሞ በ 24 ሰዓት ውስጥ መከፈል አለበት፣ ካልተከፈለ ሲስተሙ በራሱ ጊዜ <span className="text-red-400 font-bold">ውድቅ (Expired)</span> ያደርገዋል፤ ብሩም ለአድሚኑ ገቢ ይሆናል።
-                            </p>
+                        {/* 🌟 የየቀኑ ሂሳብ መምረጫ (Daily Date Picker Bar) 🌟 */}
+                        <div className="bg-[#1e2328] border border-[#3b4148] p-4 rounded-xl shadow-lg mb-6 flex flex-wrap justify-between items-center gap-4">
+                            <div className="flex items-center gap-3">
+                                <span className="text-2xl">📅</span>
+                                <div>
+                                    <h3 className="text-sm font-black text-white">የየቀኑ ሂሳብ መፈተሻ (ቀን ይምረጡ)</h3>
+                                    <p className="text-xs text-slate-400">
+                                        አሁን እየታየ ያለው ሪፖርት፦{' '}
+                                        <span className="text-[#ffcc00] font-black">
+                                            {reportFilter === 'date'
+                                                ? `የ ${selectedReportDate} ሙሉ የዕለት ሂሳብ`
+                                                : reportFilter === 'today'
+                                                ? `የዛሬ (${getTodayIsoStr()}) ሂሳብ`
+                                                : reportFilter === 'week'
+                                                ? 'የዚህ ሳምንት ሂሳብ'
+                                                : reportFilter === 'month'
+                                                ? 'የዚህ ወር ሂሳብ'
+                                                : 'የዚህ ዓመት ሂሳብ'}
+                                        </span>
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => shiftSelectedDate(-1)}
+                                    className="bg-[#111418] hover:bg-[#24292e] text-slate-300 hover:text-white border border-[#3b4148] px-3 py-2 rounded-lg text-xs font-bold transition"
+                                    title="ያለፈው ቀን"
+                                >
+                                    ◀ ቀዳሚ ቀን
+                                </button>
+                                <div className={`flex items-center gap-2 bg-[#111418] border px-3 py-1.5 rounded-lg transition ${reportFilter === 'date' ? 'border-[#ffcc00] ring-1 ring-[#ffcc00]/40' : 'border-[#3b4148]'}`}>
+                                    <span className="text-xs font-bold text-slate-400">ቀን:</span>
+                                    <input
+                                        type="date"
+                                        value={selectedReportDate}
+                                        onChange={(e) => {
+                                            if (e.target.value) {
+                                                setSelectedReportDate(e.target.value);
+                                                setReportFilter('date');
+                                            }
+                                        }}
+                                        className="bg-transparent text-white font-black text-xs sm:text-sm outline-none cursor-pointer"
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => shiftSelectedDate(1)}
+                                    className="bg-[#111418] hover:bg-[#24292e] text-slate-300 hover:text-white border border-[#3b4148] px-3 py-2 rounded-lg text-xs font-bold transition"
+                                    title="ቀጣይ ቀን"
+                                >
+                                    ቀጣይ ቀን ▶
+                                </button>
+                                {reportFilter === 'date' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { setReportFilter('today'); setSelectedReportDate(getTodayIsoStr()); }}
+                                        className="bg-[#ffcc00]/15 hover:bg-[#ffcc00]/25 text-[#ffcc00] border border-[#ffcc00]/30 px-3 py-2 rounded-lg text-xs font-bold transition"
+                                    >
+                                        ወደ ዛሬ ተመለስ
+                                    </button>
+                                )}
+                            </div>
                         </div>
 
-                        {isFetchingReports ? (
+                        {isFetchingReports && computedTickets.length === 0 ? (
                             <div className="py-20 flex justify-center"><span className="w-10 h-10 border-4 border-[#3b4148] border-t-[#ffcc00] rounded-full animate-spin"></span></div>
                         ) : (
                             <>
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                                    <div className="bg-[#1e2328] border border-[#3b4148] p-6 rounded-xl shadow-lg">
-                                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">የተሸጠ ትኬት ብዛት</h3>
-                                        <p className="text-3xl font-black text-white">{reports.totalTickets}</p>
-                                    </div>
-                                    <div className="bg-[#1e2328] border border-[#3b4148] p-6 rounded-xl shadow-lg relative overflow-hidden">
-                                        <div className="absolute top-0 right-0 p-3 opacity-10 text-4xl">💰</div>
-                                        <h3 className="text-xs font-bold text-[#ffcc00] uppercase tracking-wider mb-2">የትኬት ክፍያ (10 ብር)</h3>
-                                        <p className="text-3xl font-black text-[#ffcc00]">{(reports.totalTickets * 10).toLocaleString()} Br</p>
-                                    </div>
-                                    <div className="bg-[#1e2328] border border-[#3b4148] p-6 rounded-xl shadow-lg">
-                                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">ገቢ (Stake)</h3>
-                                        <p className="text-3xl font-black text-[#00e700]">{reports.totalRevenue.toLocaleString()} Br</p>
-                                    </div>
-                                    <div className="bg-[#1e2328] border border-[#3b4148] p-6 rounded-xl shadow-lg">
-                                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">የተበላነው (Payout)</h3>
-                                        <p className="text-3xl font-black text-red-500">{reports.totalPayout.toLocaleString()} Br</p>
-                                    </div>
-                                </div>
+                                {(() => {
+                                    const totalCut = Number(effectiveReport.totalTickets || 0);
+                                    const voidCount = Number(effectiveReport.voidTickets || 0);
+                                    const wonCount = Number(effectiveReport.winningTicketsCount || 0);
+                                    const paidCount = Number(effectiveReport.paidTicketsCount || 0);
+                                    const unpaidCount = Number(effectiveReport.unpaidWonCount || 0);
+                                    const lostCount = Number(effectiveReport.lostTicketsCount || 0);
+                                    const activeCount = Number(effectiveReport.activeTicketsCount || 0);
 
-                                <div className="bg-gradient-to-r from-[#00bfff]/10 to-[#1e2328] border border-[#00bfff]/30 p-6 rounded-xl shadow-lg mb-8 flex justify-between items-center">
-                                    <div>
-                                        <h2 className="text-lg font-bold text-[#00bfff] mb-1">📱 የኦንላይን ተጫዋቾች (Online Users) ሪፖርት</h2>
-                                        <p className="text-xs text-slate-400">እነዚህ በራሳቸው አካውንት ገብተው የሚጫወቱት ናቸው።</p>
-                                    </div>
-                                    <div className="flex gap-8 text-right">
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-400 uppercase">ትኬት ቁጥር</p>
-                                            <p className="text-xl font-black text-white">{reports.onlineStats?.tickets_sold || 0}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-400 uppercase">ገቢ (Stake)</p>
-                                            <p className="text-xl font-black text-[#00e700]">{Number(reports.onlineStats?.revenue || 0).toLocaleString()} Br</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-400 uppercase">ያሸነፉ (Payout)</p>
-                                            <p className="text-xl font-black text-red-400">{Number(reports.onlineStats?.payout || 0).toLocaleString()} Br</p>
-                                        </div>
-                                    </div>
-                                </div>
+                                    const shopTickets = Number(effectiveReport.shopTicketsCount ?? totalCut);
+                                    const serviceFee = Number(effectiveReport.serviceFeeTotal ?? (shopTickets * 10));
+                                    const stakeRev = Number(effectiveReport.totalRevenue ?? 0);
+                                    const grossIn = Number(effectiveReport.grossCashIn ?? (stakeRev + serviceFee));
+                                    const paidOut = Number(effectiveReport.totalPaidOut ?? 0);
+                                    const unpaidWon = Number(effectiveReport.totalUnpaidWon ?? 0);
+                                    const totalWonAndPaid = Number(effectiveReport.totalPayout ?? (paidOut + unpaidWon));
+                                    const savedFromLost = Number(effectiveReport.totalSavedFromLost ?? 0);
+                                    const netCash = Number(effectiveReport.netCashFlow ?? (grossIn - paidOut));
+                                    const activeRiskVal = Number(effectiveReport.totalActiveRisk ?? 0);
 
-                                <div className="bg-[#1e2328] border border-[#3b4148] rounded-xl shadow-lg mb-8 overflow-hidden">
-                                    <div className="px-6 py-4 border-b border-[#3b4148] bg-[#24292e]">
-                                        <h2 className="text-lg font-bold text-white">👨‍💼 የካሼሮች የስራ ሪፖርት (Performance)</h2>
-                                    </div>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-left border-collapse">
-                                            <thead>
-                                                <tr className="bg-[#1a1f24] text-[11px] uppercase tracking-widest text-slate-500">
-                                                    <th className="px-6 py-4 font-black">ካሼር ስም</th>
-                                                    <th className="px-6 py-4 font-black">የተሸጠ ትኬት</th>
-                                                    <th className="px-6 py-4 font-black">ያሸነፈ ትኬት</th>
-                                                    <th className="px-6 py-4 font-black text-[#ffcc00]">የትኬት ክፍያ ስብስብ (10 ብር)</th>
-                                                    <th className="px-6 py-4 font-black text-[#00e700]">ገቢ (Stake)</th>
-                                                    <th className="px-6 py-4 font-black text-red-400">ያከሳረው / የተበላው</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="text-sm divide-y divide-[#2a3038]">
-                                                {reports.cashierStats.length === 0 ? (
-                                                    <tr><td colSpan={6} className="text-center py-6 text-slate-500">ምንም የካሼር መረጃ የለም</td></tr>
-                                                ) : (
-                                                    reports.cashierStats.map((stat, i) => (
-                                                        <tr key={i} className="hover:bg-[#24292e] transition-colors">
-                                                            <td className="px-6 py-4 font-bold text-white flex items-center gap-2">
-                                                                <span className="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-xs">👤</span>
-                                                                {stat.cashier}
-                                                            </td>
-                                                            <td className="px-6 py-4 text-slate-300">{stat.tickets_sold} ትኬቶች</td>
-                                                            <td className="px-6 py-4 font-bold text-red-400">{stat.winning_tickets_count} ትኬቶች</td>
-                                                            <td className="px-6 py-4 font-black text-[#ffcc00]">{(stat.tickets_sold * 10).toLocaleString()} Br</td>
-                                                            <td className="px-6 py-4 font-black text-[#00e700]">{Number(stat.revenue).toLocaleString()} Br</td>
-                                                            <td className="px-6 py-4 font-black text-red-400">{Number(stat.payout).toLocaleString()} Br</td>
-                                                        </tr>
-                                                    ))
-                                                )}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
+                                    const periodTicketsList: any[] = effectiveReport.periodTickets || [];
+                                    const filteredPeriodTickets = periodTicketsList.filter((t: any) => {
+                                        const st = String(t.displayStatus || t.status || 'active').toLowerCase();
+                                        if (reportTicketStatusFilter === 'won') return st === 'won' || st === 'paid';
+                                        if (reportTicketStatusFilter === 'lost') return st === 'lost' || st === 'expired';
+                                        if (reportTicketStatusFilter === 'paid') return st === 'paid';
+                                        if (reportTicketStatusFilter === 'active') return st === 'active' || st === 'pending';
+                                        return true;
+                                    });
 
-                                <div className="bg-[#1e2328] border border-red-500/30 rounded-xl shadow-lg overflow-hidden">
-                                    <div className="px-6 py-4 border-b border-[#3b4148] bg-red-500/10">
-                                        <h2 className="text-lg font-bold text-red-400">⚠️ የተበላንባቸው (ያሸነፉ) ትኬቶች ዝርዝር</h2>
-                                    </div>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-left border-collapse">
-                                            <thead>
-                                                <tr className="bg-[#1a1f24] text-[11px] uppercase tracking-widest text-slate-500">
-                                                    <th className="px-6 py-4 font-black">ትኬት ቁጥር</th>
-                                                    <th className="px-6 py-4 font-black">መነሻ (Source)</th>
-                                                    <th className="px-6 py-4 font-black">የተመደበ (Stake)</th>
-                                                    <th className="px-6 py-4 font-black">የበላው (Win)</th>
-                                                    <th className="px-6 py-4 font-black">ሁኔታ (Status)</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="text-sm divide-y divide-[#2a3038]">
-                                                {reports.winningTickets.length === 0 ? (
-                                                    <tr><td colSpan={5} className="text-center py-6 text-slate-500">በዚህ ጊዜ ውስጥ ምንም የተበላነው ሂሳብ የለም ማትረፍ ብቻ ነው! 🎉</td></tr>
-                                                ) : (
-                                                    reports.winningTickets.map((ticket, i) => (
-                                                        <tr key={i} className="hover:bg-[#24292e] transition-colors">
-                                                            <td className="px-6 py-4 font-mono font-bold text-[#ffcc00]">{ticket.ticket_number}</td>
-                                                            <td className="px-6 py-4 font-bold text-white">
-                                                                {ticket.role === 'user' ? (
-                                                                    <span className="text-[#00bfff]">📱 ኦንላይን: {ticket.cashier}</span>
-                                                                ) : (
-                                                                    <span className="text-slate-300">👤 ካሼር: {ticket.cashier || 'Guest'}</span>
-                                                                )}
-                                                            </td>
-                                                            <td className="px-6 py-4 text-slate-300">{Number(ticket.stake_amount).toLocaleString()} Br</td>
-                                                            <td className="px-6 py-4 font-black text-red-400">{Number(ticket.potential_win).toLocaleString()} Br</td>
-                                                            <td className="px-6 py-4 font-bold text-xs">
-                                                                {ticket.status === 'expired' 
-                                                                    ? <span className="bg-red-500/20 text-red-500 px-2 py-1 rounded">ውድቅ (Expired)</span> 
-                                                                    : <span className="bg-green-500/20 text-green-500 px-2 py-1 rounded">Active</span>}
-                                                            </td>
-                                                        </tr>
-                                                    ))
-                                                )}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
+                                    return (
+                                        <>
+                                            {/* 🌟 1. አራቱ ዋና የዕለቱ ጥያቄዎች፡ ስንት ተቆረጠ? ስንት አሸነፈ? ስንት ተሸነፈ? ስንት ብር ለተጫዋቾች ተከፈለ? 🌟 */}
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
+                                                <div className="bg-[#1e2328] border border-[#3b4148] p-5 rounded-xl shadow-lg">
+                                                    <div className="flex justify-between items-start mb-1.5">
+                                                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">1. የተቆረጠ ትኬት ብዛት</h3>
+                                                        <span className="text-lg">🧾</span>
+                                                    </div>
+                                                    <p className="text-3xl font-black text-white">{totalCut} <span className="text-sm font-bold text-slate-400">ትኬት</span></p>
+                                                    <p className="text-[11px] text-slate-400 mt-2 font-bold">
+                                                        በሂደት ላይ: <span className="text-[#ffcc00]">{activeCount}</span> | የተሰረዘ (Void): <span className="text-red-400">{voidCount}</span>
+                                                    </p>
+                                                </div>
+
+                                                <div className="bg-[#1e2328] border border-[#00e700]/40 p-5 rounded-xl shadow-lg">
+                                                    <div className="flex justify-between items-start mb-1.5">
+                                                        <h3 className="text-xs font-bold text-[#00e700] uppercase tracking-wider">2. ያሸነፈ ትኬት ብዛት</h3>
+                                                        <span className="text-lg">🎉</span>
+                                                    </div>
+                                                    <p className="text-3xl font-black text-[#00e700]">{wonCount} <span className="text-sm font-bold text-slate-400">ትኬት</span></p>
+                                                    <p className="text-[11px] text-slate-300 mt-2 font-bold">
+                                                        ጠቅላላ ያሸነፉት: <span className="text-white">{totalWonAndPaid.toLocaleString()} Br</span> (የተከፈለ: {paidCount} | ያልተከፈለ: {unpaidCount})
+                                                    </p>
+                                                </div>
+
+                                                <div className="bg-[#1e2328] border border-red-500/40 p-5 rounded-xl shadow-lg">
+                                                    <div className="flex justify-between items-start mb-1.5">
+                                                        <h3 className="text-xs font-bold text-red-400 uppercase tracking-wider">3. የተሸነፈ ትኬት ብዛት</h3>
+                                                        <span className="text-lg">❌</span>
+                                                    </div>
+                                                    <p className="text-3xl font-black text-red-400">{lostCount} <span className="text-sm font-bold text-slate-400">ትኬት</span></p>
+                                                    <p className="text-[11px] text-slate-400 mt-2 font-bold">
+                                                        ከተሸነፉ የዳነ ክፍያ: <span className="text-[#00e700]">{savedFromLost.toLocaleString()} Br</span>
+                                                    </p>
+                                                </div>
+
+                                                <div className="bg-gradient-to-br from-blue-500/15 to-[#1e2328] border border-blue-500/40 p-5 rounded-xl shadow-lg">
+                                                    <div className="flex justify-between items-start mb-1.5">
+                                                        <h3 className="text-xs font-bold text-blue-400 uppercase tracking-wider">4. ለተጫዋቾች የተከፈለ ብር</h3>
+                                                        <span className="text-lg">💸</span>
+                                                    </div>
+                                                    <p className="text-3xl font-black text-blue-400">{paidOut.toLocaleString()} Br</p>
+                                                    <p className="text-[11px] text-slate-300 mt-2 font-bold">
+                                                        የተከፈሉ ትኬቶች: <span className="text-white">{paidCount}</span> | ገና ያልተከፈለ: <span className="text-orange-400">{unpaidWon.toLocaleString()} Br</span>
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            {/* 🌟 2. የገንዘብ ገቢ፣ የ10 ብር ክፍያ እና ንፁህ ቀሪ ካዝና 🌟 */}
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+                                                <div className="bg-[#1e2328] border border-[#ffcc00]/40 p-5 rounded-xl shadow-lg relative overflow-hidden">
+                                                    <div className="absolute top-0 right-0 p-3 opacity-10 text-4xl">💰</div>
+                                                    <h3 className="text-xs font-bold text-[#ffcc00] uppercase tracking-wider mb-1">የትኬት ክፍያ (10 ብር)</h3>
+                                                    <p className="text-2xl font-black text-[#ffcc00]">{serviceFee.toLocaleString()} Br</p>
+                                                    <p className="text-[11px] text-slate-400 mt-1 font-bold">{shopTickets} የሱቅ ትኬት × 10 ብር</p>
+                                                </div>
+
+                                                <div className="bg-[#1e2328] border border-[#00e700]/40 p-5 rounded-xl shadow-lg">
+                                                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">የውርርድ ገቢ (Stake)</h3>
+                                                    <p className="text-2xl font-black text-[#00e700]">{stakeRev.toLocaleString()} Br</p>
+                                                    <p className="text-[11px] text-slate-300 mt-1 font-bold">
+                                                        ከ10 ብር ጋር ጠቅላላ: <span className="text-white">{grossIn.toLocaleString()} Br</span>
+                                                    </p>
+                                                </div>
+
+                                                <div className="bg-gradient-to-r from-[#00e700]/15 to-[#1e2328] border border-[#00e700]/40 p-5 rounded-xl shadow-lg">
+                                                    <h3 className="text-xs font-black text-[#00e700] uppercase tracking-wider mb-1">በካዝና ያለ ንፁህ ቀሪ ብር</h3>
+                                                    <p className="text-2xl font-black text-white">{netCash.toLocaleString()} Br</p>
+                                                    <p className="text-[11px] text-slate-400 mt-1 font-bold">(Stake + 10 ብር) - የተከፈለ ብር</p>
+                                                </div>
+
+                                                <div className="bg-[#1e2328] border border-[#ffcc00]/30 p-5 rounded-xl shadow-lg">
+                                                    <h3 className="text-xs font-black text-[#ffcc00] uppercase tracking-wider mb-1">በሂደት ላይ ያለ አደጋ (Risk)</h3>
+                                                    <p className="text-2xl font-black text-[#ffcc00]">{activeRiskVal.toLocaleString()} Br</p>
+                                                    <p className="text-[11px] text-slate-400 mt-1 font-bold">{activeCount} ያላለቁ ትኬቶች ቢያሸንፉ</p>
+                                                </div>
+                                            </div>
+
+                                            {/* 🌟 3. የካሼሮች የስራ እና የየቀኑ ሂሳብ ሪፖርት ሰንጠረዥ 🌟 */}
+                                            <div className="bg-[#1e2328] border border-[#3b4148] rounded-xl shadow-lg mb-8 overflow-hidden">
+                                                <div className="px-6 py-4 border-b border-[#3b4148] bg-[#24292e]">
+                                                    <h2 className="text-lg font-bold text-white">👨‍💼 የካሼሮች የስራ እና የገንዘብ ፍሰት ሪፖርት (Cashier Performance)</h2>
+                                                </div>
+                                                <div className="overflow-x-auto">
+                                                    <table className="w-full text-left border-collapse">
+                                                        <thead>
+                                                            <tr className="bg-[#1a1f24] text-[10px] uppercase tracking-widest text-slate-400">
+                                                                <th className="px-4 py-3.5 font-black">ካሼር ስም</th>
+                                                                <th className="px-4 py-3.5 font-black">የተቆረጠ</th>
+                                                                <th className="px-4 py-3.5 font-black text-[#00e700]">ያሸነፈ</th>
+                                                                <th className="px-4 py-3.5 font-black text-red-400">የተሸነፈ</th>
+                                                                <th className="px-4 py-3.5 font-black text-[#ffcc00]">የ10 ብር ክፍያ</th>
+                                                                <th className="px-4 py-3.5 font-black text-[#00e700]">Stake ገቢ</th>
+                                                                <th className="px-4 py-3.5 font-black text-white">ጠቅላላ የሰበሰበው</th>
+                                                                <th className="px-4 py-3.5 font-black text-blue-400">ለተጫዋች የተከፈለ</th>
+                                                                <th className="px-4 py-3.5 font-black text-orange-400">ያልተከፈለ (Won)</th>
+                                                                <th className="px-4 py-3.5 font-black text-[#00e700]">ቀሪ ካዝና (Net)</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="text-xs sm:text-sm divide-y divide-[#2a3038]">
+                                                            {effectiveReport.cashierStats.length === 0 ? (
+                                                                <tr><td colSpan={10} className="text-center py-6 text-slate-500">ምንም የካሼር መረጃ የለም</td></tr>
+                                                            ) : (
+                                                                effectiveReport.cashierStats.map((stat: any, i: number) => {
+                                                                    const sold = Number(stat.tickets_sold || 0);
+                                                                    const wonC = Number(stat.winning_tickets_count || 0);
+                                                                    const lostC = Number(stat.lost_tickets_count || 0);
+                                                                    const fee = sold * 10;
+                                                                    const rev = Number(stat.revenue || 0);
+                                                                    const gross = rev + fee;
+                                                                    const paid = Number(stat.paid_out ?? 0);
+                                                                    const unpaid = Number(stat.unpaid_won ?? 0);
+                                                                    const netCashVal = gross - paid;
+
+                                                                    return (
+                                                                        <tr key={i} className="hover:bg-[#24292e] transition-colors">
+                                                                            <td className="px-4 py-3.5 font-bold text-white flex items-center gap-2">
+                                                                                <span className="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-xs">👤</span>
+                                                                                {stat.cashier}
+                                                                            </td>
+                                                                            <td className="px-4 py-3.5 text-white font-black">{sold}</td>
+                                                                            <td className="px-4 py-3.5 font-black text-[#00e700]">{wonC}</td>
+                                                                            <td className="px-4 py-3.5 font-black text-red-400">{lostC}</td>
+                                                                            <td className="px-4 py-3.5 font-black text-[#ffcc00]">{fee.toLocaleString()} Br</td>
+                                                                            <td className="px-4 py-3.5 font-black text-[#00e700]">{rev.toLocaleString()} Br</td>
+                                                                            <td className="px-4 py-3.5 font-black text-white">{gross.toLocaleString()} Br</td>
+                                                                            <td className="px-4 py-3.5 font-black text-blue-400">{paid.toLocaleString()} Br</td>
+                                                                            <td className="px-4 py-3.5 font-black text-orange-400">{unpaid.toLocaleString()} Br</td>
+                                                                            <td className="px-4 py-3.5 font-black text-[#00e700]">{netCashVal.toLocaleString()} Br</td>
+                                                                        </tr>
+                                                                    );
+                                                                })
+                                                            )}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+
+                                            {/* 🌟 4. በተመረጠው ቀን/ጊዜ የተቆረጡ ትኬቶች ሙሉ ዝርዝር (ከሁኔታ ማጣሪያ ጋር) 🌟 */}
+                                            <div className="bg-[#1e2328] border border-[#3b4148] rounded-xl shadow-lg mb-8 overflow-hidden">
+                                                <div className="px-6 py-4 border-b border-[#3b4148] bg-[#24292e] flex flex-wrap justify-between items-center gap-3">
+                                                    <h2 className="text-lg font-bold text-white">🧾 በተመረጠው ቀን/ጊዜ የተቆረጡ ትኬቶች ዝርዝር ({filteredPeriodTickets.length})</h2>
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        <button onClick={() => setReportTicketStatusFilter('all')} className={`px-3 py-1 rounded text-xs font-bold transition ${reportTicketStatusFilter === 'all' ? 'bg-[#ffcc00] text-black' : 'bg-[#111418] text-slate-400 hover:text-white'}`}>ሁሉም ({periodTicketsList.length})</button>
+                                                        <button onClick={() => setReportTicketStatusFilter('won')} className={`px-3 py-1 rounded text-xs font-bold transition ${reportTicketStatusFilter === 'won' ? 'bg-[#00e700] text-black' : 'bg-[#111418] text-[#00e700] border border-[#00e700]/30'}`}>🎉 ያሸነፉ ({wonCount})</button>
+                                                        <button onClick={() => setReportTicketStatusFilter('lost')} className={`px-3 py-1 rounded text-xs font-bold transition ${reportTicketStatusFilter === 'lost' ? 'bg-red-500 text-white' : 'bg-[#111418] text-red-400 border border-red-500/30'}`}>❌ የተሸነፉ ({lostCount})</button>
+                                                        <button onClick={() => setReportTicketStatusFilter('paid')} className={`px-3 py-1 rounded text-xs font-bold transition ${reportTicketStatusFilter === 'paid' ? 'bg-blue-500 text-white' : 'bg-[#111418] text-blue-400 border border-blue-500/30'}`}>✅ የተከፈሉ ({paidCount})</button>
+                                                        <button onClick={() => setReportTicketStatusFilter('active')} className={`px-3 py-1 rounded text-xs font-bold transition ${reportTicketStatusFilter === 'active' ? 'bg-orange-500 text-black' : 'bg-[#111418] text-orange-400 border border-orange-500/30'}`}>⏳ በሂደት ላይ ({activeCount})</button>
+                                                    </div>
+                                                </div>
+                                                <div className="overflow-x-auto max-h-[450px] overflow-y-auto custom-scrollbar">
+                                                    <table className="w-full text-left border-collapse">
+                                                        <thead>
+                                                            <tr className="bg-[#1a1f24] text-[10px] uppercase tracking-widest text-slate-400 sticky top-0">
+                                                                <th className="px-4 py-3 font-black">ቀን እና ሰዓት</th>
+                                                                <th className="px-4 py-3 font-black">ትኬት ቁጥር</th>
+                                                                <th className="px-4 py-3 font-black">ካሼር / ምንጭ</th>
+                                                                <th className="px-4 py-3 font-black">የተመደበ (Stake)</th>
+                                                                <th className="px-4 py-3 font-black">ሊበላ (Win)</th>
+                                                                <th className="px-4 py-3 font-black">ሁኔታ (Status)</th>
+                                                                <th className="px-4 py-3 font-black text-right">ድርጊት</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="text-xs divide-y divide-[#2a3038]">
+                                                            {filteredPeriodTickets.length === 0 ? (
+                                                                <tr><td colSpan={7} className="text-center py-8 text-slate-500 font-bold">በዚህ ቀን/ማጣሪያ የተገኘ ትኬት የለም</td></tr>
+                                                            ) : (
+                                                                filteredPeriodTickets.map((t: any, idx: number) => {
+                                                                    const st = String(t.displayStatus || t.status || 'active').toLowerCase();
+                                                                    const winAmt = Number(t.computedPotential ?? t.potential_win ?? 0);
+                                                                    return (
+                                                                        <tr key={idx} className="hover:bg-[#24292e] transition-colors">
+                                                                            <td className="px-4 py-3 text-slate-400 font-medium">
+                                                                                {new Date(t.created_at).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' })}{' '}
+                                                                                <span className="text-slate-300 font-bold">{new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                                            </td>
+                                                                            <td className="px-4 py-3 font-mono font-black text-[#ffcc00]">#{t.ticket_number}</td>
+                                                                            <td className="px-4 py-3 font-bold text-white">{t.cashier || 'Shop'}</td>
+                                                                            <td className="px-4 py-3 font-bold text-slate-200">{Number(t.stake_amount).toLocaleString()} Br</td>
+                                                                            <td className="px-4 py-3 font-black text-[#00e700]">{winAmt.toLocaleString()} Br</td>
+                                                                            <td className="px-4 py-3 font-bold">
+                                                                                {st === 'paid' ? <span className="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded text-[10px]">✅ ተከፍሏል (Paid)</span> :
+                                                                                 st === 'won' ? <span className="bg-[#00e700]/20 text-[#00e700] px-2 py-0.5 rounded text-[10px]">🎉 ያሸነፈ (Unpaid)</span> :
+                                                                                 st === 'lost' ? <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-[10px]">❌ የተሸነፈ (Lost)</span> :
+                                                                                 st === 'expired' ? <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-[10px]">⏳ ውድቅ (Expired)</span> :
+                                                                                 st === 'void' ? <span className="bg-slate-600/30 text-slate-400 px-2 py-0.5 rounded text-[10px]">🚫 የተሰረዘ (Void)</span> :
+                                                                                 <span className="bg-[#ffcc00]/20 text-[#ffcc00] px-2 py-0.5 rounded text-[10px]">⏳ በሂደት ላይ</span>}
+                                                                            </td>
+                                                                            <td className="px-4 py-3 text-right">
+                                                                                <button
+                                                                                    onClick={() => setSelectedManageTicket({ ...t, displayStatus: st, computedPotential: winAmt })}
+                                                                                    className="bg-[#111418] hover:bg-[#3b4148] border border-[#3b4148] text-white px-3 py-1 rounded text-[10px] font-bold"
+                                                                                >
+                                                                                    ዝርዝር እይ
+                                                                                </button>
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                })
+                                                            )}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-gradient-to-r from-[#00bfff]/10 to-[#1e2328] border border-[#00bfff]/30 p-6 rounded-xl shadow-lg mb-8 flex flex-wrap justify-between items-center gap-4">
+                                                <div>
+                                                    <h2 className="text-lg font-bold text-[#00bfff] mb-1">📱 የኦንላይን ተጫዋቾች (Online Users) ሪፖርት</h2>
+                                                    <p className="text-xs text-slate-400">እነዚህ በራሳቸው አካውንት ገብተው የሚጫወቱት ናቸው።</p>
+                                                </div>
+                                                <div className="flex gap-8 text-right">
+                                                    <div>
+                                                        <p className="text-xs font-bold text-slate-400 uppercase">ትኬት ብዛት</p>
+                                                        <p className="text-xl font-black text-white">{effectiveReport.onlineStats?.tickets_sold || 0}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-bold text-slate-400 uppercase">ገቢ (Stake)</p>
+                                                        <p className="text-xl font-black text-[#00e700]">{Number(effectiveReport.onlineStats?.revenue || 0).toLocaleString()} Br</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-bold text-slate-400 uppercase">ያሸነፉ (Payout)</p>
+                                                        <p className="text-xl font-black text-red-400">{Number(effectiveReport.onlineStats?.payout || 0).toLocaleString()} Br</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-[#1e2328] border border-red-500/30 rounded-xl shadow-lg overflow-hidden">
+                                                <div className="px-6 py-4 border-b border-[#3b4148] bg-red-500/10">
+                                                    <h2 className="text-lg font-bold text-red-400">⚠️ ያሸነፉ እና የተከፈሉ ትኬቶች ዝርዝር</h2>
+                                                </div>
+                                                <div className="overflow-x-auto">
+                                                    <table className="w-full text-left border-collapse">
+                                                        <thead>
+                                                            <tr className="bg-[#1a1f24] text-[11px] uppercase tracking-widest text-slate-500">
+                                                                <th className="px-6 py-4 font-black">ትኬት ቁጥር</th>
+                                                                <th className="px-6 py-4 font-black">መነሻ (Source)</th>
+                                                                <th className="px-6 py-4 font-black">የተመደበ (Stake)</th>
+                                                                <th className="px-6 py-4 font-black">የበላው (Win)</th>
+                                                                <th className="px-6 py-4 font-black">ሁኔታ (Status)</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="text-sm divide-y divide-[#2a3038]">
+                                                            {effectiveReport.winningTickets.length === 0 ? (
+                                                                <tr><td colSpan={5} className="text-center py-6 text-slate-500">በዚህ ጊዜ ውስጥ ምንም የተበላነው ሂሳብ የለም ማትረፍ ብቻ ነው! 🎉</td></tr>
+                                                            ) : (
+                                                                effectiveReport.winningTickets.map((ticket: any, i: number) => (
+                                                                    <tr key={i} className="hover:bg-[#24292e] transition-colors">
+                                                                        <td className="px-6 py-4 font-mono font-bold text-[#ffcc00]">#{ticket.ticket_number}</td>
+                                                                        <td className="px-6 py-4 font-bold text-white">
+                                                                            {ticket.role === 'user' ? (
+                                                                                <span className="text-[#00bfff]">📱 ኦንላይን: {ticket.cashier}</span>
+                                                                            ) : (
+                                                                                <span className="text-slate-300">👤 ካሼር: {ticket.cashier || 'Shop'}</span>
+                                                                            )}
+                                                                        </td>
+                                                                        <td className="px-6 py-4 text-slate-300">{Number(ticket.stake_amount).toLocaleString()} Br</td>
+                                                                        <td className="px-6 py-4 font-black text-red-400">{Number(ticket.potential_win).toLocaleString()} Br</td>
+                                                                        <td className="px-6 py-4 font-bold text-xs">
+                                                                            {ticket.status === 'expired' ? (
+                                                                                <span className="bg-red-500/20 text-red-500 px-2 py-1 rounded">⏳ ውድቅ (Expired)</span>
+                                                                            ) : ticket.status === 'paid' ? (
+                                                                                <span className="bg-blue-500/20 text-blue-400 px-2 py-1 rounded">✅ ተከፍሏል (Paid)</span>
+                                                                            ) : (
+                                                                                <span className="bg-[#00e700]/20 text-[#00e700] px-2 py-1 rounded">🎉 ያሸነፈ (Unpaid)</span>
+                                                                            )}
+                                                                        </td>
+                                                                    </tr>
+                                                                ))
+                                                            )}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </>
+                                    );
+                                })()}
                             </>
                         )}
                     </div>
@@ -635,8 +1323,18 @@ export default function AdminDashboard() {
                 {/* 🌟 አዲሱ የትኬት ማኔጅመንት ታብ (Tickets Tab) 🌟 */}
                 {activeTab === 'tickets' && (
                     <div className="max-w-6xl animate-fade-in-down">
-                        <h1 className="text-3xl font-black text-white mb-2">🎟️ የትኬት ማኔጅመንት</h1>
-                        <p className="text-slate-400 mb-6">በሲስተሙ የተቆረጡ ትኬቶችን በየካሼሩ እና በሁኔታቸው (Status) ይቆጣጠሩ。</p>
+                        <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
+                            <div>
+                                <h1 className="text-3xl font-black text-white mb-1">🎟️ የትኬት ማኔጅመንት</h1>
+                                <p className="text-slate-400 text-sm">በሲስተሙ የተቆረጡ ትኬቶችን በየካሼሩ እና በሁኔታቸው (Status) ይቆጣጠሩ።</p>
+                            </div>
+                            <button
+                                onClick={() => fetchTickets()}
+                                className="bg-[#1e2328] hover:bg-[#24292e] border border-[#3b4148] text-[#ffcc00] px-4 py-2 rounded-lg text-xs font-bold transition"
+                            >
+                                🔄 ትኬቶችን አድስ
+                            </button>
+                        </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                             <div className="bg-[#1e2328] border border-[#3b4148] p-5 rounded-xl shadow-lg relative overflow-hidden">
@@ -664,7 +1362,8 @@ export default function AdminDashboard() {
                         </div>
 
                         <div className="flex flex-wrap gap-2 mb-6">
-                            <button onClick={() => setTicketFilter('all')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${ticketFilter === 'all' ? 'bg-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] text-slate-400 border border-[#3b4148] hover:text-white'}`}>ሁሉንም አሳይ (All)</button>
+                            <button onClick={() => setTicketFilter('today')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${ticketFilter === 'today' ? 'bg-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] text-[#ffcc00] border border-[#ffcc00]/30 hover:bg-[#ffcc00]/10'}`}>📅 የዛሬ ትኬቶች ({computedTickets.filter(t => isTicketFromToday(t)).length})</button>
+                            <button onClick={() => setTicketFilter('all')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${ticketFilter === 'all' ? 'bg-[#ffcc00] text-black shadow-md' : 'bg-[#1e2328] text-slate-400 border border-[#3b4148] hover:text-white'}`}>ሁሉንም አሳይ ({computedTickets.length})</button>
                             <button onClick={() => setTicketFilter('close_to_win')} className={`px-4 py-2 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${ticketFilter === 'close_to_win' ? 'bg-[#00bfff] text-white shadow-md border-[#00bfff]' : 'bg-[#1e2328] text-[#00bfff] border border-[#00bfff]/30 hover:bg-[#00bfff]/10'}`}>⚡ ጥቂት የቀረው (Close)</button>
                             <button onClick={() => setTicketFilter('high_stake')} className={`px-4 py-2 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${ticketFilter === 'high_stake' ? 'bg-purple-500 text-white shadow-md border-purple-500' : 'bg-[#1e2328] text-purple-400 border border-purple-500/30 hover:bg-purple-500/10'}`}>🔥 ትልቅ ብር (High Stake)</button>
                             <button onClick={() => setTicketFilter('won')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${ticketFilter === 'won' ? 'bg-[#00e700] text-black shadow-md border-[#00e700]' : 'bg-[#1e2328] text-[#00e700] border border-[#00e700]/30 hover:bg-[#00e700]/10'}`}>🎉 ያሸነፉ (Won)</button>
@@ -778,7 +1477,7 @@ export default function AdminDashboard() {
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                             <div>
                                 <h1 className="text-2xl font-black text-white mb-2">👥 አዲስ ሰራተኛ መመዝገቢያ</h1>
-                                <p className="text-slate-400 mb-6 text-sm">ለካሼር ወይም ለሌላ አድሚን መግቢያ አካውንት ይፍጠሩ。</p>
+                                <p className="text-slate-400 mb-6 text-sm">ለካሼር ወይም ለሌላ አድሚን መግቢያ አካውንት ይፍጠሩ።</p>
                                 <div className="bg-[#1e2328] border border-[#3b4148] p-6 rounded-xl shadow-lg">
                                     {staffMsg && (
                                         <div className={`p-4 rounded-lg mb-6 font-bold text-sm border ${staffMsg.type === 'success' ? 'bg-[#00e700]/10 border-[#00e700]/30 text-[#00e700]' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
@@ -849,7 +1548,7 @@ export default function AdminDashboard() {
                 {activeTab === 'settings' && (
                     <div className="max-w-4xl animate-fade-in-down">
                         <h1 className="text-3xl font-black text-white mb-2">⚙️ ሲስተም ሴቲንግ</h1>
-                        <p className="text-slate-400 mb-8">የስፖርት ዳታ (API-Football) ቁልፍን እና ሌሎች ማስተካከያዎችን ከዚህ ይቆጣጠሩ。</p>
+                        <p className="text-slate-400 mb-8">የስፖርት ዳታ (API-Football) ቁልፍን እና ሌሎች ማስተካከያዎችን ከዚህ ይቆጣጠሩ።</p>
 
                         <div className="bg-[#24292e] p-6 rounded-xl border border-[#3b4148] mb-8 shadow-md relative overflow-hidden">
                             <div className="absolute top-0 right-0 p-4 opacity-10 text-5xl">📊</div>
@@ -866,7 +1565,7 @@ export default function AdminDashboard() {
                                     style={{ width: `${Math.min((apiUsage.used / ((apiUsage.used + apiUsage.remaining) || 100)) * 100, 100)}%` }}
                                 ></div>
                             </div>
-                            <p className="text-[10px] text-slate-500">በየቀኑ የተወሰነ ነፃ ጥያቄ (API Requests) ይሰጣል። ሲያልቅ ወደ ቀጣዩ Key አውቶማቲክ ይቀየራ。</p>
+                            <p className="text-[10px] text-slate-500">በየቀኑ የተወሰነ ነፃ ጥያቄ (API Requests) ይሰጣል። ሲያልቅ ወደ ቀጣዩ Key አውቶማቲክ ይቀየራል።</p>
                         </div>
 
                         <div className="bg-[#1e2328] border border-[#3b4148] p-8 rounded-xl shadow-lg">

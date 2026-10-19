@@ -1,14 +1,22 @@
 "use client";
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { QRCodeSVG } from 'qrcode.react';
+import { useRouter } from 'next/navigation';
 
 const MAX_STAKE = 10000;
 const MAX_WIN = 10000;
 const MIN_STAKE = 20;
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const API_BASE =
+    (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) ||
+    'http://localhost:5000';
+
+const INITIAL_VISIBLE_GAMES = 60;
+const LOAD_MORE_STEP = 60;
 
 interface OddOption {
     odd_id: string;
@@ -26,6 +34,7 @@ interface BetSlipItem {
     odd_id: string;
     odd_name: string;
     odd_value: number;
+    previous_odd_value?: number;
 }
 
 interface Fixture {
@@ -54,6 +63,26 @@ const getMarketKind = (mkt: any): 'h2h' | 'dc' | 'other' => {
     return 'other';
 };
 
+const resolveMarketRef = (bet: any) => {
+    const rawTitle = String(bet?.title || bet?.name || "Market").trim();
+    let betId = Number(bet?.id);
+    if (!betId && bet?.key) {
+        if (bet.key === 'h2h') betId = 1;
+        else if (bet.key === 'double_chance') betId = 12;
+        else if (bet.key === 'totals') betId = 5;
+        else if (bet.key === 'btts') betId = 8;
+        else {
+            const match = String(bet.key).match(/\d+/);
+            if (match) betId = parseInt(match[0], 10);
+        }
+    }
+    return {
+        betId,
+        rawTitle,
+        marketRef: bet?.key || betId || rawTitle
+    };
+};
+
 const standardizeOptionLabel = (kind: 'h2h' | 'dc' | 'other', rawLabel: any, game: any) => {
     const label = String(rawLabel ?? '').trim();
     if (kind === 'h2h') {
@@ -74,6 +103,43 @@ const standardizeOptionLabel = (kind: 'h2h' | 'dc' | 'other', rawLabel: any, gam
 
 const buildOddId = (marketRef: any, optionLabel: any, gameId: any) =>
     `${sanitizeIdPart(marketRef)}_${sanitizeIdPart(optionLabel)}_${gameId}`;
+
+const extractAllOddsMapForGame = (game: Fixture): Record<string, number> => {
+    const map: Record<string, number> = {};
+    if (!game) return map;
+
+    (game.odds || []).forEach((o: OddOption) => {
+        const v = parseFloat(o.value);
+        if (Number.isFinite(v) && v > 0) map[o.odd_id] = Number(v.toFixed(2));
+    });
+    (game.dc_odds || []).forEach((o: OddOption) => {
+        const v = parseFloat(o.value);
+        if (Number.isFinite(v) && v > 0) map[o.odd_id] = Number(v.toFixed(2));
+    });
+
+    (game.raw_markets || []).forEach((bet: any) => {
+        const outcomesArray = bet?.values || bet?.outcomes || [];
+        if (!Array.isArray(outcomesArray) || outcomesArray.length === 0) return;
+        const kind = getMarketKind(bet);
+        const { marketRef, betId } = resolveMarketRef(bet);
+
+        outcomesArray.forEach((o: any) => {
+            const rawLabel = o.name ?? o.value ?? o.label;
+            const standardOpt = standardizeOptionLabel(kind, rawLabel, game);
+            const rawPrice = parseFloat(o.price ?? o.odd ?? "0");
+            if (Number.isFinite(rawPrice) && rawPrice > 0) {
+                const fixedVal = Number(rawPrice.toFixed(2));
+                const primaryId = buildOddId(marketRef, standardOpt, game.id);
+                map[primaryId] = fixedVal;
+                if (bet?.id) map[buildOddId(bet.id, standardOpt, game.id)] = fixedVal;
+                if (bet?.key) map[buildOddId(bet.key, standardOpt, game.id)] = fixedVal;
+                if (betId) map[buildOddId(betId, standardOpt, game.id)] = fixedVal;
+            }
+        });
+    });
+
+    return map;
+};
 
 const escapeHtml = (str: any) =>
     String(str ?? '')
@@ -108,7 +174,6 @@ function BarcodeSVG({ value, lineColor = '#000000', className }: { value: string
     return <svg ref={svgRef} className={className} />;
 }
 
-// 🌟 የሰዓት መዛባት እንዳይፈጥር የተስተካከለ ማሳያ
 const formatMatchDateTime = (iso: string) => {
     if (!iso) return 'Unknown Time';
     const d = new Date(iso);
@@ -119,6 +184,7 @@ const formatMatchDateTime = (iso: string) => {
 };
 
 export default function Home() {
+    const router = useRouter();
     const [isMounted, setIsMounted] = useState(false);
     const [fixtures, setFixtures] = useState<Fixture[]>([]);
     const [betSlip, setBetSlip] = useState<BetSlipItem[]>([]);
@@ -134,8 +200,6 @@ export default function Home() {
 
     const [ticketCodeInput, setTicketCodeInput] = useState<string>('');
     const [ticketLoadError, setTicketLoadError] = useState<string | null>(null);
-    
-    // 🌟 የትኬት ኮፒ መከልከያ State
     const [placedBetSignatures, setPlacedBetSignatures] = useState<string[]>([]);
 
     const [selectedMatch, setSelectedMatch] = useState<Fixture | null>(null);
@@ -145,7 +209,6 @@ export default function Home() {
     const [isTopLeaguesOpen, setIsTopLeaguesOpen] = useState(true);
     const [isSoccerOpen, setIsSoccerOpen] = useState(true);
     const [openCountry, setOpenCountry] = useState<string | null>(null);
-
     const [openAccordions, setOpenAccordions] = useState<string[]>([]);
 
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -161,6 +224,10 @@ export default function Home() {
     const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false);
     const [selectedCountryFilter, setSelectedCountryFilter] = useState<string>('All Countries');
 
+    // 🌟 ፈጣን DOM Rendering (Progressive Scroll) 🌟
+    const [visibleGamesLimit, setVisibleGamesLimit] = useState<number>(INITIAL_VISIBLE_GAMES);
+    const mainListScrollRef = useRef<HTMLDivElement>(null);
+
     const [acceptOddsChange, setAcceptOddsChange] = useState<boolean>(true);
     const acceptOddsChangeRef = useRef(acceptOddsChange);
     useEffect(() => {
@@ -168,17 +235,17 @@ export default function Home() {
     }, [acceptOddsChange]);
 
     const [flashingOdds, setFlashingOdds] = useState<Record<string, 'up' | 'down'>>({});
-    const prevFixturesRef = useRef<any[]>([]);
+    const [previousOddsMap, setPreviousOddsMap] = useState<Record<string, number>>({});
+    const prevFixturesRef = useRef<Fixture[]>([]);
     const isPollingRef = useRef(false);
+    const workingEndpointRef = useRef<string | null>(null);
     const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const today = new Date();
     const todayStr = today.toDateString();
-
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowStr = tomorrow.toDateString();
-
     const dayAfterTmw = new Date(today);
     dayAfterTmw.setDate(dayAfterTmw.getDate() + 2);
     const dayAfterTmwStr = dayAfterTmw.toDateString();
@@ -188,16 +255,32 @@ export default function Home() {
     const dateInputRef = useRef<HTMLInputElement>(null);
     const [isOnline, setIsOnline] = useState<boolean>(true);
 
-    // 🌟 1. ሪፍሬሽ ሲደረግ እንዳይጠፋ LocalStorage መጠቀም
+    // 🌟 የ Login, Register, Wallet እና Drawer State 🌟
+    const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+    const [currentBalance, setCurrentBalance] = useState<string>("0.00");
+    const [isLoginOpen, setIsLoginOpen] = useState<boolean>(false);
+    const [isRegisterOpen, setIsRegisterOpen] = useState<boolean>(false);
+    const [isProfileDrawerOpen, setIsProfileDrawerOpen] = useState<boolean>(false);
+    
+    // የ Register ፎርም መረጃዎች
+    const [phone, setPhone] = useState('');
+    const [password, setPassword] = useState('');
+    const [username, setUsername] = useState('');
+    const [email, setEmail] = useState('');
+    const [otp, setOtp] = useState('');
+    const [otpSent, setOtpSent] = useState(false);
+    const [authLoading, setAuthLoading] = useState(false);
+
     useEffect(() => {
         try {
             const savedSlip = localStorage.getItem('vibebet_saved_betslip');
-            if (savedSlip) {
-                setBetSlip(JSON.parse(savedSlip));
-            }
+            if (savedSlip) setBetSlip(JSON.parse(savedSlip));
             const storedSigs = localStorage.getItem('vibebet_placed_signatures');
-            if (storedSigs) {
-                setPlacedBetSignatures(JSON.parse(storedSigs));
+            if (storedSigs) setPlacedBetSignatures(JSON.parse(storedSigs));
+            
+            const token = localStorage.getItem('vibebet_token');
+            if(token) {
+                setIsLoggedIn(true);
             }
         } catch (e) {}
     }, []);
@@ -223,11 +306,127 @@ export default function Home() {
         };
     }, []);
 
+    //ሊግ፣ ቀን ወይም ፍለጋ ሲቀየር የሚታዩትን ጨዋታዎች መጠን ማስጀመር
+    useEffect(() => {
+        setVisibleGamesLimit(INITIAL_VISIBLE_GAMES);
+        if (mainListScrollRef.current) {
+            mainListScrollRef.current.scrollTop = 0;
+        }
+    }, [selectedLeague, selectedCountryFilter, selectedDateFilter, searchTerm]);
+
     useEffect(() => {
         prevFixturesRef.current = fixtures;
     }, [fixtures]);
 
+    // 🌟 አንድ ክለብ ተከፍቶ እያለ (selectedMatch) ኦዱ ሲቀየር ወዲያውኑ አዲሱን ኦድ እንዲያሳይ ማድረግ 🌟
+    useEffect(() => {
+        if (!selectedMatch) return;
+        const updatedMatch = fixtures.find((f: Fixture) => String(f.id) === String(selectedMatch.id));
+        if (updatedMatch && updatedMatch !== selectedMatch) {
+            setSelectedMatch(updatedMatch);
+        }
+    }, [fixtures, selectedMatch]);
+
+    // 🌟 ክለብ ሲከፈት የመጀመሪያዎቹ 5 ማርኬቶች ወዲያውኑ ተዘርግተው እንዲታዩ ማድረግ 🌟
+    useEffect(() => {
+        if (!selectedMatch) return;
+        const cats = getCategorizedMarkets(selectedMatch);
+        const allMkts = cats['ALL'] || [];
+        if (allMkts.length > 0) {
+            setOpenAccordions(prev => {
+                const currentMatchMkts = prev.filter(id => id.endsWith(`_${selectedMatch.id}`));
+                if (currentMatchMkts.length > 0) return prev;
+                return allMkts.slice(0, 5).map((m: any) => m.unique_id);
+            });
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedMatch?.id]);
+
+    // 🌟 "Accept all odd changes" ቲክ ሲደረግ ወይም fixtures ሲታደስ በትኬቱ (BetSlip) ላይ ያሉትን ኦዶችና የሚበላውን ብር ወዲያውኑ ማዘመን 🌟
+    useEffect(() => {
+        if (!acceptOddsChange || fixtures.length === 0) return;
+
+        setBetSlip((prevSlip: BetSlipItem[]) => {
+            if (prevSlip.length === 0) return prevSlip;
+            let hasAnyChange = false;
+
+            const updatedSlip = prevSlip.map((item: BetSlipItem) => {
+                const game = fixtures.find((f: Fixture) => String(f.id) === String(item.fixture_id));
+                if (!game) return item;
+
+                const gameOddsMap = extractAllOddsMapForGame(game);
+                const latestOdd = gameOddsMap[item.odd_id];
+
+                if (latestOdd !== undefined && latestOdd > 0 && Math.abs(latestOdd - Number(item.odd_value)) >= 0.005) {
+                    hasAnyChange = true;
+                    return {
+                        ...item,
+                        previous_odd_value: Number(item.odd_value),
+                        odd_value: latestOdd
+                    };
+                }
+                return item;
+            });
+
+            return hasAnyChange ? updatedSlip : prevSlip;
+        });
+    }, [acceptOddsChange, fixtures]);
+
+    // 🌟 ፈጣን API መጥሪያ (የሰራውን ሊንክ በማስታወስ 403/404 መዘግየትን ሙሉ በሙሉ ያስቀራል) 🌟
+    const fetchRawFixturesFromApi = useCallback(async () => {
+        const authToken =
+            typeof window !== 'undefined'
+                ? localStorage.getItem('vibebet_token') ||
+                  localStorage.getItem('cashierToken') ||
+                  localStorage.getItem('adminToken')
+                : null;
+        const headers: Record<string, string> = authToken ? { Authorization: `Bearer ${authToken}` } : {};
+
+        const cacheBuster = `_t=${Date.now()}`;
+        const defaultPaths = [
+            `/api/fixtures`,
+            `/api/fixtures/list`,
+            `/api/matches/list`
+        ];
+
+        const orderedPaths = workingEndpointRef.current
+            ? [workingEndpointRef.current, ...defaultPaths.filter(p => p !== workingEndpointRef.current)]
+            : defaultPaths;
+
+        for (const path of orderedPaths) {
+            const url = `${API_BASE}${path}?${cacheBuster}`;
+            try {
+                const res = await axios.get(url, { headers, timeout: 8000 });
+                const payload = res.data;
+                let list: any[] | null = null;
+                if (Array.isArray(payload) && payload.length > 0) list = payload;
+                else if (payload?.success && Array.isArray(payload.data) && payload.data.length > 0) list = payload.data;
+                else if (Array.isArray(payload?.data) && payload.data.length > 0) list = payload.data;
+                else if (Array.isArray(payload?.fixtures) && payload.fixtures.length > 0) list = payload.fixtures;
+
+                if (list) {
+                    workingEndpointRef.current = path;
+                    return list;
+                }
+            } catch (e) {
+                if (authToken) {
+                    try {
+                        const resNoAuth = await axios.get(url, { timeout: 8000 });
+                        const payload = resNoAuth.data;
+                        const list = Array.isArray(payload) ? payload : (payload?.data || payload?.fixtures || []);
+                        if (Array.isArray(list) && list.length > 0) {
+                            workingEndpointRef.current = path;
+                            return list;
+                        }
+                    } catch (e2) {}
+                }
+            }
+        }
+        return [];
+    }, []);
+
     const formatFixturesData = useCallback((data: any[]) => {
+        if (!Array.isArray(data)) return [];
         return data.map((game: any) => {
             let parsedOdds: OddOption[] = [
                 { odd_id: buildOddId('h2h', '1', game.id), option: "1", value: "0.00" },
@@ -243,16 +442,18 @@ export default function Home() {
             let tMarketsCount = 0;
 
             try {
-                const bookmakers = typeof game.odds_data === 'string' ? JSON.parse(game.odds_data) : game.odds_data;
+                const rawOddsSource = game.odds_data ?? game.bookmakers ?? game.markets ?? [];
+                const parsedSource = typeof rawOddsSource === 'string' ? JSON.parse(rawOddsSource) : rawOddsSource;
+                const bookmakers = Array.isArray(parsedSource) ? parsedSource : [parsedSource];
 
                 if (bookmakers && bookmakers[0]) {
-                    rawMarkets = bookmakers[0].bets || bookmakers[0].markets || [];
+                    rawMarkets = bookmakers[0].bets || bookmakers[0].markets || (Array.isArray(parsedSource) && (parsedSource[0]?.outcomes || parsedSource[0]?.values) ? parsedSource : []);
                 }
                 tMarketsCount = rawMarkets.length;
 
                 const h2h = rawMarkets.find((m: any) => getMarketKind(m) === 'h2h');
                 if (h2h) {
-                    const marketRef = h2h.key || h2h.id;
+                    const { marketRef } = resolveMarketRef(h2h);
                     const outcomesArray = h2h.values || h2h.outcomes || [];
                     const o1 = outcomesArray.find((o: any) => standardizeOptionLabel('h2h', o.value || o.name, game) === '1');
                     const oX = outcomesArray.find((o: any) => standardizeOptionLabel('h2h', o.value || o.name, game) === 'X');
@@ -265,7 +466,7 @@ export default function Home() {
 
                 const dcMarket = rawMarkets.find((m: any) => getMarketKind(m) === 'dc');
                 if (dcMarket) {
-                    const marketRef = dcMarket.key || dcMarket.id;
+                    const { marketRef } = resolveMarketRef(dcMarket);
                     const outcomesArray = dcMarket.values || dcMarket.outcomes || [];
                     const o1X = outcomesArray.find((o: any) => standardizeOptionLabel('dc', o.value || o.name, game) === '1X');
                     const o12 = outcomesArray.find((o: any) => standardizeOptionLabel('dc', o.value || o.name, game) === '12');
@@ -278,14 +479,14 @@ export default function Home() {
             } catch (e) { }
 
             return {
-                id: game.id,
+                id: game.id || game.fixture_id,
                 home_team: game.home_team || "Home",
                 away_team: game.away_team || "Away",
                 home_team_logo: game.home_team_logo || game.home_logo || null,
                 away_team_logo: game.away_team_logo || game.away_logo || null,
-                match_time: game.commence_time,
-                league: game.sport_key || "World|Soccer|https://media.api-sports.io/flags/un.svg",
-                league_flag: game.league_logo,
+                match_time: game.commence_time || game.match_time || game.date || game.event_time,
+                league: game.sport_key || game.league || "World|Soccer|https://media.api-sports.io/flags/un.svg",
+                league_flag: game.league_logo || game.league_flag,
                 odds: parsedOdds,
                 dc_odds: dcOdds,
                 raw_markets: rawMarkets,
@@ -296,11 +497,30 @@ export default function Home() {
 
     useEffect(() => {
         const fetchInitialData = async () => {
-            setIsFetchingFixtures(true);
+            // 🌟 1. መጀመሪያ በ Session Cache ውስጥ ያለ ዳታ ካለ በ 0.1 ሰከንድ ውስጥ ወዲያውኑ ያሳያል 🌟
+            let hadCache = false;
             try {
-                const res = await axios.get(`${API_BASE}/api/matches/list`);
-                if (res.data.success) {
-                    setFixtures(formatFixturesData(res.data.data));
+                const cachedStr = sessionStorage.getItem('vibebet_fixtures_fast_cache');
+                if (cachedStr) {
+                    const parsedCache = JSON.parse(cachedStr);
+                    if (Array.isArray(parsedCache) && parsedCache.length > 0) {
+                        setFixtures(parsedCache);
+                        setIsFetchingFixtures(false);
+                        hadCache = true;
+                    }
+                }
+            } catch (e) {}
+
+            if (!hadCache) setIsFetchingFixtures(true);
+
+            try {
+                const rawList = await fetchRawFixturesFromApi();
+                if (rawList.length > 0) {
+                    const formatted = formatFixturesData(rawList);
+                    setFixtures(formatted);
+                    try {
+                        sessionStorage.setItem('vibebet_fixtures_fast_cache', JSON.stringify(formatted.slice(0, 250)));
+                    } catch (e) {}
                 }
             } catch (err) {
             } finally {
@@ -310,42 +530,30 @@ export default function Home() {
 
         const fetchPollingData = async () => {
             if (isPollingRef.current) return;
+            if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
             isPollingRef.current = true;
             try {
-                const res = await axios.get(`${API_BASE}/api/matches/list`);
-                if (res.data.success) {
-                    const formattedNew = formatFixturesData(res.data.data);
+                const rawList = await fetchRawFixturesFromApi();
+                if (rawList.length > 0) {
+                    const formattedNew = formatFixturesData(rawList);
                     const prevFixtures = prevFixturesRef.current;
                     const changes: Record<string, 'up' | 'down'> = {};
                     const newOddsVals: Record<string, number> = {};
+                    const oldOddsSnapshot: Record<string, number> = {};
 
-                    formattedNew.forEach((newGame: any) => {
-                        const oldGame = prevFixtures.find((g: any) => g.id === newGame.id);
+                    formattedNew.forEach((newGame: Fixture) => {
+                        const oldGame = prevFixtures.find((g: Fixture) => String(g.id) === String(newGame.id));
                         if (oldGame) {
-                            newGame.raw_markets.forEach((newMkt: any) => {
-                                const oldMkt = oldGame.raw_markets.find((m: any) => m.id === newMkt.id || m.key === newMkt.key);
-                                if (oldMkt) {
-                                    const kind = getMarketKind(newMkt);
-                                    const marketRef = newMkt.key || newMkt.id;
-                                    const newOutcomes = newMkt.values || newMkt.outcomes || [];
-                                    const oldOutcomes = oldMkt.values || oldMkt.outcomes || [];
+                            const oldMap = extractAllOddsMapForGame(oldGame);
+                            const newMap = extractAllOddsMapForGame(newGame);
 
-                                    newOutcomes.forEach((newOpt: any) => {
-                                        const newLabel = standardizeOptionLabel(kind, newOpt.name || newOpt.value, newGame);
-                                        const oldOpt = oldOutcomes.find((o: any) => standardizeOptionLabel(kind, o.name || o.value, newGame) === newLabel);
-                                        if (oldOpt) {
-                                            const nP = parseFloat(newOpt.price || newOpt.odd || "0");
-                                            const oP = parseFloat(oldOpt.price || oldOpt.odd || "0");
-
-                                            if (nP !== oP && nP > 0) {
-                                                const oddId = buildOddId(marketRef, newLabel, newGame.id);
-                                                if (nP > oP) changes[oddId] = 'up';
-                                                else if (nP < oP) changes[oddId] = 'down';
-
-                                                newOddsVals[oddId] = nP;
-                                            }
-                                        }
-                                    });
+                            Object.keys(newMap).forEach((oddId: string) => {
+                                const nP = newMap[oddId];
+                                const oP = oldMap[oddId];
+                                if (oP !== undefined && nP > 0 && oP > 0 && Math.abs(nP - oP) >= 0.005) {
+                                    changes[oddId] = nP > oP ? 'up' : 'down';
+                                    newOddsVals[oddId] = nP;
+                                    oldOddsSnapshot[oddId] = oP;
                                 }
                             });
                         }
@@ -353,17 +561,23 @@ export default function Home() {
 
                     if (Object.keys(changes).length > 0) {
                         setFlashingOdds((prev: any) => ({ ...prev, ...changes }));
+                        setPreviousOddsMap((prev: any) => ({ ...prev, ...oldOddsSnapshot }));
                         if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
-                        flashTimeoutRef.current = setTimeout(() => setFlashingOdds({}), 4000);
+                        flashTimeoutRef.current = setTimeout(() => setFlashingOdds({}), 5000);
 
                         setBetSlip(prevSlip => {
                             if (!acceptOddsChangeRef.current) return prevSlip;
                             
                             let hasChange = false;
                             const updatedSlip = prevSlip.map(item => {
-                                if (newOddsVals[item.odd_id] !== undefined && newOddsVals[item.odd_id] !== item.odd_value) {
+                                const updatedVal = newOddsVals[item.odd_id];
+                                if (updatedVal !== undefined && Math.abs(updatedVal - Number(item.odd_value)) >= 0.005) {
                                     hasChange = true;
-                                    return { ...item, odd_value: newOddsVals[item.odd_id] };
+                                    return {
+                                        ...item,
+                                        previous_odd_value: Number(item.odd_value),
+                                        odd_value: updatedVal
+                                    };
                                 }
                                 return item;
                             });
@@ -386,7 +600,7 @@ export default function Home() {
             clearInterval(intervalId);
             if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
         };
-    }, [formatFixturesData]);
+    }, [formatFixturesData, fetchRawFixturesFromApi]);
 
     const clearBookingCode = () => { setBookingCode(null); setIsBookingPreviewOpen(false); };
 
@@ -412,11 +626,16 @@ export default function Home() {
         setSelectedMatch(null); 
     };
 
-    const totalOdds = betSlip.reduce((total: number, item: any) => total * (item.odd_value || 1), 1).toFixed(2);
+    const totalOddsNum = useMemo(() => {
+        return betSlip.reduce((total: number, item: BetSlipItem) => {
+            const val = Number(item.odd_value);
+            return total * (Number.isFinite(val) && val > 0 ? val : 1);
+        }, 1);
+    }, [betSlip]);
+
+    const totalOdds = totalOddsNum.toFixed(2);
     const safeStake = Number.isFinite(stake) ? stake : 0;
-    
-    // 🌟 ታክስ ጠፍቷል፤ በቀጥታ በመቁረጫው ብቻ ይባዛል
-    const grossWin = Number((parseFloat(totalOdds) * safeStake).toFixed(2));
+    const grossWin = Number((Math.round(totalOddsNum * safeStake * 100) / 100).toFixed(2));
 
     const hasStartedGames = betSlip.some(item => {
         if (!item.match_time) return false;
@@ -424,7 +643,7 @@ export default function Home() {
         return !isNaN(d) && d <= new Date().getTime();
     });
 
-    const currentBetSignature = betSlip.map((i: any) => i.odd_id).sort().join('|');
+    const currentBetSignature = betSlip.map((i: any) => `${i.odd_id}@${Number(i.odd_value).toFixed(2)}`).sort().join('|');
     const isDuplicateBet = betSlip.length > 0 && placedBetSignatures.includes(currentBetSignature);
 
     const isUnderStake = safeStake < MIN_STAKE;
@@ -443,10 +662,9 @@ export default function Home() {
         setIsLoading(true);
         setErrorMessage(null);
         try {
-            // 🌟 ማስተካከያ፡ market_name: item.market_name ታክሏል! 🌟
             const payload = {
                 stake_amount: safeStake,
-                is_guest: true,
+                is_guest: !isLoggedIn,
                 accept_odds_change: acceptOddsChange,
                 selections: betSlip.map((item: any) => ({ 
                     fixture_id: item.fixture_id, 
@@ -457,15 +675,24 @@ export default function Home() {
                     market_name: item.market_name 
                 }))
             };
-            const response = await axios.post(`${API_BASE}/api/tickets/place`, payload);
+
+            const token = localStorage.getItem('vibebet_token');
+            const headers = token && isLoggedIn ? { Authorization: `Bearer ${token}` } : {};
+
+            const response = await axios.post(`${API_BASE}/api/tickets/place`, payload, { headers });
 
             if (response.data.success) {
                 const bCode = response.data.booking_code || response.data.data?.booking_code;
-                setBookingCode(bCode);
+                setBookingCode(bCode || response.data.data?.ticket_number);
                 setIsBookingPreviewOpen(false);
 
                 setPlacedBetSignatures((prev: any) => [...prev, currentBetSignature]);
                 localStorage.removeItem('vibebet_saved_betslip');
+                
+                if(isLoggedIn) {
+                    setCurrentBalance((prev) => (parseFloat(prev) - safeStake).toFixed(2));
+                }
+
                 if (window.innerWidth < 1024) setIsMobileBetSlipOpen(false);
             } else {
                 setErrorMessage(response.data.message || "ትኬት መቁረጥ አልተቻለም። እባክዎ እንደገና ይሞክሩ።");
@@ -475,12 +702,12 @@ export default function Home() {
         } finally { setIsLoading(false); }
     };
 
-    const loadTicketByCode = async (code: string) => {
+    const loadTicketByCode = useCallback(async (code: string) => {
         if (!code.trim()) return false;
         setIsLoading(true);
         setTicketLoadError(null);
         try {
-            const response = await axios.get(`${API_BASE}/api/tickets/load/${code}`);
+            const response = await axios.get(`${API_BASE}/api/tickets/load/${code.trim()}`);
             if (response.data.success && response.data.data.selections) {
                 const loadedSelections: BetSlipItem[] = response.data.data.selections.map((s: any) => {
                     const teams = s.match_info ? String(s.match_info).split(' vs ') : [];
@@ -489,6 +716,18 @@ export default function Home() {
                     const realMatchTime = activeMatch ? activeMatch.match_time : (s.match_time || s.commence_time || s.event_time || '');
                     const realLeagueName = activeMatch ? getLeagueDetails(activeMatch.league).name : (s.league_name || s.league || 'Unknown League');
 
+                    let loadedOddVal = parseFloat(s.odd_value || 0);
+                    let prevOddVal: number | undefined = undefined;
+                    if (activeMatch && acceptOddsChangeRef.current) {
+                        const liveMap = extractAllOddsMapForGame(activeMatch);
+                        if (liveMap[s.odd_id] !== undefined && liveMap[s.odd_id] > 0) {
+                            if (Math.abs(liveMap[s.odd_id] - loadedOddVal) >= 0.005) {
+                                prevOddVal = loadedOddVal;
+                            }
+                            loadedOddVal = liveMap[s.odd_id];
+                        }
+                    }
+
                     return {
                         fixture_id: s.fixture_id,
                         home_team: s.home_team || teams[0] || 'Home',
@@ -496,7 +735,8 @@ export default function Home() {
                         market_name: s.market_name || (['1', 'X', '2'].includes(s.odd_name) ? '1x2' : ['1X', '12', 'X2'].includes(s.odd_name) ? 'Double Chance' : 'Market'),
                         odd_id: s.odd_id,
                         odd_name: s.odd_name,
-                        odd_value: parseFloat(s.odd_value || 0),
+                        odd_value: loadedOddVal,
+                        previous_odd_value: prevOddVal,
                         match_time: realMatchTime, 
                         league_name: realLeagueName
                     };
@@ -504,7 +744,7 @@ export default function Home() {
                 setBetSlip(loadedSelections); clearBookingCode(); return true;
             } else { setTicketLoadError("ትኬቱ አልተገኘም! እባክዎ ትክክለኛ Booking Code ያስገቡ።"); return false; }
         } catch (err: any) { setTicketLoadError(err.response?.data?.message || "ትኬት ማምጣት አልተቻለም!"); return false; } finally { setIsLoading(false); }
-    };
+    }, [fixtures]);
 
     const handleLoadTicket = async () => {
         const cleanCode = ticketCodeInput.trim();
@@ -516,12 +756,9 @@ export default function Home() {
         if (success) { setTicketCodeInput(''); setTicketLoadError(null); }
     };
 
-    const handleCheckCustomerTicket = async (e: React.FormEvent) => {
-        e.preventDefault();
-        const cleanCode = checkInputCode.trim();
-        // 🌟 በትክክል 8 ቁጥሮችን ብቻ እንዲያረጋግጥ ተስተካክሏል
-        if (!cleanCode || !/^\d{8}$/.test(cleanCode)) {
-            setCheckTicketError('እባክዎ ትክክለኛ 8 ዲጂት የትኬት ቁጥር ብቻ ያስገቡ!');
+    const runCustomerTicketCheck = useCallback(async (cleanCode: string) => {
+        if (!cleanCode || !/^\d{6,10}$/.test(cleanCode)) {
+            setCheckTicketError('እባክዎ ትክክለኛ የትኬት ቁጥር ብቻ ያስገቡ!');
             return;
         }
         setIsCheckingTicket(true); setCheckTicketError(null); setCheckedTicketData(null);
@@ -556,7 +793,31 @@ export default function Home() {
                 setCheckedTicketData(data);
             }
         } catch (err: any) { setCheckTicketError(err.response?.data?.message || 'ይህ ትኬት አልተገኘም!'); } finally { setIsCheckingTicket(false); }
+    }, []);
+
+    const handleCheckCustomerTicket = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const cleanCode = checkInputCode.trim();
+        await runCustomerTicketCheck(cleanCode);
     };
+
+    // 🌟 ደንበኛው በደረሰኙ ላይ ያለውን QR Code ሲቃኝ (?check=... ወይም ?booking=...) ወዲያውኑ እንዲከፍትለት ማድረግ 🌟
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const params = new URLSearchParams(window.location.search);
+        const checkParam = params.get('check');
+        const bookingParam = params.get('booking');
+
+        if (checkParam && /^\d{8}$/.test(checkParam.trim())) {
+            const code = checkParam.trim();
+            setCheckInputCode(code);
+            setIsCheckTicketModalOpen(true);
+            runCustomerTicketCheck(code);
+        } else if (bookingParam && /^\d{5,8}$/.test(bookingParam.trim())) {
+            loadTicketByCode(bookingParam.trim());
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const closeCheckTicketModal = () => { setIsCheckTicketModalOpen(false); setCheckInputCode(''); setCheckedTicketData(null); setCheckTicketError(null); };
 
@@ -605,7 +866,8 @@ export default function Home() {
     };
 
     const getCategorizedMarkets = (game: any) => {
-        const rawBets = game?.raw_markets || [];
+        const latestGame = fixtures.find((f: Fixture) => String(f.id) === String(game?.id)) || game;
+        const rawBets = latestGame?.raw_markets || [];
         const categories: Record<string, any[]> = { "MAIN": [], "TOTALS": [], "HALF": [], "HANDICAPS": [], "COMBOS": [], "PLAYERS": [], "ALL": [] };
         if (!Array.isArray(rawBets)) return categories;
 
@@ -626,32 +888,13 @@ export default function Home() {
         };
 
         const CUSTOM_TITLES: Record<number, string> = {
-            1: "Match Result",
-            8: "Both Teams To Score",
-            12: "Double Chance",
-            5: "Total Goals",
-            7: "Halftime/Fulltime",
-            11: "Highest Scoring Half",
-            21: "Odd/Even",
-            2: "Draw No Bet",
-            10: "Correct Score",
-            6: "1st Half - Total",
-            38: "Exact Goals",
-            349: "Goal Range",
-            295: "Corner Range",
-            85: "Total Corners",
-            25: "1X2 & Total",
-            24: "1X2 & Both Teams To Score",
-            54: "10 Minutes - 1X2 From 1 To 10",
-            92: "Anytime Goalscorer",
-            79: "Corner 1X2",
-            33: "Double Chance & Both Teams To Score",
-            86: "Last Corner",
-            15: "Last Goal",
-            94: "Last Goalscorer",
-            88: "Odd/Even Corners",
-            83: "Sending Off",
-            49: "Total & Both Teams To Score",
+            1: "Match Result", 8: "Both Teams To Score", 12: "Double Chance", 5: "Total Goals",
+            7: "Halftime/Fulltime", 11: "Highest Scoring Half", 21: "Odd/Even", 2: "Draw No Bet",
+            10: "Correct Score", 6: "1st Half - Total", 38: "Exact Goals", 349: "Goal Range",
+            295: "Corner Range", 85: "Total Corners", 25: "1X2 & Total", 24: "1X2 & Both Teams To Score",
+            54: "10 Minutes - 1X2 From 1 To 10", 92: "Anytime Goalscorer", 79: "Corner 1X2",
+            33: "Double Chance & Both Teams To Score", 86: "Last Corner", 15: "Last Goal",
+            94: "Last Goalscorer", 88: "Odd/Even Corners", 83: "Sending Off", 49: "Total & Both Teams To Score",
             62: "Which Team To Score"
         };
 
@@ -666,20 +909,8 @@ export default function Home() {
             const outcomesArray = bet.values || bet.outcomes;
             if (!outcomesArray || outcomesArray.length === 0) return;
 
-            const rawTitle = String(bet.title || bet.name || "Market").trim();
+            const { betId, rawTitle, marketRef } = resolveMarketRef(bet);
             const tLower = rawTitle.toLowerCase();
-
-            let betId = Number(bet.id);
-            if (!betId && bet.key) {
-                if (bet.key === 'h2h') betId = 1;
-                else if (bet.key === 'double_chance') betId = 12;
-                else if (bet.key === 'totals') betId = 5;
-                else if (bet.key === 'btts') betId = 8;
-                else {
-                    const match = String(bet.key).match(/\d+/);
-                    if (match) betId = parseInt(match[0], 10);
-                }
-            }
 
             let category = CATEGORY_MAP[betId];
             if (!category) {
@@ -690,15 +921,14 @@ export default function Home() {
             const sortType = SORT_TYPE_MAP[betId] || (tLower.includes('over/under') || tLower.includes('goal line') || tLower.includes('total') ? "OVER_UNDER" : "DEFAULT");
 
             const marketKind = getMarketKind(bet);
-            const marketRef = bet.key || betId || rawTitle;
 
             let normalizedOutcomes = outcomesArray.map((o: any) => {
                 const rawLabel = o.name || o.value;
                 const oddVal = parseFloat(o.price || o.odd || 0).toFixed(2);
-                const standardOpt = standardizeOptionLabel(marketKind, rawLabel, game);
+                const standardOpt = standardizeOptionLabel(marketKind, rawLabel, latestGame);
 
                 return {
-                    odd_id: buildOddId(marketRef, standardOpt, game.id),
+                    odd_id: buildOddId(marketRef, standardOpt, latestGame.id),
                     option: standardOpt,
                     value: oddVal,
                     original: String(rawLabel ?? '').trim()
@@ -776,7 +1006,7 @@ export default function Home() {
 
             if (normalizedOutcomes.length > 0) {
                 categories[category].push({
-                    unique_id: `market_${betId}_${mIdx}_${game.id}`,
+                    unique_id: `market_${betId}_${mIdx}_${latestGame.id}`,
                     bet_id: betId, 
                     title: finalTitle,
                     cols: cols,
@@ -853,11 +1083,12 @@ export default function Home() {
 
     const FALLBACK_FLAG = 'https://media.api-sports.io/flags/un.svg';
     const renderFlag = (flagObj: string) => {
-        if (!flagObj) return <img src={FALLBACK_FLAG} alt="flag" className="w-full h-full object-cover" />;
+        if (!flagObj) return <img src={FALLBACK_FLAG} alt="flag" className="w-full h-full object-cover" loading="lazy" />;
         return (
             <img
                 src={flagObj}
                 alt="flag"
+                loading="lazy"
                 onError={(e: any) => {
                     if (e.target.src !== FALLBACK_FLAG) {
                         e.target.onerror = null;
@@ -917,7 +1148,13 @@ export default function Home() {
 
     const activeFixtures = useMemo(() => {
         const timeNow = new Date().getTime();
-        return fixtures.filter((g: any) => g && g.match_time && new Date(g.match_time).getTime() > timeNow);
+        const upcoming = fixtures.filter((g: any) => {
+            if (!g) return false;
+            if (!g.match_time) return true;
+            const t = new Date(g.match_time).getTime();
+            return isNaN(t) || t > timeNow;
+        });
+        return upcoming.length > 0 ? upcoming : fixtures;
     }, [fixtures]);
 
     const { allLeagues, topLeagues, sortedCountries } = useMemo(() => {
@@ -969,10 +1206,85 @@ export default function Home() {
         return result;
     }, [allLeagues, topLeagues, selectedLeague, activeFixtures]);
 
+    // 🌟 ወደ ታች Scroll ሲደረግ ተጨማሪ ጨዋታዎችን በራሱ በፍጥነት የሚጭን Handler 🌟
+    const handleMainListScroll = (e: React.UIEvent<HTMLDivElement>) => {
+        const target = e.currentTarget;
+        if (target.scrollHeight - target.scrollTop - target.clientHeight < 450) {
+            if (visibleGamesLimit < activeFixtures.length) {
+                setVisibleGamesLimit(prev => Math.min(prev + LOAD_MORE_STEP, activeFixtures.length));
+            }
+        }
+    };
+
+    // 🌟 ትክክለኛ የ Auth Handlers (ከባክ-ኤንድ ጋር የተገናኘ) 🌟
+    const handleSendOtp = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if(phone.length < 9) {
+            alert('እባክዎ ትክክለኛ ስልክ ቁጥር ያስገቡ!');
+            return;
+        }
+        setAuthLoading(true);
+        try {
+            const res = await axios.post(`${API_BASE}/api/auth/send-otp`, { phone });
+            if (res.data.success) {
+                setOtpSent(true);
+            } else {
+                alert(res.data.message);
+            }
+        } catch (err: any) {
+            alert(err.response?.data?.message || 'ኮድ መላክ አልተቻለም (ሰርቨሩን ቼክ ያድርጉ)!');
+        } finally {
+            setAuthLoading(false);
+        }
+    };
+
+    const handleRegister = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setAuthLoading(true);
+        try {
+            const res = await axios.post(`${API_BASE}/api/auth/register`, { username, email, phone, password, otp });
+            if (res.data.success) {
+                localStorage.setItem('vibebet_token', res.data.token);
+                setIsLoggedIn(true);
+                setCurrentBalance("0.00");
+                setIsRegisterOpen(false);
+                setOtpSent(false);
+            } else {
+                alert(res.data.message);
+            }
+        } catch (err: any) {
+            alert(err.response?.data?.message || 'የተሳሳተ ኮድ ነው ወይም መመዝገብ አልተቻለም!');
+        } finally {
+            setAuthLoading(false);
+        }
+    };
+
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setAuthLoading(true);
+        try {
+            const res = await axios.post(`${API_BASE}/api/auth/login`, { phone, password });
+            if (res.data.success) {
+                localStorage.setItem('vibebet_token', res.data.token);
+                setIsLoggedIn(true);
+                setCurrentBalance(res.data.user.balance || "0.00");
+                setIsLoginOpen(false);
+            } else {
+                alert(res.data.message);
+            }
+        } catch (err: any) {
+            alert(err.response?.data?.message || 'የተሳሳተ ስልክ ቁጥር ወይም የይለፍ ቃል ነው!');
+        } finally {
+            setAuthLoading(false);
+        }
+    };
+
     if (!isMounted) return <div className="min-h-screen bg-[#1c2024]"></div>;
 
     return (
         <div className="min-h-screen bg-[#1c2024] text-slate-300 font-sans text-sm relative">
+            
+            {/* 🌟 የተስተካከለው HEADER (ከ Login እና Wallet ጋር) 🌟 */}
             <header className="bg-[#ffcc00] border-b border-[#e6b800] sticky top-0 z-50 h-[60px] flex items-center justify-between px-4 shadow-md">
                 <button onClick={() => window.location.reload()} className="flex items-center gap-3 cursor-pointer hover:opacity-90 transition text-left">
                     <div className="w-11 h-11 shrink-0 rounded-[10px] overflow-hidden shadow-sm border border-black/10 bg-[#1c2024] p-1.5 flex items-center justify-center">
@@ -992,16 +1304,49 @@ export default function Home() {
                         </div>
                     </div>
                 </button>
+                
                 <div className="flex gap-2 sm:gap-4 items-center">
+                    {!isLoggedIn ? (
+                        <div className="flex gap-2">
+                            <button onClick={() => setIsLoginOpen(true)} className="bg-transparent border border-black text-black hover:bg-black/5 px-3 py-1.5 rounded-md font-black text-xs transition">ግባ (Login)</button>
+                            <button onClick={() => setIsRegisterOpen(true)} className="bg-[#0a0a0a] text-[#ffcc00] hover:bg-[#1a1a1a] px-3 py-1.5 rounded-md font-black text-xs transition shadow-md">ተመዝገብ (Register)</button>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-2">
+                            <div className="flex items-center bg-black/10 hover:bg-black/20 transition rounded-full h-[36px] overflow-hidden">
+                                <div className="flex items-center gap-2 px-3 text-black font-black text-sm">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
+                                    {currentBalance}
+                                </div>
+                                <button onClick={() => { setIsProfileDrawerOpen(true); }} className="bg-[#00e700] hover:bg-[#00c700] h-full px-3 flex items-center justify-center transition">
+                                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 4v16m8-8H4"></path></svg>
+                                </button>
+                            </div>
+                            
+                            <button className="w-[36px] h-[36px] rounded-full bg-black/10 flex items-center justify-center text-black hover:bg-black/20 transition hidden sm:flex">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                            </button>
+                            
+                            <button onClick={() => setIsProfileDrawerOpen(true)} className="w-[36px] h-[36px] rounded-full bg-black/10 flex items-center justify-center text-black hover:bg-black/20 transition">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                            </button>
+                        </div>
+                    )}
+                    <div className="w-[1px] h-6 bg-black/20 mx-1"></div>
                     <button onClick={() => setIsCheckTicketModalOpen(true)} className="bg-[#0a0a0a] text-[#ffcc00] hover:bg-[#1a1a1a] px-4 py-1.5 rounded-md font-black text-xs flex items-center gap-1.5 transition-colors shadow-md border border-black">
-                        <span className="text-sm">🔍</span> <span className="hidden sm:inline">ትኬት አረጋግጥ</span>
+                        <span className="text-sm">🔍</span> <span className="hidden sm:inline">ትኬት</span>
                     </button>
                 </div>
             </header>
 
+            {/* Mobile Bottom Navigation */}
             <div className="lg:hidden fixed bottom-0 left-0 right-0 h-[60px] bg-[#1e2328] border-t border-[#3b4148] flex justify-around items-center z-50 shadow-[0_-4px_10px_rgba(0,0,0,0.5)]">
                 <button onClick={() => setIsMobileMenuOpen(true)} className="flex flex-col items-center gap-1 text-slate-400 hover:text-[#ffcc00]"><span className="text-xl">☰</span><span className="text-[10px] font-bold uppercase">Menu</span></button>
-                <button onClick={() => setIsCheckTicketModalOpen(true)} className="flex flex-col items-center gap-1 text-slate-400 hover:text-[#ffcc00]"><span className="text-xl">🔍</span><span className="text-[10px] font-bold uppercase">Check</span></button>
+                {!isLoggedIn ? (
+                    <button onClick={() => setIsLoginOpen(true)} className="flex flex-col items-center gap-1 text-slate-400 hover:text-[#ffcc00]"><span className="text-xl">👤</span><span className="text-[10px] font-bold uppercase">Login</span></button>
+                ) : (
+                    <button onClick={() => setIsProfileDrawerOpen(true)} className="flex flex-col items-center gap-1 text-[#00e700] hover:text-white"><span className="text-xl">💰</span><span className="text-[10px] font-bold uppercase">{currentBalance}</span></button>
+                )}
                 <button onClick={() => { setIsMobileMenuOpen(false); setIsMobileBetSlipOpen(false); setSelectedMatch(null); }} className="flex flex-col items-center gap-1 text-[#ffcc00]"><span className="text-xl">🏠</span><span className="text-[10px] font-bold uppercase">Home</span></button>
                 <button onClick={() => setIsMobileBetSlipOpen(true)} className="flex flex-col items-center gap-1 text-slate-400 hover:text-[#ffcc00] relative">
                     <span className="text-xl">🧾</span><span className="text-[10px] font-bold uppercase">BetSlip</span>
@@ -1189,11 +1534,12 @@ export default function Home() {
                             </div>
                             
                             {(() => {
-                                const allCats = getCategorizedMarkets(selectedMatch);
+                                const liveMatchObj = fixtures.find((f: Fixture) => String(f.id) === String(selectedMatch.id)) || selectedMatch;
+                                const allCats = getCategorizedMarkets(liveMatchObj);
                                 const tabs = ['ALL', 'MAIN', 'TOTALS', 'COMBOS', 'HALF', 'HANDICAPS', 'PLAYERS'];
                                 const availableTabs = tabs.filter((t: string) => t === 'ALL' || (allCats[t] && allCats[t].length > 0));
 
-                                const displayMarkets = marketTab === 'ALL' ? allCats['ALL'] : (allCats[marketTab] || []);
+                                const displayMarkets = marketTab === 'ALL' ? (allCats['ALL'] || []) : (allCats[marketTab] || []);
 
                                 return (
                                     <>
@@ -1234,12 +1580,20 @@ export default function Home() {
                                                                         const isSelected = betSlip.some((item: any) => item.odd_id === odd.odd_id);
                                                                         const isFlashingUp = flashingOdds[odd.odd_id] === 'up';
                                                                         const isFlashingDown = flashingOdds[odd.odd_id] === 'down';
+                                                                        const prevVal = previousOddsMap[odd.odd_id];
                                                                         const flashClass = isFlashingUp ? 'bg-[#00e700] text-black shadow-inner' : isFlashingDown ? 'bg-red-500 text-white shadow-inner' : '';
 
                                                                         return (
-                                                                            <button key={odd.odd_id} onClick={() => handleMarketSelection(selectedMatch, odd, market.title)} className={`flex justify-between items-center p-3 transition-colors ${flashClass !== '' ? flashClass : isSelected ? 'bg-[#ffcc00] text-black' : 'bg-[#1a1f24] hover:bg-[#2a3038] text-white'}`}>
+                                                                            <button key={odd.odd_id} onClick={() => handleMarketSelection(liveMatchObj, odd, market.title)} className={`flex justify-between items-center p-3 transition-colors ${flashClass !== '' ? flashClass : isSelected ? 'bg-[#ffcc00] text-black' : 'bg-[#1a1f24] hover:bg-[#2a3038] text-white'}`}>
                                                                                 <span className={`text-[11px] font-medium truncate pr-2 ${flashClass !== '' ? (isFlashingUp ? 'text-black' : 'text-white') : isSelected ? 'text-black/80' : 'text-slate-400'}`}>{odd.option}</span>
-                                                                                <span className={`text-[12px] font-black ${flashClass !== '' ? (isFlashingUp ? 'text-black' : 'text-white') : isSelected ? 'text-black' : 'text-white'}`}>{odd.value}</span>
+                                                                                <span className={`text-[12px] font-black flex items-center gap-1 shrink-0 ${flashClass !== '' ? (isFlashingUp ? 'text-black' : 'text-white') : isSelected ? 'text-black' : 'text-white'}`}>
+                                                                                    {(isFlashingUp || isFlashingDown) && prevVal !== undefined && (
+                                                                                        <span className="text-[10px] line-through opacity-75 font-semibold">{prevVal.toFixed(2)}</span>
+                                                                                    )}
+                                                                                    <span>{odd.value}</span>
+                                                                                    {isFlashingUp && <span className="text-[10px] leading-none">▲</span>}
+                                                                                    {isFlashingDown && <span className="text-[10px] leading-none">▼</span>}
+                                                                                </span>
                                                                             </button>
                                                                         )
                                                                     })}
@@ -1282,6 +1636,7 @@ export default function Home() {
 
                                 <div className="flex justify-between items-center overflow-x-auto custom-scrollbar pb-1">
                                     <div className="flex items-center gap-1 bg-[#1a1f24] p-1 rounded-full border border-[#3b4148] shrink-0 shadow-inner relative">
+                                        <button onClick={() => setSelectedDateFilter('All')} className={`px-3 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors ${selectedDateFilter === 'All' ? 'bg-[#ffcc00] text-black shadow' : 'text-slate-400 hover:text-white'}`}>All</button>
                                         <button onClick={() => setSelectedDateFilter(todayStr)} className={`px-3 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors ${selectedDateFilter === todayStr ? 'bg-[#ffcc00] text-black shadow' : 'text-slate-400 hover:text-white'}`}>Tdy</button>
                                         <button onClick={() => setSelectedDateFilter(tomorrowStr)} className={`px-3 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors ${selectedDateFilter === tomorrowStr ? 'bg-[#ffcc00] text-black shadow' : 'text-slate-400 hover:text-white'}`}>Tmw</button>
                                         <button onClick={() => setSelectedDateFilter(dayAfterTmwStr)} className={`px-3 sm:px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-colors ${selectedDateFilter === dayAfterTmwStr ? 'bg-[#ffcc00] text-black shadow' : 'text-slate-400 hover:text-white'}`}>{dayAfterTmwLabel}</button>
@@ -1297,7 +1652,11 @@ export default function Home() {
                                 </div>
                             </div>
 
-                            <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#16191c]">
+                            <div
+                                ref={mainListScrollRef}
+                                onScroll={handleMainListScroll}
+                                className="flex-1 overflow-y-auto custom-scrollbar bg-[#16191c]"
+                            >
                                 {isFetchingFixtures ? (
                                     <div className="py-32 text-center flex flex-col items-center justify-center">
                                         <div className="w-8 h-8 border-4 border-[#3b4148] border-t-[#ffcc00] rounded-full animate-spin mb-4"></div><p className="text-slate-400 font-bold text-xs uppercase tracking-wider">ጨዋታዎችን በማምጣት ላይ...</p>
@@ -1306,94 +1665,129 @@ export default function Home() {
                                     <div className="py-20 text-center text-slate-500 text-xs font-bold">አሁን ላይ ምንም አይነት ጨዋታ አልተገኘም!</div>
                                 ) : (
                                     <div>
-                                        {displayLeagues.filter(([key, data]: [string, any]) => {
-                                            return (selectedCountryFilter !== 'All Countries' && selectedLeague !== 'Upcoming') ? data.details.country === selectedCountryFilter : true;
-                                        }).map(([key, data]: [string, any]) => {
-                                            let gamesToRender = data.games;
-                                            if (selectedLeague === 'Upcoming' && selectedCountryFilter !== 'All Countries') gamesToRender = gamesToRender.filter((g: any) => getLeagueDetails(g.league).country === selectedCountryFilter);
+                                        {(() => {
+                                            let renderedCount = 0;
+                                            return displayLeagues
+                                                .filter(([_, data]: [string, any]) => {
+                                                    return (selectedCountryFilter !== 'All Countries' && selectedLeague !== 'Upcoming')
+                                                        ? data.details.country === selectedCountryFilter
+                                                        : true;
+                                                })
+                                                .map(([key, data]: [string, any]) => {
+                                                    if (renderedCount >= visibleGamesLimit) return null;
 
-                                            const filteredGames = gamesToRender.filter((g: any) => {
-                                                const matchesSearch = (g.home_team || '').toLowerCase().includes(searchTerm.toLowerCase()) || (g.away_team || '').toLowerCase().includes(searchTerm.toLowerCase());
-                                                const matchesDate = selectedDateFilter === 'All' || new Date(g.match_time).toDateString() === selectedDateFilter;
-                                                return matchesSearch && matchesDate;
-                                            });
+                                                    let gamesToRender = data.games;
+                                                    if (selectedLeague === 'Upcoming' && selectedCountryFilter !== 'All Countries') {
+                                                        gamesToRender = gamesToRender.filter((g: any) => getLeagueDetails(g.league).country === selectedCountryFilter);
+                                                    }
 
-                                            if (selectedLeague !== 'Upcoming') {
-                                                filteredGames.sort((a: any, b: any) => new Date(a.match_time).getTime() - new Date(b.match_time).getTime());
-                                            }
+                                                    const filteredGames = gamesToRender.filter((g: any) => {
+                                                        const matchesSearch = (g.home_team || '').toLowerCase().includes(searchTerm.toLowerCase()) || (g.away_team || '').toLowerCase().includes(searchTerm.toLowerCase());
+                                                        const matchesDate = selectedDateFilter === 'All' || new Date(g.match_time).toDateString() === selectedDateFilter;
+                                                        return matchesSearch && matchesDate;
+                                                    });
 
-                                            if (filteredGames.length === 0) return null;
+                                                    if (selectedLeague !== 'Upcoming') {
+                                                        filteredGames.sort((a: any, b: any) => new Date(a.match_time).getTime() - new Date(b.match_time).getTime());
+                                                    }
 
-                                            return (
-                                                <div key={key} className="mb-4 bg-[#1a1f24] border-y border-[#3b4148] sm:mx-2 sm:rounded-lg sm:border sm:my-4 overflow-hidden shadow-sm">
-                                                    <div className="bg-[#24292e] px-3 py-2 flex items-center gap-2 border-b border-[#3b4148] sticky top-0 z-10">
-                                                        <div className="w-6 h-6 rounded-full flex items-center justify-center overflow-hidden shrink-0">{renderFlag(data.details.flag)}</div>
-                                                        <span className="text-[12px] font-black text-white tracking-wide">{data.details.country}: {data.details.name}</span>
-                                                    </div>
+                                                    if (filteredGames.length === 0) return null;
 
-                                                    <div className="flex flex-col">
-                                                        {filteredGames.map((game: any) => {
-                                                            const matchDate = new Date(game.match_time);
-                                                            const currentDisplayOdds = mainMarketView === '1X2' ? game.odds : game.dc_odds;
+                                                    const remainingSlots = Math.max(0, visibleGamesLimit - renderedCount);
+                                                    const gamesSlice = filteredGames.slice(0, remainingSlots);
+                                                    renderedCount += gamesSlice.length;
 
-                                                            const btn1 = currentDisplayOdds?.[0] || { odd_id: buildOddId('h2h', '1', game.id), option: "1", value: "0.00" };
-                                                            const btnX = currentDisplayOdds?.[1] || { odd_id: buildOddId('h2h', 'X', game.id), option: "X", value: "0.00" };
-                                                            const btn2 = currentDisplayOdds?.[2] || { odd_id: buildOddId('h2h', '2', game.id), option: "2", value: "0.00" };
+                                                    if (gamesSlice.length === 0) return null;
 
-                                                            const hasSelectionInGame = betSlip.some((item: any) => item.fixture_id === game.id);
+                                                    return (
+                                                        <div key={key} className="mb-4 bg-[#1a1f24] border-y border-[#3b4148] sm:mx-2 sm:rounded-lg sm:border sm:my-4 overflow-hidden shadow-sm">
+                                                            <div className="bg-[#24292e] px-3 py-2 flex items-center gap-2 border-b border-[#3b4148] sticky top-0 z-10">
+                                                                <div className="w-6 h-6 rounded-full flex items-center justify-center overflow-hidden shrink-0">{renderFlag(data.details.flag)}</div>
+                                                                <span className="text-[12px] font-black text-white tracking-wide">{data.details.country}: {data.details.name}</span>
+                                                            </div>
 
-                                                            const isFlashBtn1Up = flashingOdds[btn1.odd_id] === 'up';
-                                                            const isFlashBtn1Down = flashingOdds[btn1.odd_id] === 'down';
-                                                            const flashClass1 = isFlashBtn1Up ? 'bg-[#00e700] text-black shadow-inner' : isFlashBtn1Down ? 'bg-red-500 text-white shadow-inner' : '';
+                                                            <div className="flex flex-col">
+                                                                {gamesSlice.map((game: any) => {
+                                                                    const matchDate = new Date(game.match_time);
+                                                                    const currentDisplayOdds = mainMarketView === '1X2' ? game.odds : game.dc_odds;
 
-                                                            const isFlashBtnXUp = flashingOdds[btnX.odd_id] === 'up';
-                                                            const isFlashBtnXDown = flashingOdds[btnX.odd_id] === 'down';
-                                                            const flashClassX = isFlashBtnXUp ? 'bg-[#00e700] text-black shadow-inner' : isFlashBtnXDown ? 'bg-red-500 text-white shadow-inner' : '';
+                                                                    const btn1 = currentDisplayOdds?.[0] || { odd_id: buildOddId('h2h', '1', game.id), option: "1", value: "0.00" };
+                                                                    const btnX = currentDisplayOdds?.[1] || { odd_id: buildOddId('h2h', 'X', game.id), option: "X", value: "0.00" };
+                                                                    const btn2 = currentDisplayOdds?.[2] || { odd_id: buildOddId('h2h', '2', game.id), option: "2", value: "0.00" };
 
-                                                            const isFlashBtn2Up = flashingOdds[btn2.odd_id] === 'up';
-                                                            const isFlashBtn2Down = flashingOdds[btn2.odd_id] === 'down';
-                                                            const flashClass2 = isFlashBtn2Up ? 'bg-[#00e700] text-black shadow-inner' : isFlashBtn2Down ? 'bg-red-500 text-white shadow-inner' : '';
+                                                                    const hasSelectionInGame = betSlip.some((item: any) => item.fixture_id === game.id);
 
-                                                            return (
-                                                                <div key={game.id} className="flex border-b border-[#2a3038] last:border-b-0 hover:bg-[#24292e] transition-colors bg-[#1a1f24]">
-                                                                    <div className="w-[50px] sm:w-[60px] flex flex-col justify-center items-center text-[11px] sm:text-[12px] font-bold text-slate-400 border-r border-[#2a3038] shrink-0 bg-[#16191c]/50 leading-tight py-1">
-                                                                        <span>{matchDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }).split(' ')[0]}</span>
-                                                                        <span className="text-[9px] mt-[1px]">{matchDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }).split(' ')[1]}</span>
-                                                                    </div>
+                                                                    const isFlashBtn1Up = flashingOdds[btn1.odd_id] === 'up';
+                                                                    const isFlashBtn1Down = flashingOdds[btn1.odd_id] === 'down';
+                                                                    const flashClass1 = isFlashBtn1Up ? 'bg-[#00e700] text-black shadow-inner' : isFlashBtn1Down ? 'bg-red-500 text-white shadow-inner' : '';
 
-                                                                    <div onClick={() => setSelectedMatch(game)} className="flex-1 flex flex-col justify-center px-2 py-2 min-w-0 cursor-pointer hover:bg-[#2a3038]/50 transition-colors">
-                                                                        <div className="flex items-center gap-1.5 mb-1">
-                                                                            {game.home_team_logo && <img src={game.home_team_logo} alt={game.home_team} className="w-3.5 h-3.5 sm:w-4 sm:h-4 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
-                                                                            <span className="text-[11.5px] sm:text-[13px] font-bold text-white truncate">{game.home_team}</span>
+                                                                    const isFlashBtnXUp = flashingOdds[btnX.odd_id] === 'up';
+                                                                    const isFlashBtnXDown = flashingOdds[btnX.odd_id] === 'down';
+                                                                    const flashClassX = isFlashBtnXUp ? 'bg-[#00e700] text-black shadow-inner' : isFlashBtnXDown ? 'bg-red-500 text-white shadow-inner' : '';
+
+                                                                    const isFlashBtn2Up = flashingOdds[btn2.odd_id] === 'up';
+                                                                    const isFlashBtn2Down = flashingOdds[btn2.odd_id] === 'down';
+                                                                    const flashClass2 = isFlashBtn2Up ? 'bg-[#00e700] text-black shadow-inner' : isFlashBtn2Down ? 'bg-red-500 text-white shadow-inner' : '';
+
+                                                                    return (
+                                                                        <div key={game.id} className="flex border-b border-[#2a3038] last:border-b-0 hover:bg-[#24292e] transition-colors bg-[#1a1f24]">
+                                                                            <div className="w-[50px] sm:w-[60px] flex flex-col justify-center items-center text-[11px] sm:text-[12px] font-bold text-slate-400 border-r border-[#2a3038] shrink-0 bg-[#16191c]/50 leading-tight py-1">
+                                                                                <span>{matchDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }).split(' ')[0]}</span>
+                                                                                <span className="text-[9px] mt-[1px]">{matchDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }).split(' ')[1]}</span>
+                                                                            </div>
+
+                                                                            <div onClick={() => setSelectedMatch(game)} className="flex-1 flex flex-col justify-center px-2 py-2 min-w-0 cursor-pointer hover:bg-[#2a3038]/50 transition-colors">
+                                                                                <div className="flex items-center gap-1.5 mb-1">
+                                                                                    {game.home_team_logo && <img src={game.home_team_logo} alt={game.home_team} loading="lazy" className="w-3.5 h-3.5 sm:w-4 sm:h-4 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
+                                                                                    <span className="text-[11.5px] sm:text-[13px] font-bold text-white truncate">{game.home_team}</span>
+                                                                                </div>
+                                                                                <div className="flex items-center gap-1.5">
+                                                                                    {game.away_team_logo && <img src={game.away_team_logo} alt={game.away_team} loading="lazy" className="w-3.5 h-3.5 sm:w-4 sm:h-4 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
+                                                                                    <span className="text-[11.5px] sm:text-[13px] font-bold text-white truncate">{game.away_team}</span>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            <div className="flex items-stretch shrink-0 bg-[#2a3038] gap-[1px]">
+                                                                                <button onClick={() => toggleSelection(game, btn1, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center gap-0.5 text-[11px] sm:text-[13px] font-black transition-colors ${flashClass1 !== '' ? flashClass1 : betSlip.some((item: any) => item.odd_id === btn1.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btn1.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                                                    <span>{btn1?.value !== "0.00" ? btn1?.value : "-"}</span>
+                                                                                    {isFlashBtn1Up && <span className="text-[8px] leading-none">▲</span>}
+                                                                                    {isFlashBtn1Down && <span className="text-[8px] leading-none">▼</span>}
+                                                                                </button>
+                                                                                <button onClick={() => toggleSelection(game, btnX, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center gap-0.5 text-[11px] sm:text-[13px] font-black transition-colors ${flashClassX !== '' ? flashClassX : betSlip.some((item: any) => item.odd_id === btnX.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btnX.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                                                    <span>{btnX?.value !== "0.00" ? btnX?.value : "-"}</span>
+                                                                                    {isFlashBtnXUp && <span className="text-[8px] leading-none">▲</span>}
+                                                                                    {isFlashBtnXDown && <span className="text-[8px] leading-none">▼</span>}
+                                                                                </button>
+                                                                                <button onClick={() => toggleSelection(game, btn2, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center gap-0.5 text-[11px] sm:text-[13px] font-black transition-colors ${flashClass2 !== '' ? flashClass2 : betSlip.some((item: any) => item.odd_id === btn2.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btn2.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                                                    <span>{btn2?.value !== "0.00" ? btn2?.value : "-"}</span>
+                                                                                    {isFlashBtn2Up && <span className="text-[8px] leading-none">▲</span>}
+                                                                                    {isFlashBtn2Down && <span className="text-[8px] leading-none">▼</span>}
+                                                                                </button>
+                                                                            </div>
+
+                                                                            <button onClick={() => setSelectedMatch(game)} className={`w-10 sm:w-12 flex items-center justify-center text-[18px] sm:text-[22px] font-black transition-colors ml-[1px] bg-[#1a1f24] hover:bg-[#2a3038] ${hasSelectionInGame ? 'text-[#ffcc00]' : 'text-slate-400 hover:text-white'}`}>
+                                                                                +
+                                                                            </button>
                                                                         </div>
-                                                                        <div className="flex items-center gap-1.5">
-                                                                            {game.away_team_logo && <img src={game.away_team_logo} alt={game.away_team} className="w-3.5 h-3.5 sm:w-4 sm:h-4 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
-                                                                            <span className="text-[11.5px] sm:text-[13px] font-bold text-white truncate">{game.away_team}</span>
-                                                                        </div>
-                                                                    </div>
+                                                                    )
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                });
+                                        })()}
 
-                                                                    <div className="flex items-stretch shrink-0 bg-[#2a3038] gap-[1px]">
-                                                                        <button onClick={() => toggleSelection(game, btn1, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center text-[11px] sm:text-[13px] font-black transition-colors ${flashClass1 !== '' ? flashClass1 : betSlip.some((item: any) => item.odd_id === btn1.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btn1.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                                                                            {btn1?.value !== "0.00" ? btn1?.value : "-"}
-                                                                        </button>
-                                                                        <button onClick={() => toggleSelection(game, btnX, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center text-[11px] sm:text-[13px] font-black transition-colors ${flashClassX !== '' ? flashClassX : betSlip.some((item: any) => item.odd_id === btnX.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btnX.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                                                                            {btnX?.value !== "0.00" ? btnX?.value : "-"}
-                                                                        </button>
-                                                                        <button onClick={() => toggleSelection(game, btn2, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center text-[11px] sm:text-[13px] font-black transition-colors ${flashClass2 !== '' ? flashClass2 : betSlip.some((item: any) => item.odd_id === btn2.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btn2.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                                                                            {btn2?.value !== "0.00" ? btn2?.value : "-"}
-                                                                        </button>
-                                                                    </div>
-
-                                                                    <button onClick={() => setSelectedMatch(game)} className={`w-10 sm:w-12 flex items-center justify-center text-[18px] sm:text-[22px] font-black transition-colors ml-[1px] bg-[#1a1f24] hover:bg-[#2a3038] ${hasSelectionInGame ? 'text-[#ffcc00]' : 'text-slate-400 hover:text-white'}`}>
-                                                                        +
-                                                                    </button>
-                                                                </div>
-                                                            )
-                                                        })}
-                                                    </div>
-                                                </div>
-                                            )
-                                        })}
+                                        {visibleGamesLimit < activeFixtures.length && (
+                                            <div className="py-4 text-center">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setVisibleGamesLimit(prev => prev + LOAD_MORE_STEP)}
+                                                    className="bg-[#24292e] hover:bg-[#2f363d] text-[#ffcc00] border border-[#3b4148] px-6 py-2 rounded-lg text-xs font-black transition shadow"
+                                                >
+                                                    ተጨማሪ ጨዋታዎችን አሳይ ({visibleGamesLimit} / {activeFixtures.length})
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -1420,13 +1814,16 @@ export default function Home() {
                             <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-60"><span className="text-4xl mb-2">📋</span><p className="text-xs font-bold text-white mb-1">ምንም አልመረጡም</p></div>
                         ) : (
                             <div className="flex flex-col p-1.5 space-y-1.5">
-                                {betSlip.map((item: any) => {
+                                {betSlip.map((item: BetSlipItem) => {
                                     const isStarted = item.match_time && !isNaN(new Date(item.match_time).getTime()) 
                                         ? new Date(item.match_time).getTime() <= new Date().getTime() 
                                         : false;
 
                                     const isFlashingUp = flashingOdds[item.odd_id] === 'up';
                                     const isFlashingDown = flashingOdds[item.odd_id] === 'down';
+                                    const prevOdd = item.previous_odd_value ?? previousOddsMap[item.odd_id];
+                                    const hasOddChanged = prevOdd !== undefined && Math.abs(Number(item.odd_value) - Number(prevOdd)) >= 0.005;
+                                    const isOddIncreased = hasOddChanged && Number(item.odd_value) > Number(prevOdd);
                                     
                                     return (
                                         <div key={item.odd_id} className={`bg-[#1e2328] border ${isStarted ? 'border-red-500 shadow-[0_0_5px_rgba(239,68,68,0.3)]' : isFlashingUp ? 'border-[#00e700] shadow-[0_0_5px_rgba(0,231,0,0.3)]' : isFlashingDown ? 'border-red-500 shadow-[0_0_5px_rgba(239,68,68,0.3)]' : 'border-[#3b4148] hover:border-[#ffcc00]/50'} rounded-lg p-2 relative group transition-colors shadow-sm`}>
@@ -1450,8 +1847,17 @@ export default function Home() {
                                                     <span className="text-slate-500 text-[10px]">→</span>
                                                     <span className="text-[11px] font-black text-[#ffcc00] truncate">{item.odd_name}</span>
                                                 </div>
-                                                <div className={`px-2 py-0.5 rounded text-xs font-black shrink-0 shadow-sm ${isFlashingUp ? 'bg-[#00e700] text-black' : isFlashingDown ? 'bg-red-500 text-white' : 'bg-[#ffcc00] text-black'}`}>
-                                                    {Number(item.odd_value).toFixed(2)}
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    {hasOddChanged && (
+                                                        <span className="text-[10px] text-slate-400 line-through font-bold">
+                                                            {Number(prevOdd).toFixed(2)}
+                                                        </span>
+                                                    )}
+                                                    <div className={`px-2 py-0.5 rounded text-xs font-black shrink-0 shadow-sm flex items-center gap-1 ${isFlashingUp ? 'bg-[#00e700] text-black' : isFlashingDown ? 'bg-red-500 text-white' : hasOddChanged ? (isOddIncreased ? 'bg-[#00e700]/90 text-black' : 'bg-orange-500 text-black') : 'bg-[#ffcc00] text-black'}`}>
+                                                        <span>{Number(item.odd_value).toFixed(2)}</span>
+                                                        {(isFlashingUp || (hasOddChanged && isOddIncreased)) && <span className="text-[9px] leading-none">▲</span>}
+                                                        {(isFlashingDown || (hasOddChanged && !isOddIncreased)) && <span className="text-[9px] leading-none">▼</span>}
+                                                    </div>
                                                 </div>
                                             </div>
 
@@ -1490,14 +1896,16 @@ export default function Home() {
                             <div className="h-[18px] mb-2 flex items-center justify-center">{(limitWarning || errorMessage) && <p className="text-[10px] text-red-500 font-bold leading-tight text-center">{limitWarning || errorMessage}</p>}</div>
                             <div className="flex gap-2 h-[44px]">
                                 <button onClick={() => { setBetSlip([]); localStorage.removeItem('vibebet_saved_betslip'); clearBookingCode(); }} className="bg-[#24292e] border border-[#3b4148] text-slate-400 hover:text-red-400 hover:border-red-400 text-sm font-bold w-12 rounded flex items-center justify-center transition-colors">🗑</button>
+                                
                                 <button onClick={handlePlaceBet} disabled={isLoading || !!limitWarning} className="flex-1 bg-[#ffcc00] hover:bg-[#e6b800] text-black font-black text-sm rounded flex items-center justify-center transition-transform active:scale-[0.98] disabled:opacity-50 disabled:bg-slate-600 disabled:text-slate-400 disabled:cursor-not-allowed shadow-md">
-                                    {isLoading ? '...' : 'Book Bet'}
+                                    {isLoading ? '...' : isLoggedIn ? 'Pay from Balance' : 'Book Bet'}
                                 </button>
                             </div>
                         </div>
                     )}
                 </aside>
             </div>
+
 
             {/* 🌟 ቲኬት ማረጋገጫ (Check Ticket Modal) 🌟 */}
             {isCheckTicketModalOpen && (
@@ -1600,7 +2008,7 @@ export default function Home() {
                 </div>
             )}
 
-            {/* 🌟 አዲሱ TICKET BOOKED PREVIEW 🌟 */}
+            {/* 🌟 TICKET BOOKED PREVIEW 🌟 */}
             {bookingCode && !isBookingPreviewOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4 overflow-y-auto">
                     <div className="bg-[#1e2328] border border-[#3b4148] w-full max-w-[360px] relative my-auto flex flex-col animate-fade-in-down rounded-2xl overflow-hidden shadow-2xl">
@@ -1716,7 +2124,7 @@ export default function Home() {
                                             <span className="text-slate-400 text-[13px] leading-tight">⚽</span>
                                             <h3 className="text-[13px] font-bold text-white leading-snug">{item.home_team} - {item.away_team}</h3>
                                         </div>
-                                        <span className="text-[15px] font-black text-white shrink-0">{item.odd_value.toFixed(2)}</span>
+                                        <span className="text-[15px] font-black text-white shrink-0">{Number(item.odd_value).toFixed(2)}</span>
                                     </div>
                                     <div className="flex justify-between items-center pl-[22px]">
                                         <span className="text-[11px] text-slate-500 font-medium">{item.market_name}</span>
@@ -1749,17 +2157,218 @@ export default function Home() {
                     </div>
                 </div>
             )}
-            
+
+            {/* 🌟 ሎጊን ፎርም (Login Modal) 🌟 */}
+            {isLoginOpen && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-[#1e2328] border border-[#3b4148] w-full max-w-sm rounded-xl overflow-hidden shadow-2xl relative">
+                        <div className="bg-[#24292e] p-4 border-b border-[#3b4148] flex justify-between items-center">
+                            <h2 className="text-white font-black text-lg">መግቢያ (Login)</h2>
+                            <button onClick={() => setIsLoginOpen(false)} className="text-slate-400 hover:text-white text-xl">✕</button>
+                        </div>
+                        <form onSubmit={handleLogin} className="p-5 flex flex-col gap-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 mb-1 block">ስልክ ቁጥር (Phone)</label>
+                                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required placeholder="09..." className="w-full bg-[#0d1117] border border-[#3b4148] text-white px-4 py-2.5 rounded-lg outline-none focus:border-[#ffcc00] text-sm transition" />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 mb-1 block">የይለፍ ቃል (Password)</label>
+                                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="••••••••" className="w-full bg-[#0d1117] border border-[#3b4148] text-white px-4 py-2.5 rounded-lg outline-none focus:border-[#ffcc00] text-sm transition" />
+                            </div>
+                            <button type="submit" disabled={authLoading} className="w-full bg-[#ffcc00] hover:bg-[#e6b800] text-black font-black py-3 rounded-lg shadow-md transition-colors mt-2 disabled:opacity-50">
+                                {authLoading ? 'እየገባ ነው...' : 'ግባ (Login)'}
+                            </button>
+                            <p className="text-center text-xs text-slate-400 mt-2">
+                                አካውንት የለዎትም? <button type="button" onClick={() => { setIsLoginOpen(false); setIsRegisterOpen(true); }} className="text-[#ffcc00] hover:underline font-bold">እዚህ ይመዝገቡ</button>
+                            </p>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* 🌟 መመዝገቢያ ፎርም (Register & OTP Modal) 🌟 */}
+            {isRegisterOpen && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-[#1e2328] border border-[#3b4148] w-full max-w-sm rounded-xl overflow-hidden shadow-2xl relative max-h-full overflow-y-auto custom-scrollbar">
+                        <div className="bg-[#24292e] p-4 border-b border-[#3b4148] flex justify-between items-center sticky top-0 z-10">
+                            <h2 className="text-[#ffcc00] font-black text-lg">አዲስ ይመዝገቡ</h2>
+                            <button onClick={() => { setIsRegisterOpen(false); setOtpSent(false); }} className="text-slate-400 hover:text-white text-xl">✕</button>
+                        </div>
+                        <div className="p-5">
+                            {!otpSent ? (
+                                <form onSubmit={handleSendOtp} className="flex flex-col gap-4">
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-400 mb-1 block">ሙሉ ስም (Full Name)</label>
+                                        <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} required placeholder="ስምዎን ያስገቡ..." className="w-full bg-[#0d1117] border border-[#3b4148] text-white px-4 py-2.5 rounded-lg outline-none focus:border-[#ffcc00] text-sm transition" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-400 mb-1 block">ኢሜል (Email) - አማራጭ</label>
+                                        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="example@gmail.com" className="w-full bg-[#0d1117] border border-[#3b4148] text-white px-4 py-2.5 rounded-lg outline-none focus:border-[#ffcc00] text-sm transition" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-400 mb-1 block">ስልክ ቁጥር (Phone)</label>
+                                        <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required placeholder="09..." className="w-full bg-[#0d1117] border border-[#3b4148] text-white px-4 py-2.5 rounded-lg outline-none focus:border-[#ffcc00] text-sm transition" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-400 mb-1 block">የይለፍ ቃል (Password)</label>
+                                        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="ቢያንስ 6 ቁምፊዎች" minLength={6} className="w-full bg-[#0d1117] border border-[#3b4148] text-white px-4 py-2.5 rounded-lg outline-none focus:border-[#ffcc00] text-sm transition" />
+                                    </div>
+                                    <button type="submit" disabled={authLoading} className="w-full bg-[#ffcc00] hover:bg-[#e6b800] text-black font-black py-3 rounded-lg shadow-md transition-colors mt-2 disabled:opacity-50">
+                                        {authLoading ? 'ኮድ እየተላከ ነው...' : 'የማረጋገጫ ኮድ ላክ (Send OTP)'}
+                                    </button>
+                                </form>
+                            ) : (
+                                <form onSubmit={handleRegister} className="flex flex-col gap-4">
+                                    <div className="bg-green-500/10 border border-green-500/20 p-3 rounded-lg text-center mb-2">
+                                        <p className="text-green-500 text-xs font-bold">ኮዱ ወደ {phone} ተልኳል!</p>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-400 mb-1 block">የደረስዎትን ኮድ ያስገቡ (OTP)</label>
+                                        <input type="text" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} required maxLength={6} placeholder="6 ድጅት ኮድ..." className="w-full bg-[#0d1117] border border-[#3b4148] text-white px-4 py-3 rounded-lg outline-none focus:border-[#ffcc00] text-center text-lg tracking-[0.5em] font-black transition" />
+                                    </div>
+                                    <button type="submit" disabled={authLoading || otp.length < 4} className="w-full bg-[#ffcc00] hover:bg-[#e6b800] text-black font-black py-3 rounded-lg shadow-md transition-colors mt-2 disabled:opacity-50">
+                                        {authLoading ? 'እያረጋገጠ ነው...' : 'አረጋግጥ እና ጨርስ'}
+                                    </button>
+                                    <button type="button" onClick={() => setOtpSent(false)} className="text-xs text-slate-400 hover:text-white mt-2 font-bold underline text-center w-full">
+                                        ስልክ ቁጥር ለመቀየር ተመለስ
+                                    </button>
+                                </form>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 🌟 PROFILE DRAWER 🌟 */}
+            {isProfileDrawerOpen && (
+                <>
+                    <div className="fixed inset-0 bg-black/60 z-[300] animate-fade-in" onClick={() => setIsProfileDrawerOpen(false)} />
+                    <div className="fixed top-0 right-0 bottom-0 w-[320px] sm:w-[360px] bg-[#f0f2f5] z-[310] flex flex-col shadow-2xl transform transition-transform animate-slide-in-right overflow-hidden">
+                        
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-4 bg-white border-b border-gray-200 shrink-0">
+                            <div className="flex items-center gap-2 bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg text-sm font-bold border border-blue-100 shadow-sm">
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.879V14.89h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.989C18.343 21.129 22 16.99 22 12c0-5.523-4.477-10-10-10z"/></svg>
+                                {phone ? phone : 'User Account'}
+                            </div>
+                            <button onClick={() => setIsProfileDrawerOpen(false)} className="text-gray-400 hover:text-gray-800 transition bg-gray-100 hover:bg-gray-200 rounded-full p-1.5">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto custom-scrollbar-light">
+                            {/* Balances */}
+                            <div className="bg-white px-5 py-4 border-b border-gray-200 space-y-4">
+                                <div className="flex justify-between items-center text-sm">
+                                    <div className="flex items-center gap-3 text-gray-500 font-medium">
+                                        <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+                                        Won
+                                    </div>
+                                    <div className="font-black text-black">0.00 ETB</div>
+                                </div>
+                                <div className="flex justify-between items-center text-sm">
+                                    <div className="flex items-center gap-3 text-gray-500 font-medium">
+                                        <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
+                                        Deposit
+                                    </div>
+                                    <div className="font-black text-black">{currentBalance} ETB</div>
+                                </div>
+                                <div className="flex justify-between items-center text-sm">
+                                    <div className="flex items-center gap-3 text-gray-500 font-medium">
+                                        <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"></path></svg>
+                                        Freebets
+                                    </div>
+                                    <div className="font-black text-black">0.00 ETB</div>
+                                </div>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="p-4 bg-white space-y-3 border-b border-gray-200">
+                                <div className="flex gap-3">
+                                    <button onClick={() => { setIsProfileDrawerOpen(false); router.push('/profile'); }} className="flex-1 bg-[#4ade80] hover:bg-[#22c55e] text-white rounded-lg py-3 font-black text-[11px] flex items-center justify-center gap-2 transition-colors shadow-sm tracking-wide">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
+                                        DEPOSIT
+                                    </button>
+                                    <button onClick={() => { setIsProfileDrawerOpen(false); router.push('/profile'); }} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg py-3 font-black text-[11px] flex items-center justify-center gap-2 transition-colors shadow-sm tracking-wide border border-gray-200">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                                        WITHDRAW
+                                    </button>
+                                </div>
+                                <button className="w-full bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg py-3 font-black text-[11px] flex items-center justify-center gap-2 transition-colors shadow-sm border border-blue-100 tracking-wide">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                                    SEND MONEY
+                                </button>
+                            </div>
+
+                            {/* Support Card */}
+                            <div className="p-4">
+                                <div className="bg-white rounded-2xl p-4 flex gap-4 shadow-sm items-center border border-gray-100">
+                                    <div className="w-14 h-14 bg-gray-100 rounded-full shrink-0 flex items-center justify-center text-3xl border border-gray-200 shadow-inner">
+                                        👩🏾‍💻
+                                    </div>
+                                    <div>
+                                        <div className="font-black text-black text-sm flex items-center gap-2">Support <span className="bg-blue-100 text-blue-600 text-[9px] px-2 py-0.5 rounded-full font-bold">24/7</span></div>
+                                        <p className="text-gray-500 text-[11px] leading-tight mt-1 mb-2 font-medium">Contact us if you still have questions</p>
+                                        <button className="bg-[#3b82f6] hover:bg-blue-600 text-white text-[11px] font-bold px-4 py-1.5 rounded-full shadow-sm transition-colors">Contact support</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Grid Nav */}
+                            <div className="px-4 pb-4 grid grid-cols-2 gap-3">
+                                <button className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 hover:bg-gray-50 transition-colors">
+                                    <svg className="w-6 h-6 text-[#3b82f6]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                                    <span className="text-[11px] font-bold text-gray-700">Transfer</span>
+                                </button>
+                                <button onClick={() => { setIsProfileDrawerOpen(false); router.push('/profile'); }} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 hover:bg-gray-50 transition-colors">
+                                    <svg className="w-6 h-6 text-[#3b82f6]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    <span className="text-[11px] font-bold text-gray-700">Bet History</span>
+                                </button>
+                                <button onClick={() => { setIsProfileDrawerOpen(false); router.push('/profile'); }} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 hover:bg-gray-50 transition-colors">
+                                    <svg className="w-6 h-6 text-[#3b82f6]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                    <span className="text-[11px] font-bold text-gray-700 text-center leading-tight">Transaction<br/>History</span>
+                                </button>
+                                <button className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 hover:bg-gray-50 transition-colors">
+                                    <svg className="w-6 h-6 text-[#3b82f6]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                                    <span className="text-[11px] font-bold text-gray-700">Affiliate</span>
+                                </button>
+                                <button className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 hover:bg-gray-50 transition-colors col-span-2 sm:col-span-1">
+                                    <svg className="w-6 h-6 text-[#3b82f6]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"></path></svg>
+                                    <span className="text-[11px] font-bold text-gray-700">Promotions</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Sign Out Button */}
+                        <div className="p-4 bg-white border-t border-gray-200 mt-auto shrink-0">
+                            <button onClick={() => { setIsLoggedIn(false); localStorage.removeItem('vibebet_token'); setIsProfileDrawerOpen(false); }} className="w-full bg-[#e5e7eb] hover:bg-gray-300 text-gray-800 font-black tracking-wider py-3.5 rounded-xl flex items-center justify-center gap-2 text-xs transition-colors shadow-sm">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                                SIGN OUT
+                            </button>
+                        </div>
+                    </div>
+                </>
+            )}
+
             <style jsx global>{`
                 .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
                 .custom-scrollbar::-webkit-scrollbar-thumb { background: #3b4148; border-radius: 10px; }
                 input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
                 input[type=number] { -moz-appearance: textfield; }
                 input[type=date]::-webkit-calendar-picker-indicator { width: 100%; height: 100%; margin: 0; padding: 0; cursor: pointer; }
+                
                 @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
                 .animate-fade-in-down { animation: fadeInDown 0.2s ease-out forwards; }
+                
                 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
                 .animate-fade-in { animation: fadeIn 0.2s forwards; }
+
+                /* 🌟 Drawer Animations 🌟 */
+                @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+                .animate-slide-in-right { animation: slideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+
+                .custom-scrollbar-light::-webkit-scrollbar { width: 5px; height: 5px; }
+                .custom-scrollbar-light::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
             `}</style>
         </div>
     );

@@ -8,8 +8,23 @@ const MAX_STAKE = 10000;
 const MAX_WIN = 10000;
 const MIN_STAKE = 20;
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const API_URL =
+    (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) ||
+    'http://localhost:5000';
 
+// 1. Request Interceptor (ሁልጊዜ ቶከኑን ከ localStorage አውጥቶ አብሮ ይልካል)
+axios.interceptors.request.use(
+    (config) => {
+        const cashierToken = typeof window !== 'undefined' ? localStorage.getItem('cashierToken') : null;
+        if (cashierToken && config.headers) {
+            config.headers.Authorization = `Bearer ${cashierToken}`;
+        }
+        return config;
+    },
+    (error) => Promise.reject(error)
+);
+
+// 2. Response Interceptor (403 ላይ እንዳያስወጣ ተደርጓል)
 axios.interceptors.response.use(
     response => response,
     error => {
@@ -21,7 +36,7 @@ axios.interceptors.response.use(
 
         if (
             error.response &&
-            (error.response.status === 401 || error.response.status === 403) &&
+            error.response.status === 401 &&
             !isAuthRequest
         ) {
             localStorage.removeItem('cashierToken');
@@ -32,42 +47,18 @@ axios.interceptors.response.use(
     }
 );
 
-function BarcodeSVG({ value, lineColor = '#000000', className }: { value: string; lineColor?: string; className?: string }) {
-    const svgRef = useRef<SVGSVGElement>(null);
-    useEffect(() => {
-        if (!svgRef.current || !value) return;
-        let cancelled = false;
-        import('jsbarcode').then(({ default: JsBarcode }) => {
-            if (cancelled || !svgRef.current) return;
-            try {
-                JsBarcode(svgRef.current, value, {
-                    format: 'CODE128',
-                    width: 1.6,
-                    height: 40,
-                    displayValue: false,
-                    margin: 0,
-                    background: 'transparent',
-                    lineColor
-                });
-            } catch (e) {}
-        });
-        return () => { cancelled = true; };
-    }, [value, lineColor]);
-    return <svg ref={svgRef} className={className} />;
-}
-
 const formatShortDateTime = (iso: string) => {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return '';
     const pad = (n: number) => n.toString().padStart(2, '0');
-    return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
 const formatMatchListDateTime = (iso: string) => {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return '';
     const pad = (n: number) => n.toString().padStart(2, '0');
-    return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear().toString().slice(-2)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear().toString().slice(-2)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
 const getLeagueDetails = (key: string, flagFromApi?: string) => {
@@ -226,6 +217,37 @@ const getFormattedMarket = (item: any, fixtures: any[]) => {
     return { marketText, pickText };
 };
 
+// ትክክለኛ የሚያሸንፈውን ብር (Potential Win) ማስያ (ወደ Stake እንዳይመለስ የሚከላከል)
+const computeTruePotentialWin = (ticketObj: any) => {
+    if (!ticketObj) return 0;
+    const stake = parseFloat(ticketObj.stake_amount) || 0;
+    const storedWin = parseFloat(ticketObj.potential_win) || 0;
+    const storedOdds = parseFloat(ticketObj.total_odds) || 0;
+
+    if (Array.isArray(ticketObj.selections) && ticketObj.selections.length > 0) {
+        let activeOdds = 1;
+        for (const s of ticketObj.selections) {
+            const st = String(s.match_status || '').toLowerCase();
+            if (!['postponed', 'cancelled', 'abandoned'].includes(st)) {
+                const oddVal = parseFloat(s.odd_value);
+                if (Number.isFinite(oddVal) && oddVal > 0) activeOdds *= oddVal;
+            }
+        }
+        const calcFromSelections = Math.round(activeOdds * stake * 100) / 100;
+        if (calcFromSelections > stake && (storedWin <= stake + 0.01 || Math.abs(storedWin - stake) < 0.05)) {
+            return calcFromSelections;
+        }
+        if (storedWin > 0) return storedWin;
+        return calcFromSelections;
+    }
+
+    if (storedOdds > 1 && (storedWin <= stake + 0.01)) {
+        return Math.round(storedOdds * stake * 100) / 100;
+    }
+
+    return storedWin;
+};
+
 export default function CashierDashboard() {
     const [token, setToken] = useState<string | null>(null);
     const [username, setUsername] = useState('');
@@ -243,11 +265,14 @@ export default function CashierDashboard() {
     const [payoutTicket, setPayoutTicket] = useState('');
     const [payoutDetails, setPayoutDetails] = useState<any>(null);
     const [isPayingOut, setIsPayingOut] = useState(false);
+    const [aiAnalysis, setAiAnalysis] = useState<any>(null);
+    const [isAiChecking, setIsAiChecking] = useState(false);
     const [isPrinting, setIsPrinting] = useState(false);
     
     const [isPrintPreviewOpen, setIsPrintPreviewOpen] = useState(false);
 
     const [recentTickets, setRecentTickets] = useState<any[]>([]);
+    const [allHistoryTickets, setAllHistoryTickets] = useState<any[]>([]);
     const [fixtures, setFixtures] = useState<any[]>([]);
     
     const [sidebarSearch, setSidebarSearch] = useState('');
@@ -257,8 +282,16 @@ export default function CashierDashboard() {
     const [reportPassword, setReportPassword] = useState('');
     const [reportError, setReportError] = useState('');
     
-    const [reportFilter, setReportFilter] = useState<'today' | 'week' | 'month' | 'year'>('today');
+    const getLocalTodayStr = () => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
+    const [reportFilter, setReportFilter] = useState<'today' | 'week' | 'month' | 'year' | 'custom'>('today');
+    const [selectedReportDate, setSelectedReportDate] = useState<string>(getLocalTodayStr());
+    const [reportStatusTab, setReportStatusTab] = useState<'all' | 'won' | 'lost' | 'paid' | 'active'>('all');
     const [cashierReport, setCashierReport] = useState<any>(null);
+    const reportDateInputRef = useRef<HTMLInputElement>(null);
 
     const [isOnline, setIsOnline] = useState(true);
 
@@ -268,7 +301,7 @@ export default function CashierDashboard() {
     const [codeCopied, setCodeCopied] = useState(false);
 
     const displayStatus = payoutDetails?.status;
-    const actualPotentialWin = Number(payoutDetails?.potential_win ?? 0);
+    const actualPotentialWin = computeTruePotentialWin(payoutDetails);
 
     useEffect(() => {
         document.title = "vibebet.et - Cashier";
@@ -305,19 +338,40 @@ export default function CashierDashboard() {
     useEffect(() => {
         if (token) {
             fetchRecentTickets();
-            axios.get(`${API_URL}/api/matches/list`)
+            fetchCashierReport();
+            // ለካሼር ክፍት የሆነውን የጨዋታዎች ሊንክ መጠቀም (403 እንዳያመጣ)
+            axios.get(`${API_URL}/api/fixtures`, {
+                headers: { Authorization: `Bearer ${token}` }
+            })
                 .then(res => {
-                    if (res.data.success) {
-                        setFixtures(res.data.data);
-                    }
+                    const list = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+                    if (Array.isArray(list)) setFixtures(list);
                 })
-                .catch((err: any) => console.error("Matches fetch error:", err.message));
+                .catch(() => {
+                    axios.get(`${API_URL}/api/matches/list`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    })
+                        .then(res2 => {
+                            if (res2.data?.success) setFixtures(res2.data.data || []);
+                        })
+                        .catch(() => {});
+                });
         }
     }, [token]);
 
+    // በየ 5 ደቂቃው የቀኑ ትኬቶችን እና ሪፖርቱን በራሱ እንዲያድስ
+    useEffect(() => {
+        if (!token) return;
+        const intervalId = setInterval(() => {
+            fetchRecentTickets();
+            if (isReportUnlocked) fetchCashierReport();
+        }, 5 * 60 * 1000);
+        return () => clearInterval(intervalId);
+    }, [token, isReportUnlocked, reportFilter, selectedReportDate]);
+
     useEffect(() => {
         if (token && activeTab === 'report' && isReportUnlocked) fetchCashierReport();
-    }, [token, activeTab, reportFilter, isReportUnlocked]);
+    }, [token, activeTab, reportFilter, selectedReportDate, isReportUnlocked]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -345,33 +399,66 @@ export default function CashierDashboard() {
 
     const fetchRecentTickets = async () => {
         try {
-            const res = await axios.get(`${API_URL}/api/tickets/history`, { headers: { Authorization: `Bearer ${token}` } });
-            if (res.data.success) {
-                // 🌟 የዛሬን ትኬቶች ብቻ ለመለየት 🌟
+            const res = await axios.get(`${API_URL}/api/tickets/history`);
+            if (res.data.success && Array.isArray(res.data.data)) {
+                const validAll = res.data.data
+                    .filter((t: any) => t.ticket_number)
+                    .map((t: any) => ({
+                        ...t,
+                        potential_win: computeTruePotentialWin(t).toFixed(2)
+                    }));
+                setAllHistoryTickets(validAll);
+
                 const today = new Date();
-                const todaysTickets = res.data.data.filter((t: any) => {
+                const todaysTickets = validAll.filter((t: any) => {
+                    if (t.is_today === 1 || t.is_today === true) return true;
                     const ticketDate = new Date(t.created_at);
                     return ticketDate.getDate() === today.getDate() &&
                            ticketDate.getMonth() === today.getMonth() &&
                            ticketDate.getFullYear() === today.getFullYear();
                 });
                 
-                const sorted = todaysTickets.sort((a:any, b:any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                const sorted = todaysTickets.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
                 setRecentTickets(sorted);
             }
         } catch (err: any) { 
-            console.error("History fetch error:", err.message); 
+            console.warn("History fetch error:", err.message); 
         }
     };
 
     const fetchCashierReport = async () => {
         try {
-            const res = await axios.get(`${API_URL}/api/tickets/cashier/report?filter=${reportFilter}`, { headers: { Authorization: `Bearer ${token}` } });
+            const dateQuery = reportFilter === 'custom' && selectedReportDate ? `&date=${encodeURIComponent(selectedReportDate)}` : '';
+            const res = await axios.get(`${API_URL}/api/tickets/cashier/report?filter=${reportFilter}${dateQuery}`);
             if (res.data.success) {
                 setCashierReport(res.data.data);
             }
         } catch (err: any) { 
-            console.error("Report fetch error:", err.message); 
+            console.warn("Report fetch error:", err.message); 
+        }
+    };
+
+    const shiftCashierReportDate = (daysDelta: number) => {
+        const base = selectedReportDate ? new Date(`${selectedReportDate}T12:00:00`) : new Date();
+        if (isNaN(base.getTime())) return;
+        base.setDate(base.getDate() + daysDelta);
+        const nextStr = `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`;
+        setSelectedReportDate(nextStr);
+        setReportFilter('custom');
+    };
+
+    const openCashierDatePicker = () => {
+        const el = reportDateInputRef.current;
+        if (!el) return;
+        try {
+            if (typeof (el as any).showPicker === 'function') {
+                (el as any).showPicker();
+            } else {
+                el.focus();
+                el.click();
+            }
+        } catch {
+            el.focus();
         }
     };
 
@@ -412,7 +499,7 @@ export default function CashierDashboard() {
         }
         setIsLoading(true); setMessage(null); setTicketData(null);
         try {
-            const res = await axios.get(`${API_URL}/api/tickets/booking/${cleanCode}`, { headers: { Authorization: `Bearer ${token}` } });
+            const res = await axios.get(`${API_URL}/api/tickets/booking/${cleanCode}`);
             if (res.data.success) {
                 if (res.data.data.ticket_number && res.data.data.status !== 'void') {
                     setMessage({ type: 'error', text: 'ይህ ቁጥር ከዚህ በፊት ታትሟል! ኮፒ ማድረግ አይቻልም።' });
@@ -428,15 +515,16 @@ export default function CashierDashboard() {
     const handleRebookTicket = async (ticket_number: string) => {
         setIsLoading(true); setMessage(null);
         try {
-            const res = await axios.get(`${API_URL}/api/tickets/check/${ticket_number.trim()}`, { headers: { Authorization: `Bearer ${token}` } });
+            const res = await axios.get(`${API_URL}/api/tickets/check/${ticket_number.trim()}`);
             if (res.data.success) {
                 const data = res.data.data;
                 if (data.status === 'void') {
                     setMessage({ type: 'error', text: 'ይህ ትኬት የተሰረዘ (Void) ስለሆነ Rebook አይደረግም' });
                     setIsLoading(false); return;
                 }
-                const originalSig = data.selections.map((s: any) => s.odd_id).sort().join('|');
-                setTicketData({ ...data, ticket_number: null, booking_code: `REBOOK`, original_signature: originalSig });
+                const originalSig = (data.selections || []).map((s: any) => s.odd_id).sort().join('|');
+                const trueWin = computeTruePotentialWin(data).toFixed(2);
+                setTicketData({ ...data, potential_win: trueWin, ticket_number: null, booking_code: `REBOOK`, original_signature: originalSig });
                 setActiveTab('new');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             }
@@ -462,21 +550,37 @@ export default function CashierDashboard() {
     };
 
     const handleStakeChange = (newStakeStr: string) => {
-        const newStake = parseFloat(newStakeStr) || 0;
-        const newPotentialWin = Number((parseFloat(ticketData.total_odds) * newStake).toFixed(2)).toFixed(2);
-        setTicketData({ ...ticketData, stake_amount: newStake, potential_win: newPotentialWin });
+        const cleaned = newStakeStr.replace(/[^0-9.]/g, '');
+        const numericStake = parseFloat(cleaned);
+        const validStake = Number.isFinite(numericStake) ? numericStake : 0;
+        const oddsNum = (ticketData?.selections || []).reduce(
+            (acc: number, curr: any) => acc * (parseFloat(curr.odd_value) || 1),
+            1
+        ) || parseFloat(ticketData?.total_odds) || 1;
+        const newPotentialWin = (Math.round(oddsNum * validStake * 100) / 100).toFixed(2);
+        setTicketData((prev: any) => ({
+            ...prev,
+            stake_amount: cleaned === '' ? '' : validStake,
+            total_odds: oddsNum.toFixed(2),
+            potential_win: newPotentialWin
+        }));
     };
 
     const handleConfirmTicketValidation = () => {
-        if (isLoading) return; 
+        if (isLoading || !ticketData) return; 
         const hasStarted = ticketData.selections.some((item: any) => {
             const startTime = item.match_time || item.commence_time;
             return startTime && new Date(startTime) < new Date();
         });
         if (hasStarted) { alert("የጀመሩ ጨዋታዎች አሉ! እባክዎ ከትኬቱ ላይ ይቀንሱ።"); return; }
 
-        const stakeVal = parseFloat(ticketData.stake_amount) || 0;
-        const winVal = parseFloat(ticketData.potential_win) || 0;
+        const stakeVal = parseFloat(String(ticketData.stake_amount)) || 0;
+        const recalcOdds = (ticketData.selections || []).reduce(
+            (acc: number, curr: any) => acc * (parseFloat(curr.odd_value) || 1),
+            1
+        );
+        const winVal = Math.round(recalcOdds * stakeVal * 100) / 100;
+
         if (stakeVal < MIN_STAKE) { alert(`ዝቅተኛው የውርርድ መጠን ${MIN_STAKE} ብር ነው!`); return; }
         if (stakeVal > MAX_STAKE) { alert(`ከፍተኛው የውርርድ መጠን ${MAX_STAKE} ብር ነው!`); return; }
         if (winVal > MAX_WIN) { alert(`ከፍተኛው ማሸነፊያ ${MAX_WIN} ብር ነው! እባክዎ ውርርዱን ይቀንሱ።`); return; }
@@ -487,6 +591,14 @@ export default function CashierDashboard() {
                 alert("🚫 ተመሳሳይ ትኬት ኮፒ ማድረግ አይቻልም! እባክዎ ቢያንስ አንዱን ጨዋታ ይቀንሱ (✕)።"); return;
             }
         }
+
+        // የተስተካከለውን Stake እና Potential Win ወዲያውኑ ማዘመን
+        setTicketData((prev: any) => ({
+            ...prev,
+            stake_amount: stakeVal.toFixed(2),
+            total_odds: recalcOdds.toFixed(2),
+            potential_win: winVal.toFixed(2)
+        }));
         
         setIsPrintPreviewOpen(true);
     };
@@ -498,65 +610,60 @@ export default function CashierDashboard() {
 
         try {
             if (ticketData.ticket_number) {
-                await handleQzPrint(ticketData);
+                handleDirectPrint(ticketData);
                 return;
             }
 
-            let res;
-            let finalTicketData = { ...ticketData };
+            const desiredStake = parseFloat(String(ticketData.stake_amount)) || MIN_STAKE;
+            const desiredOdds = (ticketData.selections || []).reduce(
+                (acc: number, curr: any) => acc * (parseFloat(curr.odd_value) || 1),
+                1
+            );
+            const desiredWin = Math.round(desiredOdds * desiredStake * 100) / 100;
 
+            const cleanSelections = (ticketData.selections || []).map((s: any) => {
+                const league = formatLeagueDisplay(s, fixtures);
+                const { marketText } = getFormattedMarket(s, fixtures);
+                return {
+                    ...s,
+                    fixture_id: s.fixture_id,
+                    odd_id: s.odd_id,
+                    odd_value: s.odd_value,
+                    match_info: s.match_info || (s.home_team + ' vs ' + s.away_team),
+                    odd_name: s.odd_name,
+                    market_name: s.market_name || s.market_title || marketText,
+                    league_name: league,
+                    sport_key: s.sport_key || s.sport || ''
+                };
+            });
+
+            let res;
             if (ticketData.booking_code === 'REBOOK') {
-                const cleanSelections = ticketData.selections.map((s: any) => {
-                    const league = formatLeagueDisplay(s, fixtures);
-                    const { marketText } = getFormattedMarket(s, fixtures);
-                    return {
-                        fixture_id: s.fixture_id,
-                        odd_id: s.odd_id,
-                        odd_value: s.odd_value,
-                        match_info: s.match_info || (s.home_team + ' vs ' + s.away_team),
-                        odd_name: s.odd_name,
-                        market_name: s.market_name || s.market_title || marketText,
-                        league_name: league,
-                        sport_key: s.sport_key || s.sport || ''
-                    };
-                });
-                
-                const placePayload = { stake_amount: ticketData.stake_amount, is_guest: true, selections: cleanSelections };
+                const placePayload = { stake_amount: desiredStake, is_guest: true, selections: cleanSelections };
                 const placeRes = await axios.post(`${API_URL}/api/tickets/place`, placePayload);
                 if (!placeRes.data?.success || !placeRes.data?.data?.booking_code) {
                     throw new Error(placeRes.data?.message || 'Rebook ማስጀመር አልተቻለም');
                 }
                 const newBookingCode = placeRes.data.data.booking_code;
-                
-                const confirmPayload = { selections: cleanSelections, stake_amount: ticketData.stake_amount };
-                res = await axios.post(`${API_URL}/api/tickets/booking/${newBookingCode}/confirm`, confirmPayload, { headers: { Authorization: `Bearer ${token}` } });
-                
-                if(res.data.success) {
+                const confirmPayload = { selections: cleanSelections, stake_amount: desiredStake };
+                res = await axios.post(`${API_URL}/api/tickets/booking/${newBookingCode}/confirm`, confirmPayload);
+                if (res.data.success) {
                     res.data.data.booking_code = newBookingCode;
                 }
             } else {
-                const payload = { 
-                    selections: ticketData.selections.map((s: any) => {
-                        const league = formatLeagueDisplay(s, fixtures);
-                        const { marketText } = getFormattedMarket(s, fixtures);
-                        return {
-                            ...s,
-                            market_name: s.market_name || s.market_title || marketText,
-                            league_name: league,
-                            sport_key: s.sport_key || s.sport || ''
-                        };
-                    }), 
-                    stake_amount: ticketData.stake_amount 
+                const payload = {
+                    selections: cleanSelections,
+                    stake_amount: desiredStake
                 };
-                res = await axios.post(`${API_URL}/api/tickets/booking/${ticketData.booking_code}/confirm`, payload, { headers: { Authorization: `Bearer ${token}` } });
+                res = await axios.post(`${API_URL}/api/tickets/booking/${ticketData.booking_code}/confirm`, payload);
             }
 
             if (res.data.success) {
                 const newBookingCode = res.data.data.booking_code || ticketData.booking_code;
                 const backendSelections = res.data.data.selections || [];
                 
-                const mergedSelections = ticketData.selections.map((origSel: any, idx: number) => {
-                    const backSel = backendSelections.find((b:any) => String(b.odd_id) === String(origSel.odd_id)) || backendSelections[idx] || {};
+                const mergedSelections = cleanSelections.map((origSel: any, idx: number) => {
+                    const backSel = backendSelections.find((b: any) => String(b.odd_id) === String(origSel.odd_id)) || backendSelections[idx] || {};
                     const merged = { ...origSel, ...backSel };
                     return {
                         ...merged,
@@ -567,20 +674,39 @@ export default function CashierDashboard() {
                     };
                 });
 
-                finalTicketData = { 
+                const nowIso = new Date().toISOString();
+                const finalTicketData = { 
                     ...ticketData, 
                     ...res.data.data,
                     selections: mergedSelections,
                     ticket_number: res.data.data.ticket_number, 
                     booking_code: newBookingCode, 
+                    stake_amount: desiredStake.toFixed(2),
+                    total_odds: desiredOdds.toFixed(2),
+                    potential_win: desiredWin.toFixed(2),
                     status: 'active', 
-                    created_at: new Date().toISOString() 
+                    is_today: 1,
+                    minutes_ago: 0,
+                    created_at: nowIso 
                 };
                 
                 setTicketData(finalTicketData);
                 setBookingCode(newBookingCode);
+
+                // ወዲያውኑ በግራ በኩል ባለው "የቀኑ ትኬቶች" እና በሪፖርት ላይ እንዲታይ ማድረግ
+                setRecentTickets((prev: any[]) => [
+                    finalTicketData,
+                    ...prev.filter((t: any) => t.ticket_number !== finalTicketData.ticket_number)
+                ]);
+                setAllHistoryTickets((prev: any[]) => [
+                    finalTicketData,
+                    ...prev.filter((t: any) => t.ticket_number !== finalTicketData.ticket_number)
+                ]);
+
+                fetchRecentTickets();
+                fetchCashierReport();
                 
-                await handleQzPrint(finalTicketData);
+                handleDirectPrint(finalTicketData);
             } else {
                 throw new Error(res.data?.message || 'ትኬቱን ማረጋገጥ አልተቻለም');
             }
@@ -588,206 +714,172 @@ export default function CashierDashboard() {
             alert(error.response?.data?.message || error.message || "ትኬቱን ማረጋገጥ ወይም ማተም አልተቻለም");
         } finally { 
             setIsLoading(false); 
+            setIsPrinting(false);
         }
     };
 
-    const handleQzPrint = async (ticketDetails: any) => {
-        try {
-            // @ts-ignore
-            const qzModule = await import('qz-tray');
-            const qz = qzModule.default || qzModule;
-
-            if (!qz.websocket.isActive()) {
-                qz.security.setCertificatePromise(function(resolve: any, reject: any) {
-                    resolve(
-                        "-----BEGIN CERTIFICATE-----\n" +
-                        "MIID9zCCAt+gAwIBAgIUHJrFToXi5GNox9w7d0q+G6QJdtMwDQYJKoZIhvcNAQEL\n" +
-                        "BQAwgYoxCzAJBgNVBAYTAkVUMQ8wDQYDVQQIDAZBbWhhcmExDzANBgNVBAcMBkVu\n" +
-                        "ZnJhejEQMA4GA1UECgwHQWZyb2JldDEOMAwGA1UECwwFTG9jYWwxEzARBgNVBAMM\n" +
-                        "CnZpYmViZXQuZXQxIjAgBgkqhkiG9w0BCQEWE2Fia293b3JrdUBnbWFpbC5jb20w\n" +
-                        "HhcNMjYwOTEyMTcxMTU1WhcNMzYwOTA5MTcxMTU1WjCBijELMAkGA1UEBhMCRVQx\n" +
-                        "DzANBgNVBAgMBkFtaGFyYTEPMA0GA1UEBwwGRW5mcmF6MRAwDgYDVQQKDAdBZnJv\n" +
-                        "YmV0MQ4wDAYDVQQLDAVMb2NhbDETMBEGA1UEAwwKdmliZWJldC5ldDEiMCAGCSqG\n" +
-                        "SIb3DQEJARYTYWJrb3dvcmt1QGdtYWlsLmNvbTCCASIwDQYJKoZIhvcNAQEBBQAD\n" +
-                        "ggEPADCCAQoCggEBALLpofDt1OsPNHFxxn61olx8PrDVhvs6tMEK3BGP9Ddg52uJ\n" +
-                        "YscD/SdiiVgdwMcAfWESejdMlbaK95fzaibM+RckltCnh6Tk8Ac5cFaBV6lupUlh\n" +
-                        "eIMzuyqG5SKMdy0Y8zSb4qqlIft26ZfQKlNX6vhTlGIPA0C2JKzATXm+kRB+ECia\n" +
-                        "5YqYWJ8yA8BFDcwGUZhqqgx8nMyubNUuRQTExAZad8sYdOMe8dhs6MXsd498yaMy\n" +
-                        "xf3apryX9IUVphJEG9TVwSpA/YiDGAE9vzSFKFI8HcyVDpG1bMZ41f1hmj0fNYv8\n" +
-                        "Gw98aBbAC6H1fdqpatRVjq1n8703taDQ1cHeAjcCAwEAAaNTMFEwHQYDVR0OBBYE\n" +
-                        "FKQcaumkzkCjHaAGDfPUpSLnDIpHMB8GA1UdIwQYMBaAFKQcaumkzkCjHaAGDfPU\n" +
-                        "pSLnDIpHMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAFNSMohh\n" +
-                        "D4OFQW1Swa2RD4ICZmf/twsmJY6DqmFtBvxS0tUxOwsaDGyUJw+HST2AVmTLtwxn\n" +
-                        "lwy/gwphmCl7TpgRUCBmDmMo2NBpMKnWOo7WyoWMzfRBzxJ7TnTF/id6k+ymKPC3\n" +
-                        "m/EjcTPZP9g37lT3bpecMNc1iZveBnLht9py+vfN1DL7tQKvpwUTvlvjIClGj5mm\n" +
-                        "5p30nEr/mNEmaZ6/X4GWaW0vHHYMF0XbMLTmenu2DjJudBO8luh2Gf5YvgzkWYpI\n" +
-                        "KrbL8xPJO7DKfn/J+QZYYmoDVliVFTDmasY9qPm+vep7gGkdfQbiMeGrhp0WcuGr\n" +
-                        "aR4ucTpnYio6L8w=\n" +
-                        "-----END CERTIFICATE-----"
-                    );
-                });
-
-                qz.security.setSignaturePromise(function(toSign: string) {
-                    return function(resolve: any, reject: any) {
-                        axios.post(`${API_URL}/api/qz/sign`, { request: toSign }, {
-                            headers: { Authorization: `Bearer ${token}` }
-                        })
-                        .then(res => {
-                            const sig = res.data.signature || res.data.data || res.data;
-                            resolve(sig);
-                        })
-                        .catch(err => reject(err));
-                    };
-                });
-
-                await qz.websocket.connect();
+    // 80mm Thermal Printer ቀጥታ የህትመት ፈንክሽን (ያለ ባዶ ወረቀት ልክ ትኬቱ እንዳለቀ እንዲቆርጥ የተሰራ)
+    const handleDirectPrint = (ticketDetails: any) => {
+        setTimeout(() => {
+            const receiptEl = document.getElementById('printable-thermal-receipt');
+            if (!receiptEl) {
+                window.print();
+                return;
             }
 
-            const printerName = await qz.printers.getDefault();
-            const config = qz.configs.create(printerName, { encoding: 'UTF-8' });
+            const iframe = document.createElement('iframe');
+            iframe.style.position = 'fixed';
+            iframe.style.right = '0';
+            iframe.style.bottom = '0';
+            iframe.style.width = '80mm';
+            iframe.style.height = '0';
+            iframe.style.border = '0';
+            iframe.style.visibility = 'hidden';
+            document.body.appendChild(iframe);
 
-            const ESC = '\x1B';
-            const GS = '\x1D';
-            const alignLeft = ESC + '\x61' + '\x00';
-            const alignCenter = ESC + '\x61' + '\x01';
-            const boldOn = ESC + '\x45' + '\x01';
-            const boldOff = ESC + '\x45' + '\x00';
-            const normalFont = ESC + '\x4D' + '\x00';
-            const lineSpacing = ESC + '\x32';
+            const doc = iframe.contentWindow?.document;
+            if (!doc) {
+                document.body.removeChild(iframe);
+                window.print();
+                return;
+            }
 
-            const COLS = 48;
-            const repeatLine = (char = '-', count = COLS) => char.repeat(count);
-            const padRow = (left: string, right: string, width = COLS) => {
-                const l = String(left);
-                const r = String(right);
-                const space = Math.max(1, width - l.length - r.length);
-                return l.slice(0, width - r.length - 1) + ' '.repeat(space) + r.slice(-r.length);
+            const styleLinks = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+                .map(node => node.outerHTML)
+                .join('\n');
+
+            doc.open();
+            doc.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8" />
+                    <title>Receipt #${ticketDetails.ticket_number || ''}</title>
+                    ${styleLinks}
+                    <style>
+                        @page {
+                            size: 72mm auto;
+                            margin: 0mm !important;
+                        }
+                        html, body {
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            width: 72mm !important;
+                            max-width: 72mm !important;
+                            height: fit-content !important;
+                            min-height: 0 !important;
+                            background: #ffffff !important;
+                            color: #000000 !important;
+                            overflow: visible !important;
+                            -webkit-print-color-adjust: exact !important;
+                            print-color-adjust: exact !important;
+                        }
+                        #printable-thermal-receipt {
+                            width: 100% !important;
+                            max-width: 72mm !important;
+                            height: fit-content !important;
+                            margin: 0 !important;
+                            padding: 1mm 1.5mm 1mm 1.5mm !important;
+                            border: none !important;
+                            box-shadow: none !important;
+                        }
+                        .receipt-matches-scroll {
+                            max-height: none !important;
+                            overflow: visible !important;
+                        }
+                    </style>
+                </head>
+                <body>
+                    ${receiptEl.outerHTML}
+                </body>
+                </html>
+            `);
+            doc.close();
+
+            setTimeout(() => {
+                try {
+                    iframe.contentWindow?.focus();
+                    iframe.contentWindow?.print();
+                } catch (e) {
+                    window.print();
+                } finally {
+                    setTimeout(() => {
+                        if (document.body.contains(iframe)) {
+                            document.body.removeChild(iframe);
+                        }
+                    }, 1000);
+                    setTicketData(null);
+                    setSearchCode('');
+                    setIsPrintPreviewOpen(false);
+                    setMessage({
+                        type: 'success',
+                        text: `✅ ትኬት #${ticketDetails.ticket_number} በተሳካ ሁኔታ ተቆርጦ ታትሟል!`
+                    });
+                }
+            }, 250);
+        }, 120);
+    };
+
+    const mergeAiLegsIntoTicket = (ticketObj: any, analysisObj: any) => {
+        if (!ticketObj || !analysisObj || !Array.isArray(analysisObj.legs)) return ticketObj;
+        const updatedSelections = (ticketObj.selections || []).map((sel: any, idx: number) => {
+            const leg = analysisObj.legs.find((l: any) => l.item_id === sel.id) || analysisObj.legs[idx];
+            if (!leg) return sel;
+            return {
+                ...sel,
+                match_status: leg.aiStatus || sel.match_status,
+                score: leg.liveScore && leg.liveScore !== "-:-" ? leg.liveScore : sel.score,
+                liveScore: leg.liveScore,
+                aiStatus: leg.aiStatus,
+                explanationAmharic: leg.explanationAmharic
             };
+        });
+        return {
+            ...ticketObj,
+            selections: updatedSelections
+        };
+    };
 
-            const currentDate = new Date();
-            const printDate = formatShortDateTime(currentDate.toISOString());
+    const runAiVerifyByCode = async (code: string, autoSettle = true) => {
+        if (!code || isAiChecking) return;
+        setIsAiChecking(true);
 
-            const ticketNumber = ticketDetails.ticket_number || 'PENDING';
-            const booking = ticketDetails.booking_code && ticketDetails.booking_code !== 'REBOOK'
-                ? ticketDetails.booking_code
-                : 'REBOOK';
-            const usernameText = username.toUpperCase();
-            const stake = Number(ticketDetails.stake_amount || 0);
-            const serviceFee = 10;
-            const totalPaid = stake + serviceFee;
-            const potentialWin = Number(ticketDetails.potential_win || 0);
-            const totalOdds = Number(ticketDetails.total_odds || 0);
-            const eventCount = Array.isArray(ticketDetails.selections) ? ticketDetails.selections.length : 0;
-
-            const data: string[] = [];
-
-            data.push(ESC + '\x40');
-            data.push(lineSpacing);
-            data.push(normalFont);
-
-            data.push(alignCenter);
-            data.push(boldOn + 'VIBEBET.ET' + boldOff + '\n');
-            data.push(boldOn + 'SPORTS BETTING RECEIPT' + boldOff + '\n');
-
-            if (booking !== 'REBOOK') {
-                data.push(boldOn + booking + boldOff + '\n');
-
-                const qrUrl = window.location.origin + '?booking=' + booking;
-                const len = qrUrl.length + 3;
-                const pL = String.fromCharCode(len % 256);
-                const pH = String.fromCharCode(Math.floor(len / 256));
-
-                data.push('\x1D\x28\x6B\x04\x00\x31\x41\x32\x00');
-                data.push('\x1D\x28\x6B\x03\x00\x31\x43\x02');
-                data.push('\x1D\x28\x6B\x03\x00\x31\x45\x31');
-                data.push('\x1D\x28\x6B' + pL + pH + '\x31\x50\x30' + qrUrl);
-                data.push('\x1D\x28\x6B\x03\x00\x31\x51\x30\n');
-            }
-
-            data.push(alignLeft);
-            data.push(repeatLine('=') + '\n');
-
-            data.push(boldOn + padRow('DATE', printDate) + boldOff + '\n');
-            data.push(boldOn + padRow('TICKET', ticketNumber) + boldOff + '\n');
-            data.push(boldOn + padRow('CASHIER', usernameText) + boldOff + '\n');
-            data.push(repeatLine('-') + '\n');
-
-            data.push(alignCenter);
-            data.push(boldOn + '21+ ONLY  |  T&Cs APPLY' + boldOff + '\n');
-            data.push(alignLeft);
-            data.push(repeatLine('-') + '\n');
-
-            const sortedSelections = [...(ticketDetails.selections || [])].sort((a, b) => {
-                const timeA = new Date(a.match_time || a.commence_time || 0).getTime();
-                const timeB = new Date(b.match_time || b.commence_time || 0).getTime();
-                return timeA - timeB;
+        try {
+            const res = await axios.post(`${API_URL}/api/tickets/ai-verify`, {
+                ticket_number: code,
+                autoSettle
             });
 
-            sortedSelections.forEach((item: any, index: number) => {
-                const teamStr = String(
-                    item.match_info || [item.home_team, item.away_team].filter(Boolean).join(' - ') || 'Match'
-                ).replace(/\s+vs\.?\s+/gi, ' v ').replace(/\s+/g, ' ').trim();
-
-                const fullLeagueText = formatLeagueDisplay(item, fixtures);
-                const { marketText, pickText } = getFormattedMarket(item, fixtures);
-                const oddText = Number(item.odd_value || 0).toFixed(2);
-                const mTime = formatMatchListDateTime(item.match_time || item.commence_time || currentDate.toISOString());
-
-                data.push(boldOn + `${teamStr}` + boldOff + '\n');
-                data.push(padRow(fullLeagueText, mTime) + '\n');
-
-                const rightSide = `${pickText}        Q: ${oddText}`;
-                data.push(boldOn + padRow(marketText, rightSide) + boldOff + '\n');
-                
-                if (index < eventCount - 1) data.push(repeatLine('-') + '\n');
-            });
-
-            data.push(boldOn + padRow(`EVENTS: ${eventCount}`, `TOTAL ODDS: ${totalOdds.toFixed(2)}`) + boldOff + '\n');
-            data.push(repeatLine('=') + '\n');
-
-            data.push(boldOn + padRow('STAKE', `${stake.toFixed(2)} ETB`) + boldOff + '\n');
-            data.push(padRow('SERVICE FEE', `${serviceFee.toFixed(2)} ETB`) + '\n');
-            data.push(boldOn + padRow('TOTAL PAID', `${totalPaid.toFixed(2)} ETB`) + boldOff + '\n');
-            data.push(boldOn + padRow('POTENTIAL WIN', `${potentialWin.toFixed(2)} ETB`) + boldOff + '\n');
-            data.push(repeatLine('=') + '\n');
-
-            if (booking !== 'REBOOK') {
-                data.push(alignCenter);
-                data.push('\x1D' + '\x68' + '\x30'); 
-                data.push('\x1D' + '\x77' + '\x02'); 
-                data.push('\x1D' + '\x6B' + '\x49' + String.fromCharCode(booking.length + 2) + '{B' + booking);
-                data.push('\n' + boldOn + booking + boldOff + '\n');
+            if (res.data.success) {
+                const analysis = res.data.data;
+                setAiAnalysis(analysis);
+                if (res.data.updatedTicket) {
+                    setPayoutDetails(mergeAiLegsIntoTicket(res.data.updatedTicket, analysis));
+                } else {
+                    setPayoutDetails((prev: any) => mergeAiLegsIntoTicket(prev, analysis));
+                }
             }
-
-            data.push(alignCenter);
-            data.push(boldOn + 'Cashier: ' + usernameText + boldOff + '\n');
-            data.push('Valid winning tickets: 30 days\n');
-            data.push('Soccer: 90 minutes. No extra time/penalties.\n');
-            data.push(GS + '\x56' + '\x41' + '\x10');
-
-            await qz.print(config, data);
-
-            setTicketData(null);
-            setSearchCode('');
-            setIsPrintPreviewOpen(false);
-            setMessage({ type: 'success', text: 'ትኬቱ በተሳካ ሁኔታ ታትሟል!' });
-            fetchRecentTickets();
-
-        } catch (error: any) {
-            console.error("Print Error:", error.message || error);
-            throw new Error("QZ Tray አልተገኘም! እባክዎ ፕሪንተሩን እና QZ Tray ሶፍትዌር መከፈቱን ያረጋግጡ።");
+        } catch (err: any) {
+            setMessage({ type: 'error', text: err.response?.data?.message || 'ውጤት ማረጋገጥ አልተቻለም' });
         } finally {
-            setIsPrinting(false);
+            setIsAiChecking(false);
         }
     };
 
     const fetchTicketDetailsForCheck = async (code: string) => {
         const cleanCode = code.trim().toUpperCase(); 
-        setIsPayingOut(true); setMessage(null);
+        setIsPayingOut(true); setMessage(null); setAiAnalysis(null);
         try {
-            const res = await axios.get(`${API_URL}/api/tickets/check/${cleanCode}`, { headers: { Authorization: `Bearer ${token}` } });
+            const res = await axios.get(`${API_URL}/api/tickets/check/${cleanCode}`);
             if (res.data.success) {
-                setPayoutDetails(res.data.data);
+                const ticketObj = res.data.data;
+                if (ticketObj.aiAnalysis) {
+                    setAiAnalysis(ticketObj.aiAnalysis);
+                    setPayoutDetails(mergeAiLegsIntoTicket(ticketObj, ticketObj.aiAnalysis));
+                } else {
+                    setPayoutDetails(ticketObj);
+                    await runAiVerifyByCode(cleanCode, true);
+                }
             }
         } catch (err: any) {
             setMessage({ type: 'error', text: err.response?.data?.message || 'ትኬቱ አልተገኘም' });
@@ -803,6 +895,12 @@ export default function CashierDashboard() {
             return;
         } 
         fetchTicketDetailsForCheck(code);
+    };
+
+    const handleAiVerifyTicket = async (autoSettle = false) => {
+        if (!payoutDetails) return;
+        const code = String(payoutDetails.ticket_number || payoutDetails.booking_code || payoutTicket).trim();
+        await runAiVerifyByCode(code, autoSettle);
     };
 
     const handleConfirmPayout = async () => {
@@ -847,8 +945,7 @@ export default function CashierDashboard() {
         if (!payoutDetails || !window.confirm("እርግጠኛ ነዎት ይህንን ትኬት መሰረዝ (Void ማድረግ) ይፈልጋሉ?")) return;
         const tNum = String(payoutDetails.ticket_number || payoutDetails.booking_code).trim();
         try {
-            const res = await axios.post(`${API_URL}/api/tickets/void`, 
-                { ticket_number: tNum }, { headers: { Authorization: `Bearer ${token}` } });
+            const res = await axios.post(`${API_URL}/api/tickets/void`, { ticket_number: tNum });
             setMessage({ type: 'success', text: res.data.message });
             fetchTicketDetailsForCheck(tNum);
             fetchRecentTickets(); 
@@ -861,8 +958,7 @@ export default function CashierDashboard() {
         e.stopPropagation(); 
         if (!window.confirm(`እርግጠኛ ነዎት ትኬት ቁጥር ${ticketNum} መሰረዝ ይፈልጋሉ?`)) return;
         try {
-            const res = await axios.post(`${API_URL}/api/tickets/void`, 
-                { ticket_number: String(ticketNum).trim() }, { headers: { Authorization: `Bearer ${token}` } });
+            const res = await axios.post(`${API_URL}/api/tickets/void`, { ticket_number: String(ticketNum).trim() });
             setMessage({ type: 'success', text: res.data.message || "ትኬቱ ተሰርዟል!" });
             fetchRecentTickets(); 
         } catch (err: any) {
@@ -876,22 +972,41 @@ export default function CashierDashboard() {
         try {
             const res = await axios.post(`${API_URL}/api/auth/verify-password`, { 
                 password: reportPassword 
-            }, { headers: { Authorization: `Bearer ${token}` } });
+            });
             
             if (res.data.success) {
                 setIsReportUnlocked(true); 
                 setReportError('');
-            } else {
-                setReportError('የተሳሳተ ፓስወርድ ነው!');
+                fetchCashierReport();
+                return;
             }
-        } catch (err: any) {
-            setReportError(err.response?.data?.message || 'የተሳሳተ ፓስወርድ ነው!');
+        } catch {
+            // /api/auth/verify-password ካልሰራ በ /api/auth/login ማረጋገጥ
+            try {
+                const loginRes = await axios.post(`${API_URL}/api/auth/login`, {
+                    username: username.trim(),
+                    password: reportPassword
+                });
+                if (loginRes.data?.success) {
+                    setIsReportUnlocked(true);
+                    setReportError('');
+                    fetchCashierReport();
+                    return;
+                }
+            } catch (loginErr: any) {
+                setReportError(loginErr.response?.data?.message || 'የተሳሳተ ፓስወርድ ነው!');
+                return;
+            }
         }
+        setReportError('የተሳሳተ ፓስወርድ ነው!');
     };
 
-    const isWithin20Minutes = (createdAt: string) => {
+    const isWithin20Minutes = (createdAt: string, minutesAgo?: number) => {
+        if (typeof minutesAgo === 'number' && !Number.isNaN(minutesAgo)) {
+            return minutesAgo >= 0 && minutesAgo < 20;
+        }
         const diff = Date.now() - new Date(createdAt).getTime();
-        return diff >= 0 && diff <= 20 * 60 * 1000;
+        return diff >= -60000 && diff <= 20 * 60 * 1000;
     };
 
     const filteredSidebarTickets = recentTickets.filter(t => 
@@ -900,7 +1015,125 @@ export default function CashierDashboard() {
     const totalSidebarPages = Math.ceil(filteredSidebarTickets.length / 10);
     const paginatedRecentTickets = filteredSidebarTickets.slice((sidebarPage - 1) * 10, sidebarPage * 10);
 
-    const bookingShareUrl = bookingCode ? `${typeof window !== 'undefined' ? window.location.origin : ''}?booking=${bookingCode}` : '';
+    // የQR Code ሊንክ (በማንኛውም ስልክ ሲቃኝ ትኬቱን ወዲያውኑ የሚከፍት)
+    const activeReceiptCode = ticketData?.ticket_number || (ticketData?.booking_code && ticketData?.booking_code !== 'REBOOK' ? ticketData.booking_code : '') || bookingCode || '';
+    const qrTargetUrl = activeReceiptCode
+        ? `${typeof window !== 'undefined' ? window.location.origin : 'https://vibebet.et'}/?check=${encodeURIComponent(activeReceiptCode)}&booking=${encodeURIComponent(ticketData?.booking_code && ticketData?.booking_code !== 'REBOOK' ? ticketData.booking_code : activeReceiptCode)}`
+        : `${typeof window !== 'undefined' ? window.location.origin : 'https://vibebet.et'}`;
+    const bookingShareUrl = bookingCode ? `${typeof window !== 'undefined' ? window.location.origin : 'https://vibebet.et'}/?booking=${bookingCode}` : qrTargetUrl;
+
+    // በካሼር ገጽ የተመረጠውን ቀን ወይም ጊዜ ከ allHistoryTickets እና ከ cashierReport ጋር አቀናጅቶ የሚያሰላ
+    const effectiveCashierReport = (() => {
+        const now = new Date();
+        const isTicketInPeriod = (t: any) => {
+            if (!t.created_at) return false;
+            const d = new Date(t.created_at);
+            if (isNaN(d.getTime())) return false;
+            const localDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+            if (reportFilter === 'custom' && selectedReportDate) {
+                return localDateStr === selectedReportDate;
+            }
+            if (reportFilter === 'today') {
+                return t.is_today === 1 || t.is_today === true || localDateStr === getLocalTodayStr();
+            }
+            if (reportFilter === 'week') {
+                const diffDays = (now.getTime() - d.getTime()) / (1000 * 3600 * 24);
+                return diffDays >= -1 && diffDays <= 7;
+            }
+            if (reportFilter === 'month') {
+                return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+            }
+            if (reportFilter === 'year') {
+                return d.getFullYear() === now.getFullYear();
+            }
+            return true;
+        };
+
+        const localFiltered = allHistoryTickets.filter(isTicketInPeriod);
+        const backendTickets = Array.isArray(cashierReport?.tickets) ? cashierReport.tickets : [];
+        const sourceTickets = backendTickets.length >= localFiltered.length ? backendTickets : localFiltered;
+
+        if (cashierReport && Number(cashierReport.total_tickets || 0) >= localFiltered.filter(t => t.status !== 'void').length && backendTickets.length > 0) {
+            const fixedTickets = backendTickets.map((t: any) => ({
+                ...t,
+                potential_win: computeTruePotentialWin(t).toFixed(2)
+            }));
+            return {
+                ...cashierReport,
+                tickets: fixedTickets
+            };
+        }
+
+        let totalTickets = 0;
+        let voidTickets = 0;
+        let wonCount = 0;
+        let paidCount = 0;
+        let unpaidWonCount = 0;
+        let lostCount = 0;
+        let activeCount = 0;
+        let totalRevenue = 0;
+        let totalPaid = 0;
+        let unpaidWinnings = 0;
+        let totalWonAmount = 0;
+        let activeRisk = 0;
+
+        for (const rawT of sourceTickets) {
+            const st = rawT.status;
+            const stake = parseFloat(rawT.stake_amount) || 0;
+            const win = computeTruePotentialWin(rawT);
+            rawT.potential_win = win.toFixed(2);
+
+            if (st === 'void') {
+                voidTickets++;
+                continue;
+            }
+            totalTickets++;
+            totalRevenue += stake;
+
+            if (st === 'paid') {
+                paidCount++;
+                wonCount++;
+                totalPaid += win;
+                totalWonAmount += win;
+            } else if (st === 'won') {
+                unpaidWonCount++;
+                wonCount++;
+                unpaidWinnings += win;
+                totalWonAmount += win;
+            } else if (st === 'lost' || st === 'expired') {
+                lostCount++;
+            } else {
+                activeCount++;
+                activeRisk += win;
+            }
+        }
+
+        const serviceFeeTotal = totalTickets * 10;
+        const grossCashCollected = totalRevenue + serviceFeeTotal;
+        const netProfit = totalRevenue - totalPaid;
+        const cashInHand = grossCashCollected - totalPaid;
+
+        return {
+            total_tickets: totalTickets,
+            void_tickets: voidTickets,
+            service_fee_total: serviceFeeTotal,
+            total_revenue: totalRevenue,
+            gross_cash_collected: grossCashCollected,
+            total_paid: totalPaid,
+            unpaid_winnings: unpaidWinnings,
+            total_won_amount: totalWonAmount,
+            active_risk: activeRisk,
+            won_tickets_count: wonCount,
+            paid_tickets_count: paidCount,
+            unpaid_won_count: unpaidWonCount,
+            lost_tickets_count: lostCount,
+            active_tickets_count: activeCount,
+            net_profit: netProfit,
+            cash_in_hand: cashInHand,
+            tickets: sourceTickets
+        };
+    })();
 
     const handleCopyBookingCode = async () => {
         if (!bookingCode) return;
@@ -936,7 +1169,7 @@ export default function CashierDashboard() {
             link.href = dataUrl;
             link.click();
         } catch (e) {
-            console.error('Could not save receipt image', e);
+            console.warn('Could not save receipt image', e);
         }
     };
 
@@ -1015,7 +1248,7 @@ export default function CashierDashboard() {
                         <button onClick={() => {setActiveTab('check'); setMessage(null);}} className={`px-4 py-2 font-black text-xs rounded-md transition ${activeTab === 'check' ? 'bg-[#00e700] text-black shadow-sm' : 'text-black/70 hover:bg-black/5 hover:text-black'}`}>
                             💰 ውጤት / ክፍያ
                         </button>
-                        <button onClick={() => {setActiveTab('report'); setMessage(null); setIsReportUnlocked(false); setReportPassword('');}} className={`px-4 py-2 font-black text-xs rounded-md transition ${activeTab === 'report' ? 'bg-blue-600 text-white shadow-sm' : 'text-black/70 hover:bg-black/5 hover:text-black'}`}>
+                        <button onClick={() => {setActiveTab('report'); setMessage(null); fetchCashierReport(); fetchRecentTickets();}} className={`px-4 py-2 font-black text-xs rounded-md transition ${activeTab === 'report' ? 'bg-blue-600 text-white shadow-sm' : 'text-black/70 hover:bg-black/5 hover:text-black'}`}>
                             📈 የእኔ ሪፖርት
                         </button>
                     </div>
@@ -1033,7 +1266,39 @@ export default function CashierDashboard() {
                     
                     <aside className="w-[300px] bg-[#24292e] border border-[#3b4148] rounded-xl flex flex-col overflow-hidden shadow-sm shrink-0 h-[calc(100vh-90px)] sticky top-[75px]">
                         <div className="p-3 border-b border-[#3b4148] bg-[#1a1f24]">
-                            <h3 className="font-black text-white flex items-center gap-2 text-xs uppercase tracking-widest mb-3">⏱ የቀኑ ትኬቶች</h3>
+                            <div className="flex justify-between items-center mb-2">
+                                <h3 className="font-black text-white flex items-center gap-1.5 text-xs uppercase tracking-widest">
+                                    <span>⏱ የቀኑ ትኬቶች</span>
+                                    <span className="bg-[#ffcc00] text-black px-2 py-0.5 rounded-full text-[10px] font-black">
+                                        {recentTickets.filter(t => t.status !== 'void').length}
+                                    </span>
+                                </h3>
+                                <button
+                                    type="button"
+                                    onClick={() => { fetchRecentTickets(); fetchCashierReport(); }}
+                                    className="text-[10px] font-bold text-[#ffcc00] hover:underline"
+                                    title="አድስ"
+                                >
+                                    🔄 አድስ
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5 mb-2.5 text-[10px] bg-[#14181d] p-2 rounded-lg border border-[#2f353d]">
+                                <div>
+                                    <span className="text-slate-400 block">የዛሬ ውርርድ (Stake)</span>
+                                    <span className="font-black text-[#00e700]">
+                                        {recentTickets.filter(t => t.status !== 'void').reduce((s, t) => s + (parseFloat(t.stake_amount) || 0), 0).toLocaleString()} Br
+                                    </span>
+                                </div>
+                                <div className="text-right">
+                                    <span className="text-slate-400 block">ከ10 ብር ጋር ጠቅላላ</span>
+                                    <span className="font-black text-[#ffcc00]">
+                                        {(
+                                            recentTickets.filter(t => t.status !== 'void').reduce((s, t) => s + (parseFloat(t.stake_amount) || 0), 0) +
+                                            recentTickets.filter(t => t.status !== 'void').length * 10
+                                        ).toLocaleString()} Br
+                                    </span>
+                                </div>
+                            </div>
                             <input 
                                 type="text" 
                                 placeholder="በትኬት ቁጥር ፈልግ..." 
@@ -1045,21 +1310,32 @@ export default function CashierDashboard() {
                         
                         <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2.5 bg-[#1c2024]">
                             {paginatedRecentTickets.length === 0 ? (
-                                <p className="text-xs text-slate-500 text-center py-10 font-bold">ምንም ትኬት አልተገኘም</p>
+                                <p className="text-xs text-slate-500 text-center py-10 font-bold">ዛሬ የተቆረጠ ትኬት የለም</p>
                             ) : (
                                 paginatedRecentTickets.map((t, i) => (
-                                    <div key={i} onClick={() => handleRebookTicket(t.ticket_number)} className={`bg-[#24292e] border ${t.status === 'void' ? 'border-red-500/30 opacity-60' : 'border-[#3b4148]'} p-3 rounded-lg hover:border-[#ffcc00] transition cursor-pointer group relative overflow-hidden shadow-sm`}>
+                                    <div key={i} onClick={() => handleRebookTicket(t.ticket_number)} className={`bg-[#24292e] border ${t.status === 'void' ? 'border-red-500/30 opacity-60' : t.status === 'won' ? 'border-[#00e700]/50' : t.status === 'paid' ? 'border-blue-500/50' : 'border-[#3b4148]'} p-3 rounded-lg hover:border-[#ffcc00] transition cursor-pointer group relative overflow-hidden shadow-sm`}>
                                         <div className="absolute inset-0 bg-gradient-to-r from-[#ffcc00]/5 to-transparent opacity-0 group-hover:opacity-100 transition"></div>
                                         <div className="flex justify-between items-center mb-1.5 relative z-10">
-                                            <span className={`font-mono font-black text-[13px] ${t.status === 'void' ? 'line-through text-slate-500' : 'text-[#ffcc00]'}`}>{t.ticket_number}</span>
-                                            <span className="text-[10px] font-bold text-slate-500">{new Date(t.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className={`font-mono font-black text-[13px] ${t.status === 'void' ? 'line-through text-slate-500' : 'text-[#ffcc00]'}`}>#{t.ticket_number}</span>
+                                                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${
+                                                    t.status === 'won' ? 'bg-[#00e700]/20 text-[#00e700]' :
+                                                    t.status === 'paid' ? 'bg-blue-500/20 text-blue-400' :
+                                                    t.status === 'lost' ? 'bg-red-500/20 text-red-400' :
+                                                    t.status === 'void' ? 'bg-slate-600/30 text-slate-400' :
+                                                    'bg-[#ffcc00]/15 text-[#ffcc00]'
+                                                }`}>
+                                                    {t.status === 'won' ? 'WON' : t.status === 'paid' ? 'PAID' : t.status === 'lost' ? 'LOST' : t.status === 'void' ? 'VOID' : 'ACTIVE'}
+                                                </span>
+                                            </div>
+                                            <span className="text-[10px] font-bold text-slate-400">{new Date(t.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                                         </div>
                                         <div className="flex justify-between items-center text-[11px] relative z-10 font-bold">
-                                            <span className="text-slate-400">Stake: <span className="text-white">{t.stake_amount}</span></span>
-                                            {t.status === 'void' ? <span className="text-red-400">VOID</span> : (
+                                            <span className="text-slate-400">Stake: <span className="text-white">{t.stake_amount} Br</span></span>
+                                            {t.status === 'void' ? <span className="text-red-400">ተሰርዟል</span> : (
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-[#00e700]">Win: {t.potential_win}</span>
-                                                    {isWithin20Minutes(t.created_at) && (
+                                                    <span className="text-[#00e700]">Win: {computeTruePotentialWin(t).toFixed(2)}</span>
+                                                    {t.status === 'active' && isWithin20Minutes(t.created_at, t.minutes_ago) && (
                                                         <button onClick={(e) => handleVoidRecentTicket(e, t.ticket_number)} className="bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-white rounded px-1.5 py-0.5 transition-colors text-[10px]" title="ሰርዝ">
                                                             🗑️
                                                         </button>
@@ -1132,9 +1408,9 @@ export default function CashierDashboard() {
                                                             type="number" 
                                                             min={MIN_STAKE}
                                                             max={MAX_STAKE}
-                                                            value={ticketData.stake_amount || ''} 
+                                                            value={ticketData.stake_amount ?? ''} 
                                                             onChange={(e) => handleStakeChange(e.target.value)}
-                                                            className="w-16 bg-transparent border-b border-dashed border-gray-400 text-black font-black text-sm outline-none text-center focus:border-solid transition-colors"
+                                                            className="w-20 bg-yellow-50 border border-gray-400 rounded px-1.5 py-0.5 text-black font-black text-sm outline-none text-center focus:border-blue-600 transition-colors"
                                                         />
                                                     ) : (
                                                         <span className="text-black text-sm font-black px-1">{ticketData.stake_amount}</span>
@@ -1266,60 +1542,142 @@ export default function CashierDashboard() {
                                             </div>
                                         </div>
 
-                                        <div className="flex-1 overflow-y-auto custom-scrollbar mb-4">
-                                            <div className="bg-white border border-gray-300 rounded overflow-hidden shadow-sm">
-                                                {payoutDetails.selections?.map((item: any, i: number) => {
-                                                    const isWon = item.match_status === 'won'; 
-                                                    const isLost = item.match_status === 'lost'; 
-                                                    const isPostponed = (item.match_status === 'postponed' || item.match_status === 'cancelled' || item.match_status === 'abandoned');
+                                        <div className="mb-3 shrink-0">
+                                            <div className="flex flex-wrap justify-between items-center gap-3 bg-gradient-to-r from-[#24292e] to-[#1a1f24] p-3.5 rounded-xl border border-[#3b4148] shadow-sm">
+                                                <div className="flex-1 min-w-[220px]">
+                                                    <p className="text-xs font-black text-[#ffcc00] flex items-center gap-1.5">
+                                                        <span>🤖</span>
+                                                        <span>{isAiChecking ? 'ከዳታቤዝ እና ከቀጥታ ውጤት እየተጣራ ነው...' : (aiAnalysis?.summaryAmharic || 'የትኬት ጨዋታዎች ዝርዝር እና ትክክለኛ ውጤት')}</span>
+                                                    </p>
+                                                    {payoutDetails.selections && (
+                                                        <div className="flex flex-wrap gap-2 mt-2">
+                                                            <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-[#00e700]/15 text-[#00e700] border border-[#00e700]/30">
+                                                                ✅ አሸናፊ: {payoutDetails.selections.filter((s: any) => (s.aiStatus || s.match_status) === 'won').length}
+                                                            </span>
+                                                            <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30">
+                                                                ❌ ተሸናፊ: {payoutDetails.selections.filter((s: any) => (s.aiStatus || s.match_status) === 'lost').length}
+                                                            </span>
+                                                            <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30">
+                                                                ⏳ በመጠባበቅ ላይ: {payoutDetails.selections.filter((s: any) => !['won', 'lost', 'postponed'].includes(s.aiStatus || s.match_status)).length}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleAiVerifyTicket(true)}
+                                                    disabled={isAiChecking}
+                                                    className="bg-[#ffcc00] hover:bg-[#e6b800] text-black font-black px-4 py-2 rounded-lg text-xs transition active:scale-95 disabled:opacity-50 shadow-sm flex items-center gap-1.5 shrink-0"
+                                                >
+                                                    {isAiChecking ? '🔄 እያጣራ ነው...' : '🔄 ውጤት አድስ (Refresh)'}
+                                                </button>
+                                            </div>
+                                        </div>
 
-                                                    const icon = isWon ? (
-                                                        <svg className="w-5 h-5 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                                                    ) : isLost ? (
-                                                        <svg className="w-5 h-5 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
-                                                    ) : isPostponed ? (
-                                                        <span className="text-[#ffcc00] font-black text-xs">1.00</span>
-                                                    ) : (
-                                                        <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" /></svg>
-                                                    );
-                                                    
-                                                    const teams = (item.match_info || '').split(' vs ');
-                                                    const homeTeam = teams[0] || 'Home';
-                                                    const awayTeam = teams[1] || 'Away';
-                                                    
-                                                    const score = item.score || (isWon || isLost ? 'FT' : '-:-');
-                                                    const mTime = new Date(item.match_time || new Date()).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute:'2-digit' }).replace(',', '');
+                                        <div className="flex-1 overflow-y-auto custom-scrollbar mb-4 space-y-2.5 pr-1">
+                                            {payoutDetails.selections?.map((item: any, i: number) => {
+                                                const leg = aiAnalysis?.legs?.find((l: any) => l.item_id === item.id) || aiAnalysis?.legs?.[i];
+                                                const finalStatus = leg?.aiStatus || item.aiStatus || item.match_status || 'pending';
+                                                const isWon = finalStatus === 'won';
+                                                const isLost = finalStatus === 'lost';
+                                                const isPostponed = [ 'postponed', 'cancelled', 'abandoned' ].includes(finalStatus);
 
-                                                    const { marketText, pickText } = getFormattedMarket(item, fixtures);
+                                                const trueScore =
+                                                    (leg?.liveScore && leg.liveScore !== '-:-' ? leg.liveScore : null) ||
+                                                    (item.liveScore && item.liveScore !== '-:-' ? item.liveScore : null) ||
+                                                    (item.score && item.score !== '-:-' ? item.score : '-:-');
 
-                                                    return (
-                                                        <div key={i} className={`border-b-2 border-gray-200 last:border-b-0 p-3 flex items-center justify-between transition-colors ${isWon ? 'bg-green-50' : isLost ? 'bg-red-50' : 'bg-white hover:bg-gray-50'}`}>
-                                                            <div className="flex-1">
-                                                                <div className="flex items-center gap-3 mb-1">
-                                                                    <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{mTime}</span>
-                                                                    <span className="text-[11px] font-black text-gray-800 uppercase flex-1">{homeTeam} <span className="text-gray-400 mx-1">vs</span> {awayTeam}</span>
-                                                                </div>
-                                                                <div className="flex items-center gap-2 mt-1">
-                                                                    <span className="text-[11px] text-gray-600 font-bold bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
-                                                                        {marketText}: <span className="text-black font-black">{pickText}</span>
+                                                const explanation =
+                                                    leg?.explanationAmharic ||
+                                                    item.explanationAmharic ||
+                                                    null;
+
+                                                const teams = String(item.match_info || '').split(/\s+vs\.?\s+|\s+-\s+/i);
+                                                const homeTeam = teams[0] || item.home_team || 'Home';
+                                                const awayTeam = teams[1] || item.away_team || 'Away';
+
+                                                const mTime = new Date(item.match_time || item.commence_time || payoutDetails.created_at || new Date()).toLocaleString('en-GB', {
+                                                    day: '2-digit',
+                                                    month: '2-digit',
+                                                    hour: '2-digit',
+                                                    minute: '2-digit'
+                                                }).replace(',', '');
+
+                                                const { marketText, pickText } = getFormattedMarket(item, fixtures);
+                                                const fullLeagueText = formatLeagueDisplay(item, fixtures);
+
+                                                return (
+                                                    <div
+                                                        key={i}
+                                                        className={`rounded-xl border p-3.5 transition-all shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                                                            isWon
+                                                                ? 'bg-gradient-to-r from-[#182c22] to-[#1e262b] border-[#00e700]/40'
+                                                                : isLost
+                                                                    ? 'bg-gradient-to-r from-[#2e1c20] to-[#1e2328] border-red-500/40'
+                                                                    : isPostponed
+                                                                        ? 'bg-[#25282c] border-[#ffcc00]/40'
+                                                                        : 'bg-[#24292e] border-[#3b4148]'
+                                                        }`}
+                                                    >
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                                                                <span className="text-[10px] font-bold text-slate-300 bg-[#1a1f24] border border-[#3b4148] px-2 py-0.5 rounded">
+                                                                    🕒 {mTime}
+                                                                </span>
+                                                                {fullLeagueText && (
+                                                                    <span className="text-[10px] font-bold text-slate-400 truncate max-w-[260px]">
+                                                                        {fullLeagueText}
                                                                     </span>
-                                                                    <span className="text-blue-600 font-black text-[11px]">@{parseFloat(item.odd_value).toFixed(2)}</span>
-                                                                </div>
+                                                                )}
                                                             </div>
 
-                                                            <div className="flex items-center gap-4 shrink-0 pl-4 border-l border-gray-200 ml-4">
-                                                                <div className="text-center">
-                                                                    <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Score</p>
-                                                                    <span className={`text-[12px] px-2 py-0.5 rounded shrink-0 font-black border ${item.score && item.score !== '-:-' ? 'bg-[#ffcc00] text-black border-[#e6b800] shadow-sm' : 'bg-gray-100 text-gray-500 border-gray-300'}`}>
-                                                                        {item.score && item.score !== '-:-' ? item.score : 'vs'}
-                                                                    </span>
-                                                                </div>
-                                                                <div className="w-8 flex justify-center">{icon}</div>
+                                                            <div className="text-sm font-black text-white tracking-wide mb-1.5">
+                                                                {homeTeam} <span className="text-[#ffcc00] mx-1">vs</span> {awayTeam}
+                                                            </div>
+
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <span className="text-xs font-bold text-slate-200 bg-[#1a1f24] px-2.5 py-1 rounded-md border border-[#3b4148]">
+                                                                    {marketText}: <span className="text-[#ffcc00] font-black">{pickText}</span>
+                                                                </span>
+                                                                <span className="text-xs font-black text-[#00bfff] bg-[#00bfff]/10 border border-[#00bfff]/30 px-2 py-0.5 rounded-md">
+                                                                    @{parseFloat(item.odd_value).toFixed(2)}
+                                                                </span>
+                                                            </div>
+
+                                                            {explanation && (
+                                                                <p className="text-[11px] text-slate-300 mt-2 leading-relaxed bg-[#1a1f24]/80 px-2.5 py-1.5 rounded-lg border border-[#3b4148]/70">
+                                                                    {explanation}
+                                                                </p>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="flex sm:flex-col items-center sm:items-end justify-between gap-2 shrink-0 sm:pl-4 sm:border-l border-[#3b4148]">
+                                                            <div className="text-right">
+                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1 sm:text-right">ውጤት (Result)</p>
+                                                                <span className={`inline-block text-xs px-2.5 py-1 rounded-md font-black border ${
+                                                                    trueScore !== '-:-'
+                                                                        ? 'bg-black text-[#ffcc00] border-[#ffcc00]/50 shadow-sm'
+                                                                        : 'bg-[#1a1f24] text-slate-400 border-[#3b4148]'
+                                                                }`}>
+                                                                    {trueScore}
+                                                                </span>
+                                                            </div>
+
+                                                            <div className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider flex items-center gap-1 border ${
+                                                                isWon
+                                                                    ? 'bg-[#00e700]/20 text-[#00e700] border-[#00e700]/50'
+                                                                    : isLost
+                                                                        ? 'bg-red-500/20 text-red-400 border-red-500/50'
+                                                                        : isPostponed
+                                                                            ? 'bg-[#ffcc00]/20 text-[#ffcc00] border-[#ffcc00]/50'
+                                                                            : 'bg-orange-500/20 text-orange-400 border-orange-500/50'
+                                                            }`}>
+                                                                {isWon ? '✅ አሸንፏል (WON)' : isLost ? '❌ ተሸንፏል (LOST)' : isPostponed ? 'VOID (1.00)' : '⏳ PENDING'}
                                                             </div>
                                                         </div>
-                                                    );
-                                                })}
-                                            </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
 
                                         <div className="flex justify-between items-center bg-gradient-to-r from-[#1a1f24] to-[#24292e] p-5 rounded-xl border border-[#3b4148] shrink-0 shadow-sm">
@@ -1367,65 +1725,235 @@ export default function CashierDashboard() {
                                             </button>
                                         </form>
                                     </div>
-                                ) : !cashierReport ? (
-                                    <div className="flex-1 flex items-center justify-center">
-                                        <p className="text-white font-bold animate-pulse text-lg">Loading report data...</p>
-                                    </div>
                                 ) : (
                                     <div className="flex-1 flex flex-col">
-                                        <div className="flex justify-between items-center mb-6 pb-4 border-b border-[#3b4148] shrink-0">
-                                            <h2 className="text-xl font-black text-white flex items-center gap-2"><span className="text-2xl">📈</span> የእኔ ሪፖርት</h2>
+                                        <div className="flex flex-wrap justify-between items-center gap-3 mb-4 pb-4 border-b border-[#3b4148] shrink-0">
+                                            <div className="flex items-center gap-3">
+                                                <h2 className="text-xl font-black text-white flex items-center gap-2"><span className="text-2xl">📈</span> የእኔ የገንዘብ ፍሰት እና የየቀኑ ሪፖርት</h2>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { fetchCashierReport(); fetchRecentTickets(); }}
+                                                    className="bg-[#1a1f24] hover:bg-[#2a3038] text-[#ffcc00] border border-[#3b4148] px-3 py-1.5 rounded-lg text-xs font-bold transition"
+                                                >
+                                                    🔄 አድስ
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setIsReportUnlocked(false); setReportPassword(''); }}
+                                                    className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-lg text-xs font-bold transition"
+                                                >
+                                                    🔒 ቆልፍ
+                                                </button>
+                                            </div>
                                             <div className="flex bg-[#1a1f24] border border-[#3b4148] rounded-lg overflow-hidden p-1 shadow-inner">
-                                                <button onClick={() => setReportFilter('today')} className={`px-5 py-2 text-xs font-black rounded-md transition uppercase tracking-widest ${reportFilter === 'today' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-[#2a3038]'}`}>ዛሬ</button>
-                                                <button onClick={() => setReportFilter('week')} className={`px-5 py-2 text-xs font-black rounded-md transition uppercase tracking-widest ${reportFilter === 'week' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-[#2a3038]'}`}>ሳምንት</button>
-                                                <button onClick={() => setReportFilter('month')} className={`px-5 py-2 text-xs font-black rounded-md transition uppercase tracking-widest ${reportFilter === 'month' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-[#2a3038]'}`}>ወር</button>
-                                                <button onClick={() => setReportFilter('year')} className={`px-5 py-2 text-xs font-black rounded-md transition uppercase tracking-widest ${reportFilter === 'year' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-[#2a3038]'}`}>ዓመት</button>
+                                                <button onClick={() => { setReportFilter('today'); setSelectedReportDate(getLocalTodayStr()); }} className={`px-4 py-2 text-xs font-black rounded-md transition uppercase tracking-widest ${reportFilter === 'today' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-[#2a3038]'}`}>ዛሬ</button>
+                                                <button onClick={() => setReportFilter('week')} className={`px-4 py-2 text-xs font-black rounded-md transition uppercase tracking-widest ${reportFilter === 'week' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-[#2a3038]'}`}>ሳምንት</button>
+                                                <button onClick={() => setReportFilter('month')} className={`px-4 py-2 text-xs font-black rounded-md transition uppercase tracking-widest ${reportFilter === 'month' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-[#2a3038]'}`}>ወር</button>
+                                                <button onClick={() => setReportFilter('year')} className={`px-4 py-2 text-xs font-black rounded-md transition uppercase tracking-widest ${reportFilter === 'year' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-[#2a3038]'}`}>ዓመት</button>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-[#1c2024] border border-[#3b4148] rounded-xl p-3.5 mb-5 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-inner">
+                                            <div className="flex items-center gap-2.5">
+                                                <span className="text-xl">📅</span>
+                                                <div>
+                                                    <h3 className="text-xs font-black text-white">የየቀኑ ሂሳብ መፈተሻ (ቀን ይምረጡ)</h3>
+                                                    <p className="text-[10px] text-slate-400 font-bold">የፈለጉትን ቀን መርጠው የተቆረጡ፣ ያሸነፉ፣ የተሸነፉ እና የተከፈሉ ትኬቶችን ይመልከቱ።</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => shiftCashierReportDate(-1)}
+                                                    className="bg-[#24292e] hover:bg-[#2f363d] text-slate-200 border border-[#3b4148] px-3 py-1.5 rounded-lg text-xs font-bold transition"
+                                                >
+                                                    ◀ ቀዳሚ ቀን
+                                                </button>
+                                                <div
+                                                    onClick={openCashierDatePicker}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border cursor-pointer transition ${
+                                                        reportFilter === 'custom'
+                                                            ? 'bg-blue-600/20 border-blue-400 text-white shadow-[0_0_12px_rgba(37,99,235,0.25)]'
+                                                            : 'bg-[#24292e] border-[#3b4148] text-white hover:border-[#ffcc00]'
+                                                    }`}
+                                                >
+                                                    <span className="text-sm select-none" title="ካላንደር ክፈት">📅 ካላንደር:</span>
+                                                    <input
+                                                        ref={reportDateInputRef}
+                                                        type="date"
+                                                        value={selectedReportDate}
+                                                        onChange={(e) => {
+                                                            if (e.target.value) {
+                                                                setSelectedReportDate(e.target.value);
+                                                                setReportFilter('custom');
+                                                            }
+                                                        }}
+                                                        className="bg-transparent text-white text-xs font-black outline-none cursor-pointer [color-scheme:dark]"
+                                                    />
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => shiftCashierReportDate(1)}
+                                                    className="bg-[#24292e] hover:bg-[#2f363d] text-slate-200 border border-[#3b4148] px-3 py-1.5 rounded-lg text-xs font-bold transition"
+                                                >
+                                                    ቀጣይ ቀን ▶
+                                                </button>
+                                                {reportFilter === 'custom' && (
+                                                    <span className="bg-blue-500/20 text-blue-300 border border-blue-500/40 px-2.5 py-1 rounded-md text-[11px] font-black">
+                                                        📌 የተመረጠ ቀን: {selectedReportDate}
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
 
                                         <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-4 shrink-0">
-                                            <div className="bg-[#1c2024] border border-[#3b4148] p-5 rounded-xl shadow-sm">
-                                                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">የተቆረጠ ትኬት</p>
-                                                <p className="text-3xl font-black text-white">{cashierReport.total_tickets}</p>
+                                            <div className="bg-[#1c2024] border border-[#3b4148] p-4 rounded-xl shadow-sm">
+                                                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">1. የተቆረጠ ትኬት</p>
+                                                <p className="text-3xl font-black text-white">{effectiveCashierReport.total_tickets} <span className="text-xs font-bold text-slate-400">ትኬት</span></p>
+                                                <p className="text-[10px] text-slate-400 mt-1 font-bold">
+                                                    በሂደት ላይ: <span className="text-[#ffcc00]">{effectiveCashierReport.active_tickets_count || 0}</span> | የተሰረዘ: <span className="text-red-400">{effectiveCashierReport.void_tickets || 0}</span>
+                                                </p>
                                             </div>
-                                            <div className="bg-[#1c2024] border border-[#ffcc00]/40 p-5 rounded-xl relative overflow-hidden shadow-[0_0_10px_rgba(255,204,0,0.05)]">
-                                                <div className="absolute top-0 right-0 p-3 opacity-10 text-5xl">💰</div>
-                                                <p className="text-[11px] font-bold text-[#ffcc00] uppercase tracking-widest mb-1.5 relative z-10">የትኬት ክፍያ (10 ብር)</p>
-                                                <p className="text-3xl font-black text-[#ffcc00] relative z-10">{(cashierReport.total_tickets * 10).toLocaleString()} Br</p>
+                                            <div className="bg-[#1c2024] border border-[#00e700]/40 p-4 rounded-xl shadow-sm">
+                                                <p className="text-[11px] font-bold text-[#00e700] uppercase tracking-widest mb-1">2. ያሸነፈ ትኬት</p>
+                                                <p className="text-3xl font-black text-[#00e700]">{effectiveCashierReport.won_tickets_count || 0} <span className="text-xs font-bold text-slate-400">ትኬት</span></p>
+                                                <p className="text-[10px] text-slate-400 mt-1 font-bold">
+                                                    የተከፈለ: <span className="text-blue-400">{effectiveCashierReport.paid_tickets_count || 0}</span> | ያልተከፈለ: <span className="text-orange-400">{effectiveCashierReport.unpaid_won_count ?? ((effectiveCashierReport.won_tickets_count || 0) - (effectiveCashierReport.paid_tickets_count || 0))}</span>
+                                                </p>
                                             </div>
-                                            <div className="bg-[#1c2024] border border-[#00e700]/40 p-5 rounded-xl shadow-[0_0_10px_rgba(0,231,0,0.05)]">
-                                                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">ጠቅላላ ገቢ (Stake)</p>
-                                                <p className="text-3xl font-black text-[#00e700]">{Number(cashierReport.total_revenue).toLocaleString()} Br</p>
+                                            <div className="bg-[#1c2024] border border-red-500/40 p-4 rounded-xl shadow-sm">
+                                                <p className="text-[11px] font-bold text-red-400 uppercase tracking-widest mb-1">3. የተሸነፈ ትኬት</p>
+                                                <p className="text-3xl font-black text-red-400">{effectiveCashierReport.lost_tickets_count || 0} <span className="text-xs font-bold text-slate-400">ትኬት</span></p>
+                                                <p className="text-[10px] text-slate-400 mt-1 font-bold">ውድቅ የሆኑ / የተበሉ ትኬቶች</p>
                                             </div>
-                                            <div className="bg-[#1c2024] border border-red-500/40 p-5 rounded-xl shadow-[0_0_10px_rgba(239,68,68,0.05)]">
-                                                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">የተከፈለ (Payout)</p>
-                                                <p className="text-3xl font-black text-red-500">{Number(cashierReport.total_paid).toLocaleString()} Br</p>
+                                            <div className="bg-[#1c2024] border border-blue-500/40 p-4 rounded-xl shadow-sm">
+                                                <p className="text-[11px] font-bold text-blue-400 uppercase tracking-widest mb-1">4. ለተጫዋች የተከፈለ ብር</p>
+                                                <p className="text-3xl font-black text-blue-400">{Number(effectiveCashierReport.total_paid || 0).toLocaleString()} Br</p>
+                                                <p className="text-[10px] text-slate-400 mt-1 font-bold">የተከፈሉ ትኬቶች: {effectiveCashierReport.paid_tickets_count || 0}</p>
                                             </div>
                                         </div>
 
-                                        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 shrink-0 mt-auto">
-                                            <div className="bg-gradient-to-br from-[#1a1f24] to-[#24292e] border border-[#3b4148] p-6 rounded-xl flex items-center justify-between shadow-md">
-                                                <div>
-                                                    <p className="text-sm font-black text-slate-300 uppercase tracking-widest mb-1">ንፁህ ትርፍ</p>
-                                                    <p className="text-[11px] font-bold text-slate-500">ገቢ ሲቀነስ ወጪ</p>
-                                                </div>
-                                                <p className="text-3xl font-black text-[#00bfff]">{Number(cashierReport.net_profit).toLocaleString()} Br</p>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 shrink-0 mb-5">
+                                            <div className="bg-[#1c2024] border border-[#ffcc00]/40 p-4 rounded-xl relative overflow-hidden shadow-sm">
+                                                <p className="text-[11px] font-bold text-[#ffcc00] uppercase tracking-widest mb-1">የትኬት ክፍያ (10 ብር)</p>
+                                                <p className="text-2xl font-black text-[#ffcc00]">{(Number(effectiveCashierReport.total_tickets || 0) * 10).toLocaleString()} Br</p>
+                                                <p className="text-[10px] text-slate-400 mt-1 font-bold">{effectiveCashierReport.total_tickets} ትኬት × 10 ብር</p>
                                             </div>
-                                            
-                                            <div className="bg-gradient-to-br from-red-500/10 to-red-500/5 border border-red-500/30 p-6 rounded-xl flex items-center justify-between shadow-md">
-                                                <div>
-                                                    <p className="text-sm font-black text-red-400 uppercase tracking-widest mb-1">ያልተከፈለ ዕዳ</p>
-                                                    <p className="text-[11px] font-bold text-red-300">በእርስዎ የተቆረጡ ያልተከፈሉ</p>
-                                                </div>
-                                                <p className="text-3xl font-black text-red-500">{Number(cashierReport.unpaid_winnings).toLocaleString()} Br</p>
+                                            <div className="bg-[#1c2024] border border-[#00e700]/40 p-4 rounded-xl shadow-sm">
+                                                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">የውርርድ ገቢ (Stake)</p>
+                                                <p className="text-2xl font-black text-[#00e700]">{Number(effectiveCashierReport.total_revenue || 0).toLocaleString()} Br</p>
+                                                <p className="text-[10px] text-slate-300 mt-1 font-bold">
+                                                    ከ10 ብር ጋር ጠቅላላ: <span className="text-white">{((Number(effectiveCashierReport.total_tickets || 0) * 10) + Number(effectiveCashierReport.total_revenue || 0)).toLocaleString()} Br</span>
+                                                </p>
                                             </div>
+                                            <div className="bg-gradient-to-br from-red-500/10 to-red-500/5 border border-red-500/30 p-4 rounded-xl flex items-center justify-between shadow-sm">
+                                                <div>
+                                                    <p className="text-xs font-black text-red-400 uppercase tracking-widest mb-1">ያልተከፈለ አሸናፊ (Won)</p>
+                                                    <p className="text-[10px] font-bold text-red-300">ያሸነፉ ግን ገና ያልተከፈሉ</p>
+                                                </div>
+                                                <p className="text-xl font-black text-red-500">{Number(effectiveCashierReport.unpaid_winnings || 0).toLocaleString()} Br</p>
+                                            </div>
+                                            <div className="bg-gradient-to-br from-green-500/10 to-green-500/5 border border-green-500/30 p-4 rounded-xl flex items-center justify-between shadow-sm">
+                                                <div>
+                                                    <p className="text-xs font-black text-green-400 uppercase tracking-widest mb-1">በካዝና ያለ ቀሪ ብር</p>
+                                                    <p className="text-[10px] font-bold text-green-300">(Stake + 10 ብር) - የተከፈለ</p>
+                                                </div>
+                                                <p className="text-xl font-black text-green-500">{((Number(effectiveCashierReport.total_tickets || 0) * 10) + Number(effectiveCashierReport.total_revenue || 0) - Number(effectiveCashierReport.total_paid || 0)).toLocaleString()} Br</p>
+                                            </div>
+                                        </div>
 
-                                            <div className="bg-gradient-to-br from-green-500/10 to-green-500/5 border border-green-500/30 p-6 rounded-xl flex items-center justify-between shadow-md">
-                                                <div>
-                                                    <p className="text-sm font-black text-green-400 uppercase tracking-widest mb-1">ጠቅላላ ትርፍ</p>
-                                                    <p className="text-[11px] font-bold text-green-300">ትኬት + ገቢ - የተከፈለ</p>
+                                        <div className="bg-[#1c2024] border border-[#3b4148] rounded-xl overflow-hidden flex-1 flex flex-col">
+                                            <div className="px-5 py-3.5 bg-[#1a1f24] border-b border-[#3b4148] flex flex-wrap justify-between items-center gap-2">
+                                                <h3 className="text-sm font-black text-white">🧾 የተቆረጡ ትኬቶች እና የገንዘብ እንቅስቃሴ ዝርዝር</h3>
+                                                <div className="flex flex-wrap gap-1.5">
+                                                    <button onClick={() => setReportStatusTab('all')} className={`px-2.5 py-1 rounded text-[10px] font-black transition ${reportStatusTab === 'all' ? 'bg-[#ffcc00] text-black' : 'bg-[#24292e] text-slate-300 border border-[#3b4148]'}`}>
+                                                        ሁሉም ({(effectiveCashierReport.tickets || []).length})
+                                                    </button>
+                                                    <button onClick={() => setReportStatusTab('won')} className={`px-2.5 py-1 rounded text-[10px] font-black transition ${reportStatusTab === 'won' ? 'bg-[#00e700] text-black' : 'bg-[#24292e] text-[#00e700] border border-[#00e700]/30'}`}>
+                                                        🎉 ያሸነፉ ({(effectiveCashierReport.tickets || []).filter((t: any) => t.status === 'won' || t.status === 'paid').length})
+                                                    </button>
+                                                    <button onClick={() => setReportStatusTab('lost')} className={`px-2.5 py-1 rounded text-[10px] font-black transition ${reportStatusTab === 'lost' ? 'bg-red-500 text-white' : 'bg-[#24292e] text-red-400 border border-red-500/30'}`}>
+                                                        ❌ የተሸነፉ ({(effectiveCashierReport.tickets || []).filter((t: any) => t.status === 'lost' || t.status === 'expired').length})
+                                                    </button>
+                                                    <button onClick={() => setReportStatusTab('paid')} className={`px-2.5 py-1 rounded text-[10px] font-black transition ${reportStatusTab === 'paid' ? 'bg-blue-500 text-white' : 'bg-[#24292e] text-blue-400 border border-blue-500/30'}`}>
+                                                        ✅ የተከፈሉ ({(effectiveCashierReport.tickets || []).filter((t: any) => t.status === 'paid').length})
+                                                    </button>
+                                                    <button onClick={() => setReportStatusTab('active')} className={`px-2.5 py-1 rounded text-[10px] font-black transition ${reportStatusTab === 'active' ? 'bg-orange-500 text-black' : 'bg-[#24292e] text-orange-400 border border-orange-500/30'}`}>
+                                                        ⏳ በሂደት ላይ ({(effectiveCashierReport.tickets || []).filter((t: any) => t.status === 'active' || t.status === 'pending').length})
+                                                    </button>
                                                 </div>
-                                                <p className="text-3xl font-black text-green-500">{((cashierReport.total_tickets * 10) + Number(cashierReport.total_revenue) - Number(cashierReport.total_paid)).toLocaleString()} Br</p>
+                                            </div>
+                                            <div className="overflow-x-auto max-h-[340px] overflow-y-auto custom-scrollbar">
+                                                <table className="w-full text-left border-collapse">
+                                                    <thead>
+                                                        <tr className="bg-[#14181d] text-[10px] uppercase tracking-wider text-slate-400 sticky top-0">
+                                                            <th className="px-4 py-3 font-black">ሰዓት / ቀን</th>
+                                                            <th className="px-4 py-3 font-black">ትኬት ቁጥር</th>
+                                                            <th className="px-4 py-3 font-black">Stake (+10 Br)</th>
+                                                            <th className="px-4 py-3 font-black">ጠቅላላ ኦድ</th>
+                                                            <th className="px-4 py-3 font-black">ሊበላ የሚችል (Win)</th>
+                                                            <th className="px-4 py-3 font-black">ሁኔታ (Status)</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="text-xs divide-y divide-[#2a3038]">
+                                                        {(() => {
+                                                            const list = (effectiveCashierReport.tickets || []).filter((t: any) => {
+                                                                if (reportStatusTab === 'won') return t.status === 'won' || t.status === 'paid';
+                                                                if (reportStatusTab === 'lost') return t.status === 'lost' || t.status === 'expired';
+                                                                if (reportStatusTab === 'paid') return t.status === 'paid';
+                                                                if (reportStatusTab === 'active') return t.status === 'active' || t.status === 'pending';
+                                                                return true;
+                                                            });
+
+                                                            if (list.length === 0) {
+                                                                return (
+                                                                    <tr>
+                                                                        <td colSpan={6} className="text-center py-8 text-slate-500 font-bold">በዚህ የጊዜ ማጣሪያ የተቆረጠ ትኬት የለም</td>
+                                                                    </tr>
+                                                                );
+                                                            }
+
+                                                            return list.map((t: any, idx: number) => (
+                                                                <tr
+                                                                    key={idx}
+                                                                    onClick={() => {
+                                                                        setActiveTab('check');
+                                                                        setPayoutTicket(t.ticket_number);
+                                                                        fetchTicketDetailsForCheck(t.ticket_number);
+                                                                    }}
+                                                                    className="hover:bg-[#24292e] transition cursor-pointer"
+                                                                >
+                                                                    <td className="px-4 py-3 text-slate-400 font-medium">
+                                                                        {new Date(t.created_at).toLocaleDateString([], { day: '2-digit', month: 'short' })}{' '}
+                                                                        <span className="text-slate-300 font-bold">{new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                                    </td>
+                                                                    <td className="px-4 py-3 font-mono font-black text-[#ffcc00]">#{t.ticket_number}</td>
+                                                                    <td className="px-4 py-3 font-bold text-white">
+                                                                        {Number(t.stake_amount).toLocaleString()} Br{' '}
+                                                                        {t.status !== 'void' && <span className="text-[10px] text-[#ffcc00]">(+10)</span>}
+                                                                    </td>
+                                                                    <td className="px-4 py-3 font-bold text-slate-300">{t.total_odds || '-'}</td>
+                                                                    <td className="px-4 py-3 font-black text-[#00e700]">{computeTruePotentialWin(t).toLocaleString()} Br</td>
+                                                                    <td className="px-4 py-3 font-black">
+                                                                        {t.status === 'paid' ? (
+                                                                            <span className="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded text-[10px]">✅ ተከፍሏል (PAID)</span>
+                                                                        ) : t.status === 'won' ? (
+                                                                            <span className="bg-[#00e700]/20 text-[#00e700] px-2 py-0.5 rounded text-[10px]">🎉 አሸንፏል (WON)</span>
+                                                                        ) : t.status === 'lost' ? (
+                                                                            <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-[10px]">❌ ተሸንፏል (LOST)</span>
+                                                                        ) : t.status === 'void' ? (
+                                                                            <span className="bg-slate-600/30 text-slate-400 px-2 py-0.5 rounded text-[10px]">🚫 ተሰርዟል (VOID)</span>
+                                                                        ) : t.status === 'expired' ? (
+                                                                            <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-[10px]">⏳ EXPIRED</span>
+                                                                        ) : (
+                                                                            <span className="bg-[#ffcc00]/20 text-[#ffcc00] px-2 py-0.5 rounded text-[10px]">⏳ ACTIVE</span>
+                                                                        )}
+                                                                    </td>
+                                                                </tr>
+                                                            ));
+                                                        })()}
+                                                    </tbody>
+                                                </table>
                                             </div>
                                         </div>
                                     </div>
@@ -1436,105 +1964,119 @@ export default function CashierDashboard() {
                 </div>
             </div>
             
-            {/* 🌟 1. ማረጋገጫ (Print Preview) Modal */}
+            {/* 🌟 1. የPrint Preview እና የ80mm Thermal Printer ደረሰኝ (Compact & Paper-Saving Design) 🌟 */}
             {isPrintPreviewOpen && ticketData && (
-                <div className="fixed inset-0 z-[120] flex flex-col items-center bg-black/80 overflow-y-auto animate-fade-in p-4 py-10 backdrop-blur-sm">
-                    <div className="w-full max-w-[340px] mb-3 flex justify-end shrink-0 sticky top-0 z-50">
+                <div id="print-modal-wrapper" className="fixed inset-0 z-[120] flex flex-col items-center bg-black/80 overflow-y-auto animate-fade-in p-4 py-6 backdrop-blur-sm">
+                    <div className="no-print w-full max-w-[320px] mb-2 flex justify-end shrink-0 sticky top-0 z-50">
                         <button 
                             onClick={() => setIsPrintPreviewOpen(false)} 
-                            className="text-white text-[10px] font-black tracking-widest bg-black/60 backdrop-blur-md border border-white/10 hover:bg-red-500 hover:border-red-400 px-4 py-2.5 rounded-full transition-all flex items-center gap-1.5 shadow-[0_4px_12px_rgba(0,0,0,0.5)]"
+                            className="text-white text-[10px] font-black tracking-widest bg-black/60 backdrop-blur-md border border-white/10 hover:bg-red-500 hover:border-red-400 px-4 py-2 rounded-full transition-all flex items-center gap-1.5 shadow-[0_4px_12px_rgba(0,0,0,0.5)]"
                         >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
                             CLOSE
                         </button>
                     </div>
 
-                    <div className="w-full max-w-[340px] bg-white text-black rounded-sm overflow-hidden pb-2 shadow-2xl relative shrink-0 border border-gray-300 font-sans">
+                    {/* 🧾 የሚታተመው ትኬት (Compact 80mm Receipt — QR ከላይ ከ vibebet.et ፊት ለፊት፣ ያለ ባርኮድ) */}
+                    <div id="printable-thermal-receipt" className="w-full max-w-[302px] bg-white text-black rounded-sm overflow-hidden px-2.5 py-1.5 shadow-2xl relative shrink-0 border border-gray-300 font-sans">
                         
-                        <div className="flex justify-between items-center px-4 py-2">
-                            <div className="flex items-center gap-2">
-                                <h1 className="text-lg font-black leading-none tracking-tight">
-                                    vibebet<span className="text-[#ffcc00]">.et</span>
-                                </h1>
-                                <span className="text-[9px] font-bold mt-1">SCAN & CHECK BET PENDING</span>
-                            </div>
-                            {ticketData.booking_code && ticketData.booking_code !== 'REBOOK' && (
-                                <div className="w-10 h-10 border border-gray-200 p-0.5 rounded-sm">
-                                    <QRCodeSVG value={bookingShareUrl} size={34} />
+                        {/* Header: vibebet.et መጀመሪያ በነበረው የሚያምር ዲዛይን በግራ + QR Code ፊት ለፊት በቀኝ */}
+                        <div className="flex items-center justify-between border-b-[1.5px] border-black pb-1 mb-1">
+                            <div className="flex flex-col">
+                                <div className="flex items-center gap-1.5">
+                                    <h1 className="text-[21px] font-black leading-none tracking-tight text-black">
+                                        vibebet<span className="text-[#ffcc00]">.et</span>
+                                    </h1>
+                                    <span className="border-[1.5px] border-black rounded-full px-1 py-0.5 text-[7.5px] font-black leading-none text-black">21+</span>
                                 </div>
+                                <p className="text-[8px] font-extrabold tracking-[0.14em] uppercase text-black mt-0.5">
+                                    OFFICIAL BETTING RECEIPT
+                                </p>
+                                <p className="text-[7.5px] font-bold text-gray-800 leading-none mt-0.5">
+                                    DATE: {formatShortDateTime(ticketData.created_at || new Date().toISOString())}
+                                </p>
+                            </div>
+                            <div className="border border-black p-0.5 bg-white shrink-0">
+                                <QRCodeSVG value={qrTargetUrl} size={38} level="M" includeMargin={false} />
+                            </div>
+                        </div>
+
+                        {/* Ticket & Booking Meta Bar (Compact Single Row) */}
+                        <div className="flex justify-between items-center bg-gray-100 border border-black px-1.5 py-0.5 text-[9.5px] font-bold mb-1 leading-tight">
+                            <span>TICKET: <strong className="font-mono font-black text-[10.5px]">{ticketData.ticket_number || 'PENDING'}</strong></span>
+                            {ticketData.booking_code && ticketData.booking_code !== 'REBOOK' && (
+                                <span>CODE: <strong className="font-mono font-black text-[10px]">{ticketData.booking_code}</strong></span>
                             )}
                         </div>
 
-                        <div className="border-y-2 border-black p-2 text-[11px] font-bold mx-3 mb-2">
-                            <div className="flex justify-between mb-0.5"><span>DATE</span><span>{formatShortDateTime(new Date().toISOString())}</span></div>
-                            <div className="flex justify-between mb-0.5"><span>TICKET</span><span>{ticketData.ticket_number || 'PENDING'}</span></div>
-                            <div className="flex justify-between mb-0.5"><span>BET</span><span>{ticketData.booking_code === 'REBOOK' ? 'REBOOK' : ticketData.booking_code}</span></div>
-                            <div className="flex justify-between"><span>USERNAME</span><span>{username.toUpperCase()}</span></div>
+                        {/* Matches List (Ultra-Compact Spacing) */}
+                        <div className="receipt-matches-scroll mb-1 max-h-[42vh] overflow-y-auto custom-scrollbar divide-y divide-dashed divide-black border-b-[1.5px] border-black">
+                            {[...(ticketData.selections || [])]
+                                .sort((a, b) => new Date(a.match_time || a.commence_time || 0).getTime() - new Date(b.match_time || b.commence_time || 0).getTime())
+                                .map((item: any, idx: number) => {
+                                    const fullLeagueText = formatLeagueDisplay(item, fixtures).replace(/^Football\s*\/\s*/i, '');
+                                    const { marketText, pickText } = getFormattedMarket(item, fixtures);
+
+                                    const mTime = formatMatchListDateTime(item.match_time || item.commence_time || new Date().toISOString());
+                                    let teamStr = item.match_info || (item.home_team + ' - ' + item.away_team);
+                                    teamStr = teamStr.replace(/\s+vs\.?\s+/gi, ' v ');
+
+                                    return (
+                                        <div key={idx} className="py-0.5 leading-tight">
+                                            <div className="flex justify-between items-baseline gap-1">
+                                                <span className="text-[10.5px] font-black text-black truncate">{idx + 1}. {teamStr}</span>
+                                                <span className="text-[8.5px] font-bold text-black shrink-0">{mTime}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-[9.5px] font-black text-black">
+                                                <span className="truncate pr-1 text-[8.5px] font-bold text-gray-800 max-w-[42%]">{fullLeagueText}</span>
+                                                <div className="flex items-center gap-1 shrink-0">
+                                                    <span className="text-[9px] font-bold">{marketText}:</span>
+                                                    <span className="underline font-black">{pickText}</span>
+                                                    <span className="font-mono font-black bg-gray-100 border border-black px-1 rounded-sm text-[9.5px]">@{parseFloat(item.odd_value).toFixed(2)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                         </div>
 
-                        <div className="border border-black flex items-center p-1 mx-3 mb-1.5">
-                            <div className="border-2 border-black rounded-full w-8 h-8 flex items-center justify-center font-black text-sm shrink-0">21+</div>
-                            <div className="text-[10px] font-bold text-center w-full leading-tight">
-                                UNDER 21 YEARS STRICTLY FORBIDDEN!<br/>T&Cs APPLY
+                        {/* Events & Total Odds Summary */}
+                        <div className="flex justify-between items-center bg-black text-white px-2 py-0.5 text-[9.5px] font-black mb-1 leading-tight">
+                            <span>EVENTS: {ticketData.selections?.length || 0}</span>
+                            <span>TOTAL ODDS: {parseFloat(ticketData.total_odds || 0).toFixed(2)}</span>
+                        </div>
+
+                        {/* Financial Totals Box (Compact) */}
+                        <div className="border-[1.5px] border-black px-2 py-1 mb-1 text-[9.5px] font-bold leading-snug">
+                            <div className="flex justify-between">
+                                <span>STAKE:</span>
+                                <span className="font-black">{parseFloat(ticketData.stake_amount || 0).toFixed(2)} ETB</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span>SERVICE FEE:</span>
+                                <span className="font-black">10.00 ETB</span>
+                            </div>
+                            <div className="flex justify-between border-t border-dashed border-black pt-0.5 mt-0.5">
+                                <span className="font-black">TOTAL PAID:</span>
+                                <span className="font-black">{(parseFloat(ticketData.stake_amount || 0) + 10).toFixed(2)} ETB</span>
+                            </div>
+                            <div className="flex justify-between items-center border-t-[1.5px] border-black pt-0.5 mt-0.5 text-[11px] font-black">
+                                <span>POTENTIAL WIN:</span>
+                                <span className="text-[12px] font-black">{parseFloat(ticketData.potential_win || 0).toFixed(2)} ETB</span>
                             </div>
                         </div>
 
-                        <div className="px-3 mb-2 max-h-[40vh] overflow-y-auto custom-scrollbar">
-                            {ticketData.selections?.map((item: any, idx: number) => {
-                                const fullLeagueText = formatLeagueDisplay(item, fixtures);
-                                const { marketText, pickText } = getFormattedMarket(item, fixtures);
-
-                                let mTime = formatMatchListDateTime(item.match_time || item.commence_time || new Date().toISOString());
-                                let teamStr = item.match_info || (item.home_team + ' - ' + item.away_team);
-                                teamStr = teamStr.replace(/\s+vs\.?\s+/gi, ' v ');
-
-                                return (
-                                    <div key={idx} className="border-b-[1.5px] border-black py-1.5 last:border-b-0">
-                                        <h3 className="text-[12px] font-black text-black leading-tight mb-0.5">{teamStr}</h3>
-                                        <div className="flex justify-between items-center text-[10px] text-gray-700 mb-0.5 font-medium">
-                                            <span className="truncate pr-2">{fullLeagueText}</span>
-                                            <span className="shrink-0 text-black font-medium">{mTime}</span>
-                                        </div>
-                                        <div className="flex items-center text-[11px] font-black text-black">
-                                            <span className="flex-1 truncate">{marketText}</span>
-                                            <span className="shrink-0 text-right pr-6">{pickText}</span>
-                                            <span className="shrink-0 text-right w-[45px]">Q: {parseFloat(item.odd_value).toFixed(2)}</span>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-
-                        <div className="border-y-2 border-black flex justify-between px-3 py-1 text-[11px] font-black mx-3 mb-1.5">
-                            <span>NR EVENTS: {ticketData.selections?.length}</span>
-                            <span>ODDS TOTAL: {parseFloat(ticketData.total_odds).toFixed(2)}</span>
-                        </div>
-
-                        <div className="border-2 border-black p-2 mx-3 mb-2 text-[10px] font-black leading-tight">
-                            <div className="flex justify-between"><span>STAKE</span><span>{parseFloat(ticketData.stake_amount).toFixed(2)} ETB</span></div>
-                            <div className="flex justify-between"><span>SERVICE FEE</span><span>10.00 ETB</span></div>
-                            <div className="flex justify-between border-t border-gray-300 mt-0.5 pt-0.5"><span>TOTAL PAID</span><span>{(parseFloat(ticketData.stake_amount || 0) + 10).toFixed(2)} ETB</span></div>
-                            <div className="flex justify-between"><span>POTENTIAL WIN</span><span>{parseFloat(ticketData.potential_win).toFixed(2)} ETB</span></div>
-                        </div>
-
-                        {ticketData.booking_code && ticketData.booking_code !== 'REBOOK' && (
-                            <div className="mt-1 flex flex-col items-center">
-                                <BarcodeSVG value={ticketData.booking_code} lineColor="#000000" className="h-10 w-[80%]" />
-                                <span className="text-[10px] font-bold tracking-widest">{ticketData.booking_code}</span>
-                            </div>
-                        )}
-
-                        <div className="text-[8px] font-bold text-center mt-1.5 leading-tight px-3">
-                            Cashier Code: {username.toUpperCase()}<br/><br/>
-                            All Win Tickets are ONLY valid for 3 Days | Soccer Betting is 90 Minutes and Doesn't include Extra Time or Penalties.
+                        {/* Compact Footer Rules */}
+                        <div className="text-[7.5px] font-bold text-center leading-tight text-black pt-0.5">
+                            Valid for 3 Days | 90 Mins Only (No Extra Time / Penalties)
                         </div>
                     </div>
 
-                    <div className="w-full max-w-[340px] mt-4 shrink-0 flex gap-3 sticky bottom-4 z-50">
+                    <div className="no-print w-full max-w-[320px] mt-3 shrink-0 flex gap-3 sticky bottom-4 z-50">
                         <button 
                             onClick={handleConfirmAndPrint} 
                             disabled={isPrinting || isLoading}
-                            className="flex-1 bg-gradient-to-r from-[#00e700] to-[#00c800] text-black py-4 rounded-xl font-black hover:shadow-[0_0_20px_rgba(0,231,0,0.5)] transition-all transform active:scale-[0.98] uppercase tracking-[0.1em] flex justify-center items-center gap-2 text-[13px] border-t border-white/40 shadow-xl disabled:opacity-70 disabled:cursor-not-allowed"
+                            className="flex-1 bg-gradient-to-r from-[#00e700] to-[#00c800] text-black py-3.5 rounded-xl font-black hover:shadow-[0_0_20px_rgba(0,231,0,0.5)] transition-all transform active:scale-[0.98] uppercase tracking-[0.1em] flex justify-center items-center gap-2 text-[13px] border-t border-white/40 shadow-xl disabled:opacity-70 disabled:cursor-not-allowed"
                         >
                             {isPrinting || isLoading ? (
                                 <span className="flex items-center gap-2">
@@ -1544,7 +2086,7 @@ export default function CashierDashboard() {
                             ) : (
                                 <>
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
-                                    PRINT TICKET
+                                    PRINT TICKET (F2)
                                 </>
                             )}
                         </button>
@@ -1552,89 +2094,78 @@ export default function CashierDashboard() {
                 </div>
             )}
 
-            {/* 🌟 2. ውጤት ማረጋገጫ (Check/Saved Ticket) Modal */}
+            {/* 🌟 2. ውጤት ማረጋገጫ (Check/Saved Ticket) Modal (Compact & QR on Header) */}
             {isBookingPreviewOpen && bookingCode && (
-                <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/80 overflow-y-auto animate-fade-in p-4 py-10 backdrop-blur-sm">
-                    <div className="w-full max-w-[340px] mb-3 flex justify-between items-center shrink-0 pt-2 sticky top-0 z-50">
-                        <button onClick={() => setIsBookingPreviewOpen(false)} className="text-gray-800 hover:text-black flex items-center gap-1.5 font-bold text-xs px-3 py-2 bg-white rounded-lg border border-gray-200 shadow-sm transition-colors">
+                <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/80 overflow-y-auto animate-fade-in p-4 py-6 backdrop-blur-sm">
+                    <div className="w-full max-w-[320px] mb-2 flex justify-between items-center shrink-0 pt-2 sticky top-0 z-50">
+                        <button onClick={() => setIsBookingPreviewOpen(false)} className="text-gray-800 hover:text-black flex items-center gap-1.5 font-bold text-xs px-3 py-1.5 bg-white rounded-lg border border-gray-200 shadow-sm transition-colors">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg> Back
                         </button>
                         <div className="flex gap-2">
-                            <button onClick={handleSaveReceipt} className="text-gray-800 hover:text-[#e6b800] bg-white rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors">
+                            <button onClick={handleSaveReceipt} className="text-gray-800 hover:text-[#e6b800] bg-white rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors">
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> Save
                             </button>
-                            <button onClick={handleShareBooking} className="text-black bg-[#ffcc00] hover:bg-[#e6b800] rounded-lg px-4 py-2 text-xs font-black flex items-center gap-1.5 shadow-sm transition-colors">
+                            <button onClick={handleShareBooking} className="text-black bg-[#ffcc00] hover:bg-[#e6b800] rounded-lg px-4 py-1.5 text-xs font-black flex items-center gap-1.5 shadow-sm transition-colors">
                                 Share
                             </button>
                         </div>
                     </div>
 
-                    <div ref={receiptRef} className="w-full max-w-[340px] bg-white text-black rounded-sm overflow-hidden pb-4 shadow-2xl relative shrink-0 border border-gray-300 font-sans">
-                        {/* Header */}
-                        <div className="flex justify-between items-center px-4 py-3">
+                    <div ref={receiptRef} className="w-full max-w-[302px] bg-white text-black rounded-sm overflow-hidden px-2.5 py-2 shadow-2xl relative shrink-0 border border-gray-300 font-sans">
+                        {/* Header: vibebet.et መጀመሪያ በነበረው የሚያምር ዲዛይን በግራ + QR Code ፊት ለፊት በቀኝ */}
+                        <div className="flex justify-between items-center border-b-[1.5px] border-black pb-1 mb-1">
                             <div className="flex flex-col">
-                                <h1 className="text-xl font-black leading-none tracking-tight">
+                                <h1 className="text-[21px] font-black leading-none tracking-tight text-black">
                                     vibebet<span className="text-[#ffcc00]">.et</span>
                                 </h1>
-                                <span className="text-[9px] font-bold mt-1 uppercase tracking-widest">TICKET RECEIPT</span>
+                                <span className="text-[8px] font-bold mt-0.5 uppercase tracking-widest">TICKET RECEIPT</span>
                             </div>
-                            <div className="w-10 h-10 border border-gray-200 p-0.5 rounded-sm">
-                                <QRCodeSVG value={bookingShareUrl} size={34} />
+                            <div className="border border-black p-0.5 bg-white shrink-0">
+                                <QRCodeSVG value={bookingShareUrl} size={38} level="M" includeMargin={false} />
                             </div>
                         </div>
 
                         {/* Sub-header */}
-                        <div className="border-y-2 border-black flex justify-between items-center px-3 py-1.5 bg-gray-50 text-[10px] mx-3 mb-2 font-bold">
-                            <div className="flex items-center gap-1 text-[#e6b800] font-black">
-                                <span className="text-[6px]">●</span> BOOKED
-                            </div>
-                            <div className="text-black font-black tracking-widest text-[12px]">
-                                #{bookingCode}
-                            </div>
-                            <div className="text-gray-600">
-                                {formatShortDateTime(new Date().toISOString())}
-                            </div>
+                        <div className="border border-black flex justify-between items-center px-1.5 py-0.5 bg-gray-100 text-[9.5px] mb-1 font-bold">
+                            <span className="font-black">CODE: #{bookingCode}</span>
+                            <span className="text-gray-700 text-[8.5px]">{formatShortDateTime(new Date().toISOString())}</span>
                         </div>
 
-                        {/* Matches List */}
-                        <div className="px-3 mb-2">
+                        {/* Matches List (Compact) */}
+                        <div className="mb-1 divide-y divide-dashed divide-black border-b-[1.5px] border-black">
                             {betSlip.map((item: any, idx: number) => {
-                                const fullLeagueText = formatLeagueDisplay(item, fixtures);
+                                const fullLeagueText = formatLeagueDisplay(item, fixtures).replace(/^Football\s*\/\s*/i, '');
                                 const { marketText, pickText } = getFormattedMarket(item, fixtures);
 
-                                let mTime = formatMatchListDateTime(item.match_time || item.commence_time || new Date().toISOString());
+                                const mTime = formatMatchListDateTime(item.match_time || item.commence_time || new Date().toISOString());
                                 let teamStr = item.match_info || (item.home_team + ' - ' + item.away_team);
                                 teamStr = teamStr.replace(/\s+vs\.?\s+/gi, ' v ');
 
                                 return (
-                                    <div key={idx} className="border-b-[1.5px] border-black py-1.5 last:border-0">
-                                        <h3 className="text-[12px] font-black text-black leading-tight mb-0.5">{teamStr}</h3>
-                                        <div className="flex justify-between items-center text-[10px] text-gray-700 mb-0.5 font-medium">
-                                            <span className="truncate pr-2">{fullLeagueText}</span>
-                                            <span className="shrink-0 text-black font-medium">{mTime}</span>
+                                    <div key={idx} className="py-0.5 leading-tight">
+                                        <div className="flex justify-between items-baseline gap-1">
+                                            <span className="text-[10.5px] font-black text-black truncate">{idx + 1}. {teamStr}</span>
+                                            <span className="text-[8.5px] font-bold text-black shrink-0">{mTime}</span>
                                         </div>
-                                        <div className="flex items-center text-[11px] font-black text-black">
-                                            <span className="flex-1 truncate">{marketText}</span>
-                                            <span className="shrink-0 text-right pr-6">{pickText}</span>
-                                            <span className="shrink-0 text-right w-[45px]">Q: {parseFloat(item.odd_value).toFixed(2)}</span>
+                                        <div className="flex justify-between items-center text-[9.5px] font-black text-black">
+                                            <span className="truncate pr-1 text-[8.5px] font-bold text-gray-800 max-w-[42%]">{fullLeagueText}</span>
+                                            <div className="flex items-center gap-1 shrink-0">
+                                                <span className="text-[9px] font-bold">{marketText}:</span>
+                                                <span className="underline font-black">{pickText}</span>
+                                                <span className="font-mono font-black bg-gray-100 border border-black px-1 rounded-sm text-[9.5px]">@{parseFloat(item.odd_value).toFixed(2)}</span>
+                                            </div>
                                         </div>
                                     </div>
                                 );
                             })}
                         </div>
 
-                        <div className="border border-black p-2 text-[10px] font-black mx-3 mb-2 bg-gray-50">
-                            <div className="flex justify-between mb-0.5"><span>BET AMOUNT</span><span>{safeStake.toFixed(2)} ETB</span></div>
-                            <div className="flex justify-between mb-1"><span>POSSIBLE WIN</span><span>{grossWin.toFixed(2)} ETB</span></div>
-                            <div className="flex justify-between items-center mt-1 border-t border-gray-300 pt-1.5">
-                                <span className="text-[11px]">WINNING</span>
-                                <span className="text-[11px]">{grossWin.toFixed(2)} ETB</span>
+                        <div className="border-[1.5px] border-black px-2 py-1 text-[9.5px] font-black bg-gray-50 leading-snug">
+                            <div className="flex justify-between"><span>BET AMOUNT:</span><span>{safeStake.toFixed(2)} ETB</span></div>
+                            <div className="flex justify-between items-center border-t border-black pt-0.5 mt-0.5 text-[11px]">
+                                <span>POSSIBLE WIN:</span>
+                                <span>{grossWin.toFixed(2)} ETB</span>
                             </div>
-                        </div>
-
-                        <div className="mt-3 flex flex-col items-center">
-                            <BarcodeSVG value={bookingCode!} lineColor="#000000" className="h-10 w-[80%]" />
-                            <span className="text-[9px] text-black font-bold mt-0.5 tracking-widest">{bookingCode}</span>
                         </div>
                     </div>
                 </div>
@@ -1645,11 +2176,56 @@ export default function CashierDashboard() {
                 .custom-scrollbar::-webkit-scrollbar-thumb { background: #3b4148; border-radius: 10px; }
                 input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
                 input[type=number] { -moz-appearance: textfield; }
-                input[type=date]::-webkit-calendar-picker-indicator { width: 100%; height: 100%; margin: 0; padding: 0; cursor: pointer; }
                 @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
                 .animate-fade-in-down { animation: fadeInDown 0.2s ease-out forwards; }
                 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
                 .animate-fade-in { animation: fadeIn 0.2s ease-out forwards; }
+
+                /* 🖨️ 80mm Thermal Receipt Direct Print Rules */
+                @media print {
+                    @page {
+                        size: 72mm auto;
+                        margin: 0mm;
+                    }
+                    html, body {
+                        background: #ffffff !important;
+                        color: #000000 !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        width: 72mm !important;
+                        height: fit-content !important;
+                        min-height: 0 !important;
+                        overflow: visible !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    .no-print {
+                        display: none !important;
+                    }
+                    #print-modal-wrapper {
+                        position: static !important;
+                        background: transparent !important;
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        overflow: visible !important;
+                        display: block !important;
+                        height: fit-content !important;
+                        min-height: 0 !important;
+                    }
+                    #printable-thermal-receipt {
+                        width: 72mm !important;
+                        max-width: 72mm !important;
+                        height: fit-content !important;
+                        margin: 0 !important;
+                        padding: 1mm 1.5mm !important;
+                        box-shadow: none !important;
+                        border: none !important;
+                    }
+                    .receipt-matches-scroll {
+                        max-height: none !important;
+                        overflow: visible !important;
+                    }
+                }
             `}</style>
         </div>
     );
