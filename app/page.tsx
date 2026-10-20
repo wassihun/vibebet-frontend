@@ -11,8 +11,10 @@ const MAX_STAKE = 10000;
 const MAX_WIN = 10000;
 const MIN_STAKE = 20;
 
-const API_BASE = 'https://vibebet.onrender.com';
-    
+const API_BASE =
+    (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) ||
+    'http://localhost:5000';
+
 const INITIAL_VISIBLE_GAMES = 60;
 const LOAD_MORE_STEP = 60;
 
