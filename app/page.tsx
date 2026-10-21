@@ -24,6 +24,21 @@ const getInitialVisibleStep = () =>
 const getLoadMoreStep = () =>
     typeof window !== 'undefined' && window.innerWidth < 768 ? 20 : LOAD_MORE_STEP;
 
+const BLOCKED_PLAYER_ROLES = ['cashier', 'admin', 'agent', 'shop', 'superadmin', 'manager'];
+
+const isRestrictedStaffToken = (token: string | null): boolean => {
+    if (!token) return false;
+    try {
+        const parts = token.split('.');
+        if (parts.length === 3) {
+            const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+            const role = String(payload?.role || payload?.user?.role || '').toLowerCase().trim();
+            if (BLOCKED_PLAYER_ROLES.includes(role)) return true;
+        }
+    } catch (e) {}
+    return false;
+};
+
 interface OddOption {
     odd_id: string;
     option: string;
@@ -290,8 +305,16 @@ export default function Home() {
             if (storedSigs) setPlacedBetSignatures(JSON.parse(storedSigs));
             
             const token = localStorage.getItem('vibebet_token');
-            if(token) {
-                setIsLoggedIn(true);
+            const savedRole = String(localStorage.getItem('vibebet_user_role') || '').toLowerCase().trim();
+
+            if (token) {
+                if (BLOCKED_PLAYER_ROLES.includes(savedRole) || isRestrictedStaffToken(token)) {
+                    localStorage.removeItem('vibebet_token');
+                    localStorage.removeItem('vibebet_user_role');
+                    setIsLoggedIn(false);
+                } else {
+                    setIsLoggedIn(true);
+                }
             }
         } catch (e) {}
     }, []);
@@ -1270,6 +1293,7 @@ export default function Home() {
             const res = await axios.post(`${API_BASE}/api/auth/register`, { username, email, phone, password, otp });
             if (res.data.success) {
                 localStorage.setItem('vibebet_token', res.data.token);
+                localStorage.setItem('vibebet_user_role', 'user');
                 setIsLoggedIn(true);
                 setCurrentBalance("0.00");
                 setIsRegisterOpen(false);
@@ -1290,9 +1314,21 @@ export default function Home() {
         try {
             const res = await axios.post(`${API_BASE}/api/auth/login`, { phone, password });
             if (res.data.success) {
+                const userRole = String(res.data.user?.role || res.data.role || '').toLowerCase().trim();
+
+                // 🔒 SECURITY FIX: ካሸር ወይም አድሚን በተጫዋች መግቢያ እንዳይገባ መከልከል
+                if (BLOCKED_PLAYER_ROLES.includes(userRole) || isRestrictedStaffToken(res.data.token)) {
+                    localStorage.removeItem('vibebet_token');
+                    localStorage.removeItem('vibebet_user_role');
+                    setIsLoggedIn(false);
+                    alert('ይህ የካሸር/የአድሚን አካውንት ነው! እባክዎ በካሸር መግቢያ ገጽ በኩል ይግቡ።');
+                    return;
+                }
+
                 localStorage.setItem('vibebet_token', res.data.token);
+                localStorage.setItem('vibebet_user_role', userRole || 'user');
                 setIsLoggedIn(true);
-                setCurrentBalance(res.data.user.balance || "0.00");
+                setCurrentBalance(res.data.user?.balance || "0.00");
                 setIsLoginOpen(false);
             } else {
                 alert(res.data.message);
@@ -2376,7 +2412,7 @@ export default function Home() {
 
                         {/* Sign Out Button */}
                         <div className="p-4 bg-white border-t border-gray-200 mt-auto shrink-0">
-                            <button onClick={() => { setIsLoggedIn(false); localStorage.removeItem('vibebet_token'); setIsProfileDrawerOpen(false); }} className="w-full bg-[#e5e7eb] hover:bg-gray-300 text-gray-800 font-black tracking-wider py-3.5 rounded-xl flex items-center justify-center gap-2 text-xs transition-colors shadow-sm">
+                            <button onClick={() => { setIsLoggedIn(false); localStorage.removeItem('vibebet_token'); localStorage.removeItem('vibebet_user_role'); setIsProfileDrawerOpen(false); }} className="w-full bg-[#e5e7eb] hover:bg-gray-300 text-gray-800 font-black tracking-wider py-3.5 rounded-xl flex items-center justify-center gap-2 text-xs transition-colors shadow-sm">
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
                                 SIGN OUT
                             </button>
