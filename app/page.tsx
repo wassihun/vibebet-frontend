@@ -18,6 +18,12 @@ const API_BASE =
 const INITIAL_VISIBLE_GAMES = 60;
 const LOAD_MORE_STEP = 60;
 
+const getInitialVisibleStep = () =>
+    typeof window !== 'undefined' && window.innerWidth < 768 ? 20 : INITIAL_VISIBLE_GAMES;
+
+const getLoadMoreStep = () =>
+    typeof window !== 'undefined' && window.innerWidth < 768 ? 20 : LOAD_MORE_STEP;
+
 interface OddOption {
     odd_id: string;
     option: string;
@@ -224,9 +230,10 @@ export default function Home() {
     const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false);
     const [selectedCountryFilter, setSelectedCountryFilter] = useState<string>('All Countries');
 
-    // 🌟 ፈጣን DOM Rendering (Progressive Scroll) 🌟
+    // 🌟 ፈጣን DOM Rendering (Progressive Scroll - ለሞባይል የተመጠነ) 🌟
     const [visibleGamesLimit, setVisibleGamesLimit] = useState<number>(INITIAL_VISIBLE_GAMES);
     const mainListScrollRef = useRef<HTMLDivElement>(null);
+    const scrollThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const [acceptOddsChange, setAcceptOddsChange] = useState<boolean>(true);
     const acceptOddsChangeRef = useRef(acceptOddsChange);
@@ -271,6 +278,10 @@ export default function Home() {
     const [otpSent, setOtpSent] = useState(false);
     const [authLoading, setAuthLoading] = useState(false);
 
+    // 🌟 ፈጣን O(1) Lookup Sets (ሞባይል ላይ በእያንዳንዱ ጨዋታ የሚደረገውን ተደጋጋሚ ፍለጋ ያስቀራል) 🌟
+    const selectedOddIdsSet = useMemo(() => new Set(betSlip.map(item => item.odd_id)), [betSlip]);
+    const selectedFixtureIdsSet = useMemo(() => new Set(betSlip.map(item => String(item.fixture_id))), [betSlip]);
+
     useEffect(() => {
         try {
             const savedSlip = localStorage.getItem('vibebet_saved_betslip');
@@ -294,6 +305,7 @@ export default function Home() {
 
     useEffect(() => {
         setIsMounted(true);
+        setVisibleGamesLimit(getInitialVisibleStep());
         document.title = "vibebet.et";
         setIsOnline(navigator.onLine);
         const handleOnline = () => setIsOnline(true);
@@ -303,12 +315,13 @@ export default function Home() {
         return () => {
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
+            if (scrollThrottleRef.current) clearTimeout(scrollThrottleRef.current);
         };
     }, []);
 
-    //ሊግ፣ ቀን ወይም ፍለጋ ሲቀየር የሚታዩትን ጨዋታዎች መጠን ማስጀመር
+    // ሊግ፣ ቀን ወይም ፍለጋ ሲቀየር የሚታዩትን ጨዋታዎች መጠን ማስጀመር
     useEffect(() => {
-        setVisibleGamesLimit(INITIAL_VISIBLE_GAMES);
+        setVisibleGamesLimit(getInitialVisibleStep());
         if (mainListScrollRef.current) {
             mainListScrollRef.current.scrollTop = 0;
         }
@@ -326,21 +339,6 @@ export default function Home() {
             setSelectedMatch(updatedMatch);
         }
     }, [fixtures, selectedMatch]);
-
-    // 🌟 ክለብ ሲከፈት የመጀመሪያዎቹ 5 ማርኬቶች ወዲያውኑ ተዘርግተው እንዲታዩ ማድረግ 🌟
-    useEffect(() => {
-        if (!selectedMatch) return;
-        const cats = getCategorizedMarkets(selectedMatch);
-        const allMkts = cats['ALL'] || [];
-        if (allMkts.length > 0) {
-            setOpenAccordions(prev => {
-                const currentMatchMkts = prev.filter(id => id.endsWith(`_${selectedMatch.id}`));
-                if (currentMatchMkts.length > 0) return prev;
-                return allMkts.slice(0, 5).map((m: any) => m.unique_id);
-            });
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedMatch?.id]);
 
     // 🌟 "Accept all odd changes" ቲክ ሲደረግ ወይም fixtures ሲታደስ በትኬቱ (BetSlip) ላይ ያሉትን ኦዶችና የሚበላውን ብር ወዲያውኑ ማዘመን 🌟
     useEffect(() => {
@@ -519,7 +517,7 @@ export default function Home() {
                     const formatted = formatFixturesData(rawList);
                     setFixtures(formatted);
                     try {
-                        sessionStorage.setItem('vibebet_fixtures_fast_cache', JSON.stringify(formatted.slice(0, 250)));
+                        sessionStorage.setItem('vibebet_fixtures_fast_cache', JSON.stringify(formatted.slice(0, 80)));
                     } catch (e) {}
                 }
             } catch (err) {
@@ -604,9 +602,56 @@ export default function Home() {
 
     const clearBookingCode = () => { setBookingCode(null); setIsBookingPreviewOpen(false); };
 
-    const toggleSelection = (game: any, odd: any, marketName: string = '1x2') => {
+    const getLeagueDetails = useCallback((key: string, flagFromApi?: string) => {
+        if (!key || typeof key !== 'string') return { country: 'World', flag: 'https://media.api-sports.io/flags/un.svg', name: 'Soccer', isTop: false };
+        
+        let country = 'World';
+        let name = key.replace('soccer_', '').replace(/_/g, ' ');
+        let flag = flagFromApi || 'https://media.api-sports.io/flags/un.svg';
+
+        if (key.includes('|')) {
+            const parts = key.split('|');
+            country = parts[0] || 'World';
+            name = parts[1] || name;
+            flag = parts[2] || flag;
+        }
+
+        const nameLower = name.toLowerCase().trim();
+        const countryLower = country.toLowerCase().trim();
+
+        let isTop = false;
+
+        if (
+            (nameLower === 'premier league' && countryLower === 'england') ||
+            (nameLower === 'championship' && countryLower === 'england') ||
+            (nameLower === 'fa cup' && countryLower === 'england') ||
+            ((nameLower === 'la liga' || nameLower === 'primera division' || nameLower === 'laliga') && countryLower === 'spain') ||
+            (nameLower === 'serie a' && countryLower === 'italy') ||
+            ((nameLower === 'bundesliga' || nameLower === '1. bundesliga') && countryLower === 'germany') ||
+            (nameLower === 'ligue 1' && countryLower === 'france') ||
+            nameLower === 'uefa champions league' ||
+            nameLower === 'uefa europa league' ||
+            nameLower === 'uefa conference league' ||
+            nameLower === 'world cup' ||
+            nameLower === 'euro championship' ||
+            nameLower === 'copa america' ||
+            nameLower === 'africa cup of nations'
+        ) {
+            isTop = true;
+        }
+
+        if (!isTop && !key.includes('|')) {
+            name = name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            country = country.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        }
+
+        return { country, flag, name, isTop };
+    }, []);
+
+    const toggleSelection = useCallback((game: any, odd: any, marketName: string = '1x2') => {
         if (!odd || odd.value === "0.00" || odd.value === "-") return;
-        clearBookingCode();
+        setBookingCode(null);
+        setIsBookingPreviewOpen(false);
         setErrorMessage(null);
         setBetSlip((prev: any[]) => {
             const exists = prev.find((item: any) => item.fixture_id === game.id);
@@ -619,12 +664,12 @@ export default function Home() {
             };
             return [...prev.filter((item: any) => item.fixture_id !== game.id), newItem];
         });
-    };
+    }, [getLeagueDetails]);
 
-    const handleMarketSelection = (game: any, odd: any, marketName: string) => {
+    const handleMarketSelection = useCallback((game: any, odd: any, marketName: string) => {
         toggleSelection(game, odd, marketName);
         setSelectedMatch(null); 
-    };
+    }, [toggleSelection]);
 
     const totalOddsNum = useMemo(() => {
         return betSlip.reduce((total: number, item: BetSlipItem) => {
@@ -744,7 +789,7 @@ export default function Home() {
                 setBetSlip(loadedSelections); clearBookingCode(); return true;
             } else { setTicketLoadError("ትኬቱ አልተገኘም! እባክዎ ትክክለኛ Booking Code ያስገቡ።"); return false; }
         } catch (err: any) { setTicketLoadError(err.response?.data?.message || "ትኬት ማምጣት አልተቻለም!"); return false; } finally { setIsLoading(false); }
-    }, [fixtures]);
+    }, [fixtures, getLeagueDetails]);
 
     const handleLoadTicket = async () => {
         const cleanCode = ticketCodeInput.trim();
@@ -865,7 +910,7 @@ export default function Home() {
         setOpenAccordions((prev: string[]) => prev.includes(id) ? prev.filter((t: string) => t !== id) : [...prev, id]);
     };
 
-    const getCategorizedMarkets = (game: any) => {
+    const getCategorizedMarkets = useCallback((game: any) => {
         const latestGame = fixtures.find((f: Fixture) => String(f.id) === String(game?.id)) || game;
         const rawBets = latestGame?.raw_markets || [];
         const categories: Record<string, any[]> = { "MAIN": [], "TOTALS": [], "HALF": [], "HANDICAPS": [], "COMBOS": [], "PLAYERS": [], "ALL": [] };
@@ -1079,7 +1124,26 @@ export default function Home() {
         });
 
         return finalObj;
-    };
+    }, [fixtures]);
+
+    // 🌟 የተመረጠው ጨዋታ ማርኬቶች በእያንዳንዱ ንኪኪ እንደገና እንዳይሰሉ በ useMemo ተይዟል 🌟
+    const selectedMatchCategorizedMarkets = useMemo(() => {
+        if (!selectedMatch) return {};
+        return getCategorizedMarkets(selectedMatch);
+    }, [selectedMatch, getCategorizedMarkets]);
+
+    // 🌟 ክለብ ሲከፈት የመጀመሪያዎቹ 5 ማርኬቶች ወዲያውኑ ተዘርግተው እንዲታዩ ማድረግ 🌟
+    useEffect(() => {
+        if (!selectedMatch) return;
+        const allMkts = selectedMatchCategorizedMarkets['ALL'] || [];
+        if (allMkts.length > 0) {
+            setOpenAccordions(prev => {
+                const currentMatchMkts = prev.filter(id => id.endsWith(`_${selectedMatch.id}`));
+                if (currentMatchMkts.length > 0) return prev;
+                return allMkts.slice(0, 5).map((m: any) => m.unique_id);
+            });
+        }
+    }, [selectedMatch?.id, selectedMatchCategorizedMarkets]);
 
     const FALLBACK_FLAG = 'https://media.api-sports.io/flags/un.svg';
     const renderFlag = (flagObj: string) => {
@@ -1098,52 +1162,6 @@ export default function Home() {
                 className="w-full h-full object-cover"
             />
         );
-    };
-
-    const getLeagueDetails = (key: string, flagFromApi?: string) => {
-        if (!key || typeof key !== 'string') return { country: 'World', flag: 'https://media.api-sports.io/flags/un.svg', name: 'Soccer', isTop: false };
-        
-        let country = 'World';
-        let name = key.replace('soccer_', '').replace(/_/g, ' ');
-        let flag = flagFromApi || 'https://media.api-sports.io/flags/un.svg';
-
-        if (key.includes('|')) {
-            const parts = key.split('|');
-            country = parts[0] || 'World';
-            name = parts[1] || name;
-            flag = parts[2] || flag;
-        }
-
-        const nameLower = name.toLowerCase().trim();
-        const countryLower = country.toLowerCase().trim();
-
-        let isTop = false;
-
-        if (
-            (nameLower === 'premier league' && countryLower === 'england') ||
-            (nameLower === 'championship' && countryLower === 'england') ||
-            (nameLower === 'fa cup' && countryLower === 'england') ||
-            ((nameLower === 'la liga' || nameLower === 'primera division' || nameLower === 'laliga') && countryLower === 'spain') ||
-            (nameLower === 'serie a' && countryLower === 'italy') ||
-            ((nameLower === 'bundesliga' || nameLower === '1. bundesliga') && countryLower === 'germany') ||
-            (nameLower === 'ligue 1' && countryLower === 'france') ||
-            nameLower === 'uefa champions league' ||
-            nameLower === 'uefa europa league' ||
-            nameLower === 'uefa conference league' ||
-            nameLower === 'world cup' ||
-            nameLower === 'euro championship' ||
-            nameLower === 'copa america' ||
-            nameLower === 'africa cup of nations'
-        ) {
-            isTop = true;
-        }
-
-        if (!isTop && !key.includes('|')) {
-            name = name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-            country = country.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-        }
-
-        return { country, flag, name, isTop };
     };
 
     const activeFixtures = useMemo(() => {
@@ -1181,7 +1199,7 @@ export default function Home() {
         const sortedC = Array.from(cMap.entries()).sort((a: any, b: any) => a[0].localeCompare(b[0]));
 
         return { allLeagues: all, topLeagues: top, sortedCountries: sortedC };
-    }, [activeFixtures]);
+    }, [activeFixtures, getLeagueDetails]);
 
     const displayLeagues = useMemo(() => {
         let result = allLeagues;
@@ -1204,17 +1222,24 @@ export default function Home() {
             result = allLeagues.filter(([key, _]: [string, any]) => key === selectedLeague);
         }
         return result;
-    }, [allLeagues, topLeagues, selectedLeague, activeFixtures]);
+    }, [allLeagues, topLeagues, selectedLeague, activeFixtures, getLeagueDetails]);
 
-    // 🌟 ወደ ታች Scroll ሲደረግ ተጨማሪ ጨዋታዎችን በራሱ በፍጥነት የሚጭን Handler 🌟
-    const handleMainListScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    // 🌟 ወደ ታች Scroll ሲደረግ ብራውዘሩን ሳያጨናንቅ (Throttled) ተጨማሪ ጨዋታዎችን የሚጭን Handler 🌟
+    const handleMainListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+        if (scrollThrottleRef.current) return;
         const target = e.currentTarget;
-        if (target.scrollHeight - target.scrollTop - target.clientHeight < 450) {
-            if (visibleGamesLimit < activeFixtures.length) {
-                setVisibleGamesLimit(prev => Math.min(prev + LOAD_MORE_STEP, activeFixtures.length));
+        scrollThrottleRef.current = setTimeout(() => {
+            if (target.scrollHeight - target.scrollTop - target.clientHeight < 450) {
+                setVisibleGamesLimit(prev => {
+                    if (prev < activeFixtures.length) {
+                        return Math.min(prev + getLoadMoreStep(), activeFixtures.length);
+                    }
+                    return prev;
+                });
             }
-        }
-    };
+            scrollThrottleRef.current = null;
+        }, 120);
+    }, [activeFixtures.length]);
 
     // 🌟 ትክክለኛ የ Auth Handlers (ከባክ-ኤንድ ጋር የተገናኘ) 🌟
     const handleSendOtp = async (e: React.FormEvent) => {
@@ -1540,7 +1565,7 @@ export default function Home() {
                             
                             {(() => {
                                 const liveMatchObj = fixtures.find((f: Fixture) => String(f.id) === String(selectedMatch.id)) || selectedMatch;
-                                const allCats = getCategorizedMarkets(liveMatchObj);
+                                const allCats = selectedMatchCategorizedMarkets;
                                 const tabs = ['ALL', 'MAIN', 'TOTALS', 'COMBOS', 'HALF', 'HANDICAPS', 'PLAYERS'];
                                 const availableTabs = tabs.filter((t: string) => t === 'ALL' || (allCats[t] && allCats[t].length > 0));
 
@@ -1582,7 +1607,7 @@ export default function Home() {
                                                             {isOpen && (
                                                                 <div className={gridClass}>
                                                                     {market.odds.map((odd: any) => {
-                                                                        const isSelected = betSlip.some((item: any) => item.odd_id === odd.odd_id);
+                                                                        const isSelected = selectedOddIdsSet.has(odd.odd_id);
                                                                         const isFlashingUp = flashingOdds[odd.odd_id] === 'up';
                                                                         const isFlashingDown = flashingOdds[odd.odd_id] === 'down';
                                                                         const prevVal = previousOddsMap[odd.odd_id];
@@ -1714,13 +1739,15 @@ export default function Home() {
                                                             <div className="flex flex-col">
                                                                 {gamesSlice.map((game: any) => {
                                                                     const matchDate = new Date(game.match_time);
+                                                                    const timeStr = matchDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                                                                    const [timeMain, timeAmPm] = timeStr.split(' ');
                                                                     const currentDisplayOdds = mainMarketView === '1X2' ? game.odds : game.dc_odds;
 
                                                                     const btn1 = currentDisplayOdds?.[0] || { odd_id: buildOddId('h2h', '1', game.id), option: "1", value: "0.00" };
                                                                     const btnX = currentDisplayOdds?.[1] || { odd_id: buildOddId('h2h', 'X', game.id), option: "X", value: "0.00" };
                                                                     const btn2 = currentDisplayOdds?.[2] || { odd_id: buildOddId('h2h', '2', game.id), option: "2", value: "0.00" };
 
-                                                                    const hasSelectionInGame = betSlip.some((item: any) => item.fixture_id === game.id);
+                                                                    const hasSelectionInGame = selectedFixtureIdsSet.has(String(game.id));
 
                                                                     const isFlashBtn1Up = flashingOdds[btn1.odd_id] === 'up';
                                                                     const isFlashBtn1Down = flashingOdds[btn1.odd_id] === 'down';
@@ -1737,8 +1764,8 @@ export default function Home() {
                                                                     return (
                                                                         <div key={game.id} className="flex border-b border-[#2a3038] last:border-b-0 hover:bg-[#24292e] transition-colors bg-[#1a1f24]">
                                                                             <div className="w-[50px] sm:w-[60px] flex flex-col justify-center items-center text-[11px] sm:text-[12px] font-bold text-slate-400 border-r border-[#2a3038] shrink-0 bg-[#16191c]/50 leading-tight py-1">
-                                                                                <span>{matchDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }).split(' ')[0]}</span>
-                                                                                <span className="text-[9px] mt-[1px]">{matchDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }).split(' ')[1]}</span>
+                                                                                <span>{timeMain}</span>
+                                                                                <span className="text-[9px] mt-[1px]">{timeAmPm}</span>
                                                                             </div>
 
                                                                             <div onClick={() => setSelectedMatch(game)} className="flex-1 flex flex-col justify-center px-2 py-2 min-w-0 cursor-pointer hover:bg-[#2a3038]/50 transition-colors">
@@ -1753,17 +1780,17 @@ export default function Home() {
                                                                             </div>
 
                                                                             <div className="flex items-stretch shrink-0 bg-[#2a3038] gap-[1px]">
-                                                                                <button onClick={() => toggleSelection(game, btn1, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center gap-0.5 text-[11px] sm:text-[13px] font-black transition-colors ${flashClass1 !== '' ? flashClass1 : betSlip.some((item: any) => item.odd_id === btn1.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btn1.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                                                <button onClick={() => toggleSelection(game, btn1, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center gap-0.5 text-[11px] sm:text-[13px] font-black transition-colors ${flashClass1 !== '' ? flashClass1 : selectedOddIdsSet.has(btn1.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btn1.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                                                                     <span>{btn1?.value !== "0.00" ? btn1?.value : "-"}</span>
                                                                                     {isFlashBtn1Up && <span className="text-[8px] leading-none">▲</span>}
                                                                                     {isFlashBtn1Down && <span className="text-[8px] leading-none">▼</span>}
                                                                                 </button>
-                                                                                <button onClick={() => toggleSelection(game, btnX, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center gap-0.5 text-[11px] sm:text-[13px] font-black transition-colors ${flashClassX !== '' ? flashClassX : betSlip.some((item: any) => item.odd_id === btnX.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btnX.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                                                <button onClick={() => toggleSelection(game, btnX, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center gap-0.5 text-[11px] sm:text-[13px] font-black transition-colors ${flashClassX !== '' ? flashClassX : selectedOddIdsSet.has(btnX.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btnX.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                                                                     <span>{btnX?.value !== "0.00" ? btnX?.value : "-"}</span>
                                                                                     {isFlashBtnXUp && <span className="text-[8px] leading-none">▲</span>}
                                                                                     {isFlashBtnXDown && <span className="text-[8px] leading-none">▼</span>}
                                                                                 </button>
-                                                                                <button onClick={() => toggleSelection(game, btn2, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center gap-0.5 text-[11px] sm:text-[13px] font-black transition-colors ${flashClass2 !== '' ? flashClass2 : betSlip.some((item: any) => item.odd_id === btn2.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btn2.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                                                <button onClick={() => toggleSelection(game, btn2, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center gap-0.5 text-[11px] sm:text-[13px] font-black transition-colors ${flashClass2 !== '' ? flashClass2 : selectedOddIdsSet.has(btn2.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btn2.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                                                                     <span>{btn2?.value !== "0.00" ? btn2?.value : "-"}</span>
                                                                                     {isFlashBtn2Up && <span className="text-[8px] leading-none">▲</span>}
                                                                                     {isFlashBtn2Down && <span className="text-[8px] leading-none">▼</span>}
@@ -1786,7 +1813,7 @@ export default function Home() {
                                             <div className="py-4 text-center">
                                                 <button
                                                     type="button"
-                                                    onClick={() => setVisibleGamesLimit(prev => prev + LOAD_MORE_STEP)}
+                                                    onClick={() => setVisibleGamesLimit(prev => Math.min(prev + getLoadMoreStep(), activeFixtures.length))}
                                                     className="bg-[#24292e] hover:bg-[#2f363d] text-[#ffcc00] border border-[#3b4148] px-6 py-2 rounded-lg text-xs font-black transition shadow"
                                                 >
                                                     ተጨማሪ ጨዋታዎችን አሳይ ({visibleGamesLimit} / {activeFixtures.length})
