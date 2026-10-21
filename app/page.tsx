@@ -1284,7 +1284,7 @@ export default function Home() {
     return (
         <div className="min-h-screen bg-[#1c2024] text-slate-300 font-sans text-sm relative">
             
-            {/* 🌟 የተስተካከለው HEADER (ከ Login እና Wallet ጋር) 🌟 */}
+            {/* 🌟 የተስተካከለው HEADER (በአንድ አይከን ብቻ Login የሚከፍት) 🌟 */}
             <header className="bg-[#ffcc00] border-b border-[#e6b800] sticky top-0 z-50 h-[60px] flex items-center justify-between px-4 shadow-md">
                 <button onClick={() => window.location.reload()} className="flex items-center gap-3 cursor-pointer hover:opacity-90 transition text-left">
                     <div className="w-11 h-11 shrink-0 rounded-[10px] overflow-hidden shadow-sm border border-black/10 bg-[#1c2024] p-1.5 flex items-center justify-center">
@@ -1307,10 +1307,15 @@ export default function Home() {
                 
                 <div className="flex gap-2 sm:gap-4 items-center">
                     {!isLoggedIn ? (
-                        <div className="flex gap-2">
-                            <button onClick={() => setIsLoginOpen(true)} className="bg-transparent border border-black text-black hover:bg-black/5 px-3 py-1.5 rounded-md font-black text-xs transition">ግባ (Login)</button>
-                            <button onClick={() => setIsRegisterOpen(true)} className="bg-[#0a0a0a] text-[#ffcc00] hover:bg-[#1a1a1a] px-3 py-1.5 rounded-md font-black text-xs transition shadow-md">ተመዝገብ (Register)</button>
-                        </div>
+                        <button
+                            onClick={() => setIsLoginOpen(true)}
+                            title="ግባ / ተመዝገብ (Login / Register)"
+                            className="w-[38px] h-[38px] rounded-full bg-[#0a0a0a] text-[#ffcc00] hover:bg-[#1a1a1a] flex items-center justify-center transition shadow-md border border-black"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                            </svg>
+                        </button>
                     ) : (
                         <div className="flex items-center gap-2">
                             <div className="flex items-center bg-black/10 hover:bg-black/20 transition rounded-full h-[36px] overflow-hidden">
@@ -2179,7 +2184,7 @@ export default function Home() {
                                 {authLoading ? 'እየገባ ነው...' : 'ግባ (Login)'}
                             </button>
                             <p className="text-center text-xs text-slate-400 mt-2">
-                                አካውንት የለዎትም? <button type="button" onClick={() => { setIsLoginOpen(false); setIsRegisterOpen(true); }} className="text-[#ffcc00] hover:underline font-bold">እዚህ ይመዝገቡ</button>
+                                አካውንት የለዎትም? <button type="button" onClick={() => { setIsLoginOpen(false); setIsRegisterOpen(true); }} className="text-[#ffcc00] hover:underline font-bold">ተመዝገብ (Register)</button>
                             </p>
                         </form>
                     </div>
@@ -2216,6 +2221,9 @@ export default function Home() {
                                     <button type="submit" disabled={authLoading} className="w-full bg-[#ffcc00] hover:bg-[#e6b800] text-black font-black py-3 rounded-lg shadow-md transition-colors mt-2 disabled:opacity-50">
                                         {authLoading ? 'ኮድ እየተላከ ነው...' : 'የማረጋገጫ ኮድ ላክ (Send OTP)'}
                                     </button>
+                                    <p className="text-center text-xs text-slate-400 mt-2">
+                                        አካውንት አለዎት? <button type="button" onClick={() => { setIsRegisterOpen(false); setIsLoginOpen(true); }} className="text-[#ffcc00] hover:underline font-bold">ግባ (Login)</button>
+                                    </p>
                                 </form>
                             ) : (
                                 <form onSubmit={handleRegister} className="flex flex-col gap-4">
