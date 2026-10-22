@@ -207,6 +207,7 @@ const formatMatchDateTime = (iso: string) => {
 export default function Home() {
     const router = useRouter();
     const [isMounted, setIsMounted] = useState(false);
+    const [theme, setTheme] = useState<'dark' | 'light'>('dark');
     const [fixtures, setFixtures] = useState<Fixture[]>([]);
     const [betSlip, setBetSlip] = useState<BetSlipItem[]>([]);
     const [stake, setStake] = useState<number>(20);
@@ -297,8 +298,20 @@ export default function Home() {
     const selectedOddIdsSet = useMemo(() => new Set(betSlip.map(item => item.odd_id)), [betSlip]);
     const selectedFixtureIdsSet = useMemo(() => new Set(betSlip.map(item => String(item.fixture_id))), [betSlip]);
 
+    const toggleTheme = useCallback(() => {
+        setTheme(prev => {
+            const next = prev === 'dark' ? 'light' : 'dark';
+            try { localStorage.setItem('vibebet_theme', next); } catch (e) {}
+            return next;
+        });
+    }, []);
+
     useEffect(() => {
         try {
+            const savedTheme = localStorage.getItem('vibebet_theme');
+            if (savedTheme === 'light' || savedTheme === 'dark') {
+                setTheme(savedTheme);
+            }
             const savedSlip = localStorage.getItem('vibebet_saved_betslip');
             if (savedSlip) setBetSlip(JSON.parse(savedSlip));
             const storedSigs = localStorage.getItem('vibebet_placed_signatures');
@@ -1343,9 +1356,9 @@ export default function Home() {
     if (!isMounted) return <div className="min-h-screen bg-[#1c2024]"></div>;
 
     return (
-        <div className="min-h-screen bg-[#1c2024] text-slate-300 font-sans text-sm relative">
+        <div className={`min-h-screen bg-[#1c2024] text-slate-300 font-sans text-sm relative transition-colors duration-200 ${theme === 'light' ? 'theme-light' : 'theme-dark'}`}>
             
-            {/* 🌟 የተስተካከለው HEADER (በአንድ አይከን ብቻ Login የሚከፍት) 🌟 */}
+            {/* 🌟 የተስተካከለው HEADER (በአንድ አይከን ብቻ Login የሚከፍት + Theme Toggle) 🌟 */}
             <header className="bg-[#ffcc00] border-b border-[#e6b800] sticky top-0 z-50 h-[60px] flex items-center justify-between px-4 shadow-md">
                 <button onClick={() => window.location.reload()} className="flex items-center gap-3 cursor-pointer hover:opacity-90 transition text-left">
                     <div className="w-11 h-11 shrink-0 rounded-[10px] overflow-hidden shadow-sm border border-black/10 bg-[#1c2024] p-1.5 flex items-center justify-center">
@@ -1366,7 +1379,25 @@ export default function Home() {
                     </div>
                 </button>
                 
-                <div className="flex gap-2 sm:gap-4 items-center">
+                <div className="flex gap-2 sm:gap-3 items-center">
+                    {/* 🌟 Dark / Light Mode መቀያየሪያ ቁልፍ 🌟 */}
+                    <button
+                        onClick={toggleTheme}
+                        title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                        className="w-[38px] h-[38px] rounded-full bg-black/10 hover:bg-black/20 text-black flex items-center justify-center transition shadow-sm border border-black/15"
+                    >
+                        {theme === 'dark' ? (
+                            <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
+                                <circle cx="12" cy="12" r="5" />
+                                <path strokeLinecap="round" d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+                            </svg>
+                        ) : (
+                            <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+                            </svg>
+                        )}
+                    </button>
+
                     {!isLoggedIn ? (
                         <button
                             onClick={() => setIsLoginOpen(true)}
@@ -2116,7 +2147,7 @@ export default function Home() {
                             </div>
 
                             <div className="border-t border-dashed border-[#3b4148] pt-5 flex flex-col items-center">
-                                <BarcodeSVG value={bookingCode!} lineColor="#ffffff" className="h-[46px] w-full max-w-[240px]" />
+                                <BarcodeSVG value={bookingCode!} lineColor={theme === 'light' ? '#0f172a' : '#ffffff'} className="h-[46px] w-full max-w-[240px]" />
                                 <span className="text-[11px] text-slate-300 font-medium mt-1.5 tracking-widest">{bookingCode}</span>
                                 <span className="text-[9px] text-slate-500 mt-1">Take this code to any branch to confirm your bet</span>
                             </div>
@@ -2219,7 +2250,7 @@ export default function Home() {
 
                         {/* Barcode bottom */}
                         <div className="mt-3 flex flex-col items-center">
-                            <BarcodeSVG value={bookingCode!} lineColor="#ffffff" className="h-10 w-[80%]" />
+                            <BarcodeSVG value={bookingCode!} lineColor={theme === 'light' ? '#0f172a' : '#ffffff'} className="h-10 w-[80%]" />
                             <span className="text-[9px] text-slate-500 font-medium mt-1 tracking-widest">{bookingCode}</span>
                         </div>
                     </div>
@@ -2440,6 +2471,76 @@ export default function Home() {
 
                 .custom-scrollbar-light::-webkit-scrollbar { width: 5px; height: 5px; }
                 .custom-scrollbar-light::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
+
+                /* 🌟 LIGHT MODE THEME OVERRIDES 🌟 */
+                .theme-light {
+                    background-color: #f1f5f9 !important;
+                    color: #1e293b !important;
+                }
+                .theme-light .bg-\\[\\#1c2024\\],
+                .theme-light .bg-\\[\\#16191c\\] {
+                    background-color: #f1f5f9 !important;
+                }
+                .theme-light .bg-\\[\\#16191c\\]\\/50 {
+                    background-color: #f8fafc !important;
+                }
+                .theme-light .bg-\\[\\#1a1f24\\],
+                .theme-light .bg-\\[\\#1e2328\\],
+                .theme-light .bg-\\[\\#161b22\\] {
+                    background-color: #ffffff !important;
+                }
+                .theme-light .bg-\\[\\#24292e\\],
+                .theme-light .bg-\\[\\#0d1117\\] {
+                    background-color: #f8fafc !important;
+                }
+                .theme-light .bg-\\[\\#2a3038\\] {
+                    background-color: #e2e8f0 !important;
+                }
+                .theme-light .bg-\\[\\#3a4148\\],
+                .theme-light .bg-\\[\\#3b4148\\] {
+                    background-color: #cbd5e1 !important;
+                }
+                .theme-light .hover\\:bg-\\[\\#24292e\\]:hover,
+                .theme-light .hover\\:bg-\\[\\#1e2328\\]:hover {
+                    background-color: #f1f5f9 !important;
+                }
+                .theme-light .hover\\:bg-\\[\\#2a3038\\]:hover,
+                .theme-light .hover\\:bg-\\[\\#2a3038\\]\\/50:hover {
+                    background-color: #e2e8f0 !important;
+                }
+                .theme-light .border-\\[\\#2a3038\\],
+                .theme-light .border-\\[\\#3b4148\\],
+                .theme-light .border-\\[\\#3a4148\\],
+                .theme-light .border-\\[\\#30363d\\] {
+                    border-color: #cbd5e1 !important;
+                }
+                .theme-light .text-white {
+                    color: #0f172a !important;
+                }
+                .theme-light .text-slate-200,
+                .theme-light .text-slate-300 {
+                    color: #334155 !important;
+                }
+                .theme-light .text-slate-400,
+                .theme-light .text-slate-500 {
+                    color: #64748b !important;
+                }
+                .theme-light .hover\\:text-white:hover {
+                    color: #0f172a !important;
+                }
+                .theme-light .bg-red-500.text-white,
+                .theme-light .bg-red-500 .text-white,
+                .theme-light .bg-\\[\\#00e700\\] .text-white,
+                .theme-light .bg-\\[\\#4ade80\\].text-white,
+                .theme-light .bg-\\[\\#3b82f6\\].text-white {
+                    color: #ffffff !important;
+                }
+                .theme-light .text-\\[\\#00e700\\] {
+                    color: #16a34a !important;
+                }
+                .theme-light .custom-scrollbar::-webkit-scrollbar-thumb {
+                    background: #cbd5e1 !important;
+                }
             `}</style>
         </div>
     );
