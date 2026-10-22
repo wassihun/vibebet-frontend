@@ -1356,7 +1356,7 @@ export default function Home() {
     if (!isMounted) return <div className="min-h-screen bg-[#1c2024]"></div>;
 
     return (
-        <div className={`min-h-screen bg-[#1c2024] text-slate-300 font-sans text-sm relative transition-colors duration-200 ${theme === 'light' ? 'theme-light' : 'theme-dark'}`}>
+        <div className={`min-h-screen font-sans text-sm relative transition-colors duration-200 ${theme === 'light' ? 'theme-light bg-[#f1f5f9] text-[#0f172a]' : 'theme-dark bg-[#1c2024] text-slate-300'}`}>
             
             {/* 🌟 የተስተካከለው HEADER (በአንድ አይከን ብቻ Login የሚከፍት + Theme Toggle) 🌟 */}
             <header className="bg-[#ffcc00] border-b border-[#e6b800] sticky top-0 z-50 h-[60px] flex items-center justify-between px-4 shadow-md">
@@ -1383,18 +1383,24 @@ export default function Home() {
                     {/* 🌟 Dark / Light Mode መቀያየሪያ ቁልፍ 🌟 */}
                     <button
                         onClick={toggleTheme}
-                        title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-                        className="w-[38px] h-[38px] rounded-full bg-black/10 hover:bg-black/20 text-black flex items-center justify-center transition shadow-sm border border-black/15"
+                        title={theme === 'dark' ? 'ወደ Light Mode ቀይር' : 'ወደ Dark Mode ቀይር'}
+                        className="h-[38px] px-3 rounded-full bg-black/10 hover:bg-black/20 text-black flex items-center justify-center gap-1.5 transition shadow-sm border border-black/15 font-black text-xs"
                     >
                         {theme === 'dark' ? (
-                            <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
-                                <circle cx="12" cy="12" r="5" />
-                                <path strokeLinecap="round" d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-                            </svg>
+                            <>
+                                <svg className="w-4 h-4 text-black shrink-0" fill="none" stroke="currentColor" strokeWidth="2.4" viewBox="0 0 24 24">
+                                    <circle cx="12" cy="12" r="5" />
+                                    <path strokeLinecap="round" d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+                                </svg>
+                                <span className="hidden sm:inline text-[11px]">Light</span>
+                            </>
                         ) : (
-                            <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
-                            </svg>
+                            <>
+                                <svg className="w-4 h-4 text-black shrink-0" fill="none" stroke="currentColor" strokeWidth="2.4" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+                                </svg>
+                                <span className="hidden sm:inline text-[11px]">Dark</span>
+                            </>
                         )}
                     </button>
 
@@ -1681,7 +1687,7 @@ export default function Home() {
                                                                         const flashClass = isFlashingUp ? 'bg-[#00e700] text-black shadow-inner' : isFlashingDown ? 'bg-red-500 text-white shadow-inner' : '';
 
                                                                         return (
-                                                                            <button key={odd.odd_id} onClick={() => handleMarketSelection(liveMatchObj, odd, market.title)} className={`flex justify-between items-center p-3 transition-colors ${flashClass !== '' ? flashClass : isSelected ? 'bg-[#ffcc00] text-black' : 'bg-[#1a1f24] hover:bg-[#2a3038] text-white'}`}>
+                                                                            <button key={odd.odd_id} onClick={() => handleMarketSelection(liveMatchObj, odd, market.title)} className={`flex justify-between items-center p-3 transition-colors ${flashClass !== '' ? flashClass : isSelected ? 'odd-selected bg-[#ffcc00] text-black' : 'bg-[#1a1f24] hover:bg-[#2a3038] text-white'}`}>
                                                                                 <span className={`text-[11px] font-medium truncate pr-2 ${flashClass !== '' ? (isFlashingUp ? 'text-black' : 'text-white') : isSelected ? 'text-black/80' : 'text-slate-400'}`}>{odd.option}</span>
                                                                                 <span className={`text-[12px] font-black flex items-center gap-1 shrink-0 ${flashClass !== '' ? (isFlashingUp ? 'text-black' : 'text-white') : isSelected ? 'text-black' : 'text-white'}`}>
                                                                                     {(isFlashingUp || isFlashingDown) && prevVal !== undefined && (
@@ -1847,17 +1853,17 @@ export default function Home() {
                                                                             </div>
 
                                                                             <div className="flex items-stretch shrink-0 bg-[#2a3038] gap-[1px]">
-                                                                                <button onClick={() => toggleSelection(game, btn1, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center gap-0.5 text-[11px] sm:text-[13px] font-black transition-colors ${flashClass1 !== '' ? flashClass1 : selectedOddIdsSet.has(btn1.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btn1.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                                                <button onClick={() => toggleSelection(game, btn1, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center gap-0.5 text-[11px] sm:text-[13px] font-black transition-colors ${flashClass1 !== '' ? flashClass1 : selectedOddIdsSet.has(btn1.odd_id) ? 'odd-selected bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btn1.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                                                                     <span>{btn1?.value !== "0.00" ? btn1?.value : "-"}</span>
                                                                                     {isFlashBtn1Up && <span className="text-[8px] leading-none">▲</span>}
                                                                                     {isFlashBtn1Down && <span className="text-[8px] leading-none">▼</span>}
                                                                                 </button>
-                                                                                <button onClick={() => toggleSelection(game, btnX, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center gap-0.5 text-[11px] sm:text-[13px] font-black transition-colors ${flashClassX !== '' ? flashClassX : selectedOddIdsSet.has(btnX.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btnX.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                                                <button onClick={() => toggleSelection(game, btnX, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center gap-0.5 text-[11px] sm:text-[13px] font-black transition-colors ${flashClassX !== '' ? flashClassX : selectedOddIdsSet.has(btnX.odd_id) ? 'odd-selected bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btnX.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                                                                     <span>{btnX?.value !== "0.00" ? btnX?.value : "-"}</span>
                                                                                     {isFlashBtnXUp && <span className="text-[8px] leading-none">▲</span>}
                                                                                     {isFlashBtnXDown && <span className="text-[8px] leading-none">▼</span>}
                                                                                 </button>
-                                                                                <button onClick={() => toggleSelection(game, btn2, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center gap-0.5 text-[11px] sm:text-[13px] font-black transition-colors ${flashClass2 !== '' ? flashClass2 : selectedOddIdsSet.has(btn2.odd_id) ? 'bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btn2.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                                                                <button onClick={() => toggleSelection(game, btn2, mainMarketView === '1X2' ? '1x2' : 'Double Chance')} className={`w-[48px] sm:w-[56px] flex items-center justify-center gap-0.5 text-[11px] sm:text-[13px] font-black transition-colors ${flashClass2 !== '' ? flashClass2 : selectedOddIdsSet.has(btn2.odd_id) ? 'odd-selected bg-[#ffcc00] text-black' : 'bg-[#1e2328] text-white hover:bg-[#2a3038]'} ${btn2.value === "0.00" ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                                                                     <span>{btn2?.value !== "0.00" ? btn2?.value : "-"}</span>
                                                                                     {isFlashBtn2Up && <span className="text-[8px] leading-none">▲</span>}
                                                                                     {isFlashBtn2Down && <span className="text-[8px] leading-none">▼</span>}
@@ -2472,48 +2478,72 @@ export default function Home() {
                 .custom-scrollbar-light::-webkit-scrollbar { width: 5px; height: 5px; }
                 .custom-scrollbar-light::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
 
-                /* 🌟 LIGHT MODE THEME OVERRIDES 🌟 */
+                /* =====================================================================
+                   🌟 PROFESSIONAL SPORTSBOOK LIGHT THEME (Attribute Selector Based) 🌟
+                   ===================================================================== */
                 .theme-light {
                     background-color: #f1f5f9 !important;
-                    color: #1e293b !important;
+                    color: #0f172a !important;
                 }
-                .theme-light .bg-\\[\\#1c2024\\],
-                .theme-light .bg-\\[\\#16191c\\] {
+
+                /* 1. Main Page & Scroll Canvas Backgrounds */
+                .theme-light [class*="bg-[#1c2024]"],
+                .theme-light [class*="bg-[#16191c]"] {
                     background-color: #f1f5f9 !important;
                 }
-                .theme-light .bg-\\[\\#16191c\\]\\/50 {
-                    background-color: #f8fafc !important;
-                }
-                .theme-light .bg-\\[\\#1a1f24\\],
-                .theme-light .bg-\\[\\#1e2328\\],
-                .theme-light .bg-\\[\\#161b22\\] {
+
+                /* 2. Cards, Sidebars, Match Rows & Modals (Pure Crisp White) */
+                .theme-light [class*="bg-[#1a1f24]"],
+                .theme-light [class*="bg-[#1e2328]"],
+                .theme-light [class*="bg-[#161b22]"] {
                     background-color: #ffffff !important;
                 }
-                .theme-light .bg-\\[\\#24292e\\],
-                .theme-light .bg-\\[\\#0d1117\\] {
+
+                /* 3. League Headers, Filter Bars, Inputs & Sub-containers */
+                .theme-light [class*="bg-[#24292e]"],
+                .theme-light [class*="bg-[#0d1117]"] {
                     background-color: #f8fafc !important;
                 }
-                .theme-light .bg-\\[\\#2a3038\\] {
+
+                /* 4. Odd Buttons & Interactive Pills */
+                .theme-light [class*="bg-[#2a3038]"] {
                     background-color: #e2e8f0 !important;
                 }
-                .theme-light .bg-\\[\\#3a4148\\],
-                .theme-light .bg-\\[\\#3b4148\\] {
-                    background-color: #cbd5e1 !important;
-                }
-                .theme-light .hover\\:bg-\\[\\#24292e\\]:hover,
-                .theme-light .hover\\:bg-\\[\\#1e2328\\]:hover {
+                .theme-light button[class*="bg-[#1e2328]"]:not(.odd-selected),
+                .theme-light button[class*="bg-[#1a1f24]"]:not(.odd-selected) {
                     background-color: #f1f5f9 !important;
                 }
-                .theme-light .hover\\:bg-\\[\\#2a3038\\]:hover,
-                .theme-light .hover\\:bg-\\[\\#2a3038\\]\\/50:hover {
+                .theme-light button[class*="bg-[#1e2328]"]:not(.odd-selected):hover,
+                .theme-light button[class*="bg-[#1a1f24]"]:not(.odd-selected):hover,
+                .theme-light [class*="hover:bg-[#24292e]"]:hover,
+                .theme-light [class*="hover:bg-[#2a3038]"]:hover {
                     background-color: #e2e8f0 !important;
                 }
-                .theme-light .border-\\[\\#2a3038\\],
-                .theme-light .border-\\[\\#3b4148\\],
-                .theme-light .border-\\[\\#3a4148\\],
-                .theme-light .border-\\[\\#30363d\\] {
-                    border-color: #cbd5e1 !important;
+
+                /* 5. Grid Dividers & Borders */
+                .theme-light [class*="bg-[#3a4148]"],
+                .theme-light [class*="bg-[#3b4148]"] {
+                    background-color: #cbd5e1 !important;
                 }
+                .theme-light [class*="border-[#2a3038]"],
+                .theme-light [class*="border-[#3b4148]"],
+                .theme-light [class*="border-[#3a4148]"],
+                .theme-light [class*="border-[#30363d]"] {
+                    border-color: #e2e8f0 !important;
+                }
+
+                /* 6. Selected Odd Button & Brand Yellow Highlights */
+                .theme-light button.odd-selected,
+                .theme-light [class*="bg-[#ffcc00]"] {
+                    background-color: #ffcc00 !important;
+                    color: #000000 !important;
+                }
+                .theme-light button[class*="bg-[#0a0a0a]"] {
+                    background-color: #0f172a !important;
+                    color: #ffcc00 !important;
+                }
+
+                /* 7. Typography & Contrast */
                 .theme-light .text-white {
                     color: #0f172a !important;
                 }
@@ -2525,19 +2555,31 @@ export default function Home() {
                 .theme-light .text-slate-500 {
                     color: #64748b !important;
                 }
-                .theme-light .hover\\:text-white:hover {
+                .theme-light .hover\:text-white:hover {
                     color: #0f172a !important;
                 }
-                .theme-light .bg-red-500.text-white,
+
+                /* Keep white text on colored badges/buttons */
+                .theme-light .bg-red-500,
                 .theme-light .bg-red-500 .text-white,
-                .theme-light .bg-\\[\\#00e700\\] .text-white,
-                .theme-light .bg-\\[\\#4ade80\\].text-white,
-                .theme-light .bg-\\[\\#3b82f6\\].text-white {
+                .theme-light [class*="bg-[#00e700]"] .text-white,
+                .theme-light [class*="bg-[#4ade80]"],
+                .theme-light [class*="bg-[#3b82f6]"] {
                     color: #ffffff !important;
                 }
-                .theme-light .text-\\[\\#00e700\\] {
+
+                /* Readable Gold/Amber & Green accents on white background */
+                .theme-light [class*="text-[#ffcc00]"] {
+                    color: #b45309 !important;
+                }
+                .theme-light button[class*="bg-[#0a0a0a]"] [class*="text-[#ffcc00]"],
+                .theme-light button[class*="bg-[#0a0a0a]"] {
+                    color: #ffcc00 !important;
+                }
+                .theme-light [class*="text-[#00e700]"] {
                     color: #16a34a !important;
                 }
+
                 .theme-light .custom-scrollbar::-webkit-scrollbar-thumb {
                     background: #cbd5e1 !important;
                 }
